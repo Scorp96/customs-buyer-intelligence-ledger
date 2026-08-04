@@ -80,10 +80,10 @@ def validate_outreach(request: OutreachValidationRequest) -> dict[str, object]:
             reasons.append(message)
     if len(request.body.split()) > 180:
         reasons.append("first-contact email exceeds the 180-word safety ceiling")
-    question_count = request.body.count("?") + request.body.count("锛?)
+    question_count = request.body.count("?") + request.body.count("？")
     if question_count > 3:
         reasons.append("first-contact email asks more than three questions")
-    bullet_lines = sum(1 for line in request.body.splitlines() if re.match(r"^\s*[-*鈥\s+", line))
+    bullet_lines = sum(1 for line in request.body.splitlines() if re.match(r"^\s*[-*•]\s+", line))
     if bullet_lines > 3:
         reasons.append("first-contact email contains too many bullet points")
 

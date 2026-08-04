@@ -9,7 +9,7 @@ def base_request() -> dict:
         "recipient_status": "official_current",
         "subject": "PVC foam board supply for your team",
         "body": "Hello, we manufacture rigid PVC foam boards for signage and interior applications. We can prepare a concise comparison based on your current board requirements. Would it be useful if I sent our core specification sheet?\n\nBest regards,\nMark Zhou\nGuangzhou XingHuai New Materials Co., Ltd.\nMobile / WhatsApp: +86 180 2710 1852\nwww.xinghuai.com",
-        "chinese_translation": "鎮ㄥソ锛屾垜浠敓浜х敤浜庡箍鍛婂拰瀹ゅ唴搴旂敤鐨勭‖璐≒VC鍙戞场鏉裤€傝闂彂閫佹牳蹇冭鏍艰〃鏄惁鏂逛究锛?,
+        "chinese_translation": "您好，我们生产用于广告和室内应用的硬质PVC发泡板。请问发送核心规格表是否方便？",
         "firewall_passed": True,
         "human_style_passed": True,
         "discovered_email_count": 1,
