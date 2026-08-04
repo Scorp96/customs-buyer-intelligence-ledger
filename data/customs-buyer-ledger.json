@@ -1,0 +1,160 @@
+{
+  "buyers": {
+    "buyer_15dcb9eaa64d2fc72676": {
+      "buyer_key": "buyer_15dcb9eaa64d2fc72676",
+      "contacts": {
+        "info@multigunapanel.id": {
+          "email": "info@multigunapanel.id",
+          "employment_status": "not_applicable",
+          "entity": "PT. Multiguna Panel Indonesia",
+          "first_seen": "2026-08-04",
+          "last_checked": "2026-08-04",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "unverified",
+          "recommended_use": "Use as the primary official referral route with a short Indonesian-language request for the responsible purchasing contact.",
+          "risk_note": "Current official general mailbox. It is suitable for requesting referral to the person responsible for PVC foam board or imported panel sourcing, but it is not proof of procurement authority.",
+          "route_class": "FORMAL_GENERAL",
+          "source_ids": [
+            "mpi-official-site-20260804",
+            "mpi-user-screenshots-20260804"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "official_current"
+        },
+        "multiguna_mkt@yahoo.com": {
+          "email": "multiguna_mkt@yahoo.com",
+          "employment_status": "not_applicable",
+          "entity": "PT. Multiguna Panel Indonesia",
+          "first_seen": "2026-08-04",
+          "last_checked": "2026-08-04",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "unverified",
+          "recommended_use": "Use as an alternative referral route in a separate draft if the primary official-domain mailbox does not respond; ask for internal referral rather than pitching detailed specifications.",
+          "risk_note": "Current email published by the official website, but hosted on Yahoo and not confirmed as a procurement inbox.",
+          "route_class": "ALTERNATIVE_REFERRAL",
+          "source_ids": [
+            "mpi-official-site-20260804",
+            "mpi-user-screenshots-20260804"
+          ],
+          "title_as_sourced": "Marketing/general business mailbox as published on the official website",
+          "verification_status": "official_current"
+        }
+      },
+      "created_at": "2026-08-04T06:15:38+00:00",
+      "evidence": {
+        "mpi-official-site-20260804": {
+          "boundary": "The website supports the company's public business identity and contact routes, but does not identify a current PVC foam board procurement decision-maker or prove the legal registration status in the Indonesian corporate registry.",
+          "checked_at": "2026-08-04T06:14:00Z",
+          "claim": "The official website identifies the business as PT. Multiguna Panel Indonesia, says it operates in building materials, has traded since 2009, markets imported and local products, and publishes its Surabaya address, two current email addresses and telephone numbers.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "mpi-official-site-20260804",
+          "source_date": null,
+          "source_reference": "PT. Multiguna Panel Indonesia official website home/contact content",
+          "source_type": "official_domain",
+          "source_url": "https://multigunapanel.id/"
+        },
+        "mpi-trade-contamination-20260804": {
+          "boundary": "This flags potentially contaminated route fields; it does not invalidate the buyer, product, quantity, weight or Indonesian declaration fields by itself.",
+          "checked_at": "2026-08-04T06:14:00Z",
+          "claim": "The master bill, carrier, vessel and container numbers in this record repeat values previously supplied in this conversation for unrelated Ecuador and Puerto Rico records, creating a material cross-record contamination risk.",
+          "claim_class": "INFERENCE",
+          "conflict": null,
+          "evidence_grade": "D",
+          "evidence_id": "mpi-trade-contamination-20260804",
+          "source_date": null,
+          "source_reference": "Comparison of the current Multiguna record with earlier user-provided Latamgrafica and Dantzler records in this conversation",
+          "source_type": "user_input",
+          "source_url": null
+        },
+        "mpi-user-screenshots-20260804": {
+          "boundary": "Screenshots support what was visible at capture time but do not prove procurement authority for either email address.",
+          "checked_at": "2026-08-04T06:14:00Z",
+          "claim": "User-uploaded screenshots of multigunapanel.id display info@multigunapanel.id, multiguna_mkt@yahoo.com, Surabaya and Gresik contact details, and describe PT. Multiguna Panel Indonesia as operating in building materials.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "mpi-user-screenshots-20260804",
+          "source_date": null,
+          "source_reference": "User-uploaded screenshots in the current conversation showing the official website",
+          "source_type": "uploaded_record",
+          "source_url": null
+        },
+        "mpi-user-trade-20260526": {
+          "boundary": "This proves only what the supplied record states. It does not independently verify the shipment, legal identity, product specification, manufacturing source, or the accuracy of route, carrier, vessel and container fields.",
+          "checked_at": "2026-08-04T06:14:00Z",
+          "claim": "The user-provided Indonesian import record lists Multiguna Panel Indonesia as buyer, Easy Building Plastic Co Ltd as supplier, PVC Foam Board Color White as product, 200 Piece and 5,358 kg, dated 2026-05-26.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "mpi-user-trade-20260526",
+          "source_date": "2026-05-26",
+          "source_reference": "User message containing the 2026-05-26 Indonesian import record",
+          "source_type": "user_input",
+          "source_url": null
+        }
+      },
+      "history_events": [],
+      "identity": {
+        "address": "Kupang Jaya V/2B, Surabaya, East Java, Indonesia",
+        "aliases": [
+          "Multiguna Panel Indonesia",
+          "PT Multiguna Panel Indonesia",
+          "Multiguna Panel",
+          "PT. Multiguna Panel Indonesia"
+        ],
+        "business_type": "Building-material trader and distributor. Its official website says it has operated since 2009, markets imported and local products, and distributes gypsum, plywood and related panel products.",
+        "country": "Indonesia",
+        "customs_name": "Multiguna Panel Indonesia",
+        "legal_name": "PT. Multiguna Panel Indonesia",
+        "source_ids": [
+          "mpi-official-site-20260804",
+          "mpi-user-trade-20260526"
+        ]
+      },
+      "runs": [
+        {
+          "declared_previous_email_count": null,
+          "declared_previous_trade_count": null,
+          "input_hash": "d5c5c142d4e0a8b1",
+          "investigated_at": "2026-08-04T06:14:00Z",
+          "prior_ledger_date": null,
+          "prior_ledger_name": null,
+          "run_id": "mpi-20260804T061400Z"
+        }
+      ],
+      "trade_records": {
+        "record:indonesia20260526071995itemunknown": {
+          "buyer": "Multiguna Panel Indonesia",
+          "data_level": "unknown",
+          "date": "2026-05-26",
+          "date_semantics": "User-supplied import record date; arrival, declaration or clearance semantics were not independently verified. Master bill, carrier, vessel and container route fields carry cross-record contamination risk.",
+          "declaration_number": "071995",
+          "first_seen": "2026-08-04T06:15:38+00:00",
+          "house_bill": null,
+          "item_number": null,
+          "last_seen": "2026-08-04T06:15:38+00:00",
+          "master_bill": "CEC2026COSU0025",
+          "normalized_product": "Rigid cellular PVC foam board, white; exact foam structure and specification unknown",
+          "product_raw": "Pvc Foam Board Color White Other Plates, Sheets, Film, Foil And Strip, Of Polymers Of Vinyl Chloride, Cellular",
+          "provider": "User-provided Indonesia import data",
+          "quantity": 200.0,
+          "record_id": "indonesia-20260526-071995-item-unknown",
+          "source_ids": [
+            "mpi-user-trade-20260526",
+            "mpi-trade-contamination-20260804"
+          ],
+          "supplier_or_exporter": "Easy Building Plastic Co Ltd",
+          "uom": "Piece",
+          "weight_kg": 5358.0
+        }
+      },
+      "updated_at": "2026-08-04T06:15:38+00:00"
+    }
+  },
+  "schema_version": "2.1",
+  "updated_at": "2026-08-04T06:15:38+00:00"
+}
