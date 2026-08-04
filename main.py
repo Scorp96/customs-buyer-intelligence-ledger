@@ -10,10 +10,15 @@ from fastapi.security import APIKeyHeader
 
 from app.ledger import LedgerService
 from app.models import (
+    HealthResponse,
     LedgerLookupRequest,
+    LedgerLookupResponse,
     LedgerMergeRequest,
+    LedgerMergeResponse,
     OutreachEvent,
+    OutreachEventResponse,
     OutreachValidationRequest,
+    OutreachValidationResponse,
 )
 from app.outreach import validate_outreach
 from app.storage import StorageError, build_store
@@ -52,15 +57,17 @@ def require_action_key(x_action_key: str | None = Security(action_key_header)) -
         raise HTTPException(status_code=401, detail="invalid action key")
 
 
-@app.get("/health", operation_id="getHealth")
-async def health() -> dict[str, str]:
+@app.get("/health", operation_id="getHealth", response_model=HealthResponse)
+async def health() -> HealthResponse:
     """Check whether the backend is awake. This does not inspect or modify buyer data."""
-    return {
+    return HealthResponse(
+        **{
         "status": "ok",
         "service": "customs-buyer-intelligence-ledger",
         "version": "2.1.0",
         "store_mode": os.getenv("STORE_MODE", "local").strip().lower(),
-    }
+        }
+    )
 
 
 @app.get("/privacy", response_class=HTMLResponse, include_in_schema=False)
@@ -78,8 +85,13 @@ async def privacy() -> str:
     """
 
 
-@app.post("/ledger/lookup", operation_id="lookupBuyerLedger", dependencies=[Depends(require_action_key)])
-async def lookup_buyer_ledger(request: LedgerLookupRequest) -> dict:
+@app.post(
+    "/ledger/lookup",
+    operation_id="lookupBuyerLedger",
+    dependencies=[Depends(require_action_key)],
+    response_model=LedgerLookupResponse,
+)
+async def lookup_buyer_ledger(request: LedgerLookupRequest) -> LedgerLookupResponse:
     """Load prior buyer, shipment, evidence, contact, and event data before starting a new investigation."""
     try:
         return await service.lookup(request)
@@ -87,8 +99,13 @@ async def lookup_buyer_ledger(request: LedgerLookupRequest) -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/ledger/merge", operation_id="mergeBuyerLedger", dependencies=[Depends(require_action_key)])
-async def merge_buyer_ledger(request: LedgerMergeRequest) -> dict:
+@app.post(
+    "/ledger/merge",
+    operation_id="mergeBuyerLedger",
+    dependencies=[Depends(require_action_key)],
+    response_model=LedgerMergeResponse,
+)
+async def merge_buyer_ledger(request: LedgerMergeRequest) -> LedgerMergeResponse:
     """Append and deduplicate source-bound evidence, shipment records, and contacts after current research."""
     try:
         return await service.merge(request)
@@ -98,8 +115,13 @@ async def merge_buyer_ledger(request: LedgerMergeRequest) -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/outreach/events", operation_id="recordOutreachEvent", dependencies=[Depends(require_action_key)])
-async def record_outreach_event(request: OutreachEvent) -> dict:
+@app.post(
+    "/outreach/events",
+    operation_id="recordOutreachEvent",
+    dependencies=[Depends(require_action_key)],
+    response_model=OutreachEventResponse,
+)
+async def record_outreach_event(request: OutreachEvent) -> OutreachEventResponse:
     """Record a sent, bounce, reply, CRM, or rating event only from user confirmation, an upload, or a connector receipt."""
     try:
         return await service.record_event(request)
@@ -109,7 +131,12 @@ async def record_outreach_event(request: OutreachEvent) -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/outreach/validate", operation_id="validateOutreachDraft", dependencies=[Depends(require_action_key)])
-async def validate_outreach_draft(request: OutreachValidationRequest) -> dict:
+@app.post(
+    "/outreach/validate",
+    operation_id="validateOutreachDraft",
+    dependencies=[Depends(require_action_key)],
+    response_model=OutreachValidationResponse,
+)
+async def validate_outreach_draft(request: OutreachValidationRequest) -> OutreachValidationResponse:
     """Apply the deterministic recipient-union and safety firewall before presenting a mailto draft link."""
     return validate_outreach(request)

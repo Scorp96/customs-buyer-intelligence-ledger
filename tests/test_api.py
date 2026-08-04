@@ -24,6 +24,15 @@ def test_health_and_openapi_contract():
         "validateOutreachDraft",
     }.issubset(operation_ids)
 
+    for path, methods in schema["paths"].items():
+        for method, operation in methods.items():
+            if method not in {"get", "post"}:
+                continue
+            response_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+            assert "$ref" in response_schema or response_schema.get("properties"), (
+                f"{method.upper()} {path} must expose a response model with named properties"
+            )
+
 
 def test_api_key_is_enforced_when_configured(monkeypatch):
     monkeypatch.setenv("ACTION_API_KEY", "test-secret")

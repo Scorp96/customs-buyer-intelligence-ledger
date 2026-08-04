@@ -209,3 +209,70 @@ class OutreachValidationRequest(StrictModel):
     time_plan: dict[str, Any] = Field(default_factory=dict)
     block_reasons: list[str] = Field(default_factory=list)
 
+
+class HealthResponse(StrictModel):
+    status: str
+    service: str
+    version: str
+    store_mode: str
+
+
+class LedgerMatch(StrictModel):
+    buyer_key: str
+    identity: BuyerIdentity
+    trade_count: int
+    email_count: int
+    evidence_count: int
+    history_event_count: int
+    last_updated: str | None = None
+    ledger_hash: str
+    ledger_record: Any
+
+
+class LedgerLookupResponse(StrictModel):
+    status: str
+    match_count: int
+    matches: list[LedgerMatch]
+    ledger_updated_at: str | None = None
+
+
+class LedgerCounts(StrictModel):
+    trade: int
+    email: int
+    evidence: int
+
+
+class LedgerMergeResponse(StrictModel):
+    status: str
+    created: bool
+    buyer_key: str
+    previous_counts: LedgerCounts
+    submitted_counts: LedgerCounts
+    added_counts: LedgerCounts
+    updated_counts: LedgerCounts
+    total_counts: LedgerCounts
+    warnings: list[str]
+    ledger_hash: str
+    ledger_updated_at: str | None = None
+
+
+class OutreachEventResponse(StrictModel):
+    status: str
+    buyer_key: str
+    event_key: str
+    ledger_hash: str
+    history_event_count: int
+
+
+class OutreachValidationResponse(StrictModel):
+    status: str
+    to: str
+    sendable_recipient_union: list[str]
+    subject: str
+    body: str
+    chinese_translation: str
+    mailto_url: str | None = None
+    block_reasons: list[str]
+    time_plan: Any
+    manual_rule: str
+
