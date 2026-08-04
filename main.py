@@ -53,8 +53,10 @@ def require_action_key(x_action_key: str | None = Security(action_key_header)) -
         return
     if not expected:
         raise HTTPException(status_code=503, detail="ACTION_API_KEY is not configured")
-    if not x_action_key or not hmac.compare_digest(x_action_key, expected):
-        raise HTTPException(status_code=401, detail="invalid action key")
+    if not x_action_key:
+        raise HTTPException(status_code=401, detail="missing X-Action-Key header")
+    if not hmac.compare_digest(x_action_key, expected):
+        raise HTTPException(status_code=401, detail="X-Action-Key value does not match ACTION_API_KEY")
 
 
 @app.get("/health", operation_id="getHealth", response_model=HealthResponse)

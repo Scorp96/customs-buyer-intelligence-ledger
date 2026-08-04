@@ -39,6 +39,11 @@ def test_api_key_is_enforced_when_configured(monkeypatch):
     monkeypatch.setenv("STORE_MODE", "local")
     client = TestClient(app)
     payload = {"legal_or_customs_name": "Example Buyer", "country": "Uganda", "aliases": []}
-    assert client.post("/ledger/lookup", json=payload).status_code == 401
-    assert client.post("/ledger/lookup", json=payload, headers={"X-Action-Key": "wrong"}).status_code == 401
+    missing = client.post("/ledger/lookup", json=payload)
+    assert missing.status_code == 401
+    assert missing.json()["detail"] == "missing X-Action-Key header"
+
+    mismatch = client.post("/ledger/lookup", json=payload, headers={"X-Action-Key": "wrong"})
+    assert mismatch.status_code == 401
+    assert mismatch.json()["detail"] == "X-Action-Key value does not match ACTION_API_KEY"
     assert client.post("/ledger/lookup", json=payload, headers={"X-Action-Key": "test-secret"}).status_code == 200
