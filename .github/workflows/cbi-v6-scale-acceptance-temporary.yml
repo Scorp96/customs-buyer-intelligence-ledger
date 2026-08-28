@@ -1,0 +1,31 @@
+name: CBI v6 exact scale acceptance temporary
+
+on:
+  push:
+    branches:
+      - cbi-v6-scale-20260828
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v6-scale-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  exact-scale:
+    name: 5k accounts 1k investigations 100k evidence 100k attempts 20k peers
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run exact v6 production scalability target
+        run: python scripts/run_v6_load_acceptance.py --profile scale
