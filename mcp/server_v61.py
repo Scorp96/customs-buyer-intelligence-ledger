@@ -105,8 +105,12 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _journal_path() -> Path:
+    return _server.RUNTIME.store.root.parent / "mcp-idempotency-v61"
+
+
 def _journal_root() -> Path:
-    root = _server.RUNTIME.store.root.parent / "mcp-idempotency-v61"
+    root = _journal_path()
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -151,6 +155,42 @@ def _atomic_json_write(path: Path, value: dict[str, Any]) -> None:
         os.close(descriptor)
     os.replace(temporary, path)
     _fsync_directory(path.parent)
+
+
+def _journal_status() -> dict[str, Any]:
+    root = _journal_path()
+    counts = {"PREPARED": 0, "COMMITTED": 0, "COMMITTED_ERROR": 0, "INVALID": 0}
+    prepared: list[dict[str, Any]] = []
+    if root.is_dir():
+        for path in sorted(root.glob("*.json")):
+            try:
+                row = json.loads(path.read_text(encoding="utf-8"))
+                raw_status = str(row.get("status") or "").upper()
+                if not raw_status and isinstance(row.get("result"), dict):
+                    raw_status = "COMMITTED"
+                if raw_status not in counts:
+                    counts["INVALID"] += 1
+                    continue
+                counts[raw_status] += 1
+                if raw_status == "PREPARED":
+                    prepared.append({
+                        "tool": str(row.get("tool") or ""),
+                        "request_sha256": str(row.get("request_sha256") or ""),
+                        "state_version_before": int(row.get("state_version_before") or 0),
+                        "prepared_at": str(row.get("prepared_at") or ""),
+                    })
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                counts["INVALID"] += 1
+    return {
+        "schema": "cbi.mutation-wal-health.v6.1",
+        "prepared_count": counts["PREPARED"],
+        "committed_count": counts["COMMITTED"],
+        "committed_error_count": counts["COMMITTED_ERROR"],
+        "invalid_count": counts["INVALID"],
+        "reconciliation_required": counts["PREPARED"] > 0 or counts["INVALID"] > 0,
+        "prepared_intents": prepared,
+        "automatic_reexecution_of_prepared": False,
+    }
 
 
 def _normalize_start_contract(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -306,6 +346,33 @@ def _wrap_handler(
     return wrapped
 
 
+def _contract_with_adapter_wal(arguments: dict[str, Any]) -> dict[str, Any]:
+    contract = copy.deepcopy(_ORIGINAL_HANDLERS["get_runtime_contract"](arguments))
+    contract["production_adapter_mutation_wal"] = {
+        "schema": _WAL_SCHEMA,
+        "write_ahead_intent_required": True,
+        "terminal_states": ["COMMITTED", "COMMITTED_ERROR"],
+        "indeterminate_state": "PREPARED",
+        "prepared_auto_replay": False,
+        "prepared_retry_result": "MUTATION_RECONCILIATION_REQUIRED",
+        "reason": (
+            "A crash may occur after the underlying mutation commits but before the adapter terminal receipt is durable. "
+            "PREPARED therefore fails closed until mutation-family-specific reconciliation proves the outcome."
+        ),
+        "exact_automatic_reconciliation_complete": False,
+    }
+    return contract
+
+
+def _health_with_adapter_wal(arguments: dict[str, Any]) -> dict[str, Any]:
+    health = copy.deepcopy(_ORIGINAL_HANDLERS["get_runtime_health"](arguments))
+    wal = _journal_status()
+    health["mutation_wal"] = wal
+    if wal["reconciliation_required"]:
+        health["status"] = "DEGRADED_RECONCILIATION_REQUIRED"
+    return health
+
+
 def hardened_tool_descriptors() -> list[dict[str, Any]]:
     tools = _ORIGINAL_TOOL_DESCRIPTORS()
     for tool in tools:
@@ -350,6 +417,12 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
             )
             if isinstance(freshness, dict):
                 freshness["enum"] = list(_PRODUCTION_FRESHNESS)
+
+        if name == "get_runtime_health":
+            tool["description"] = (
+                str(tool.get("description") or "")
+                + " Also reports production-adapter mutation WAL status and unresolved PREPARED intents."
+            )
 
         if name == "get_portfolio_queue":
             properties["include_non_active"] = {
@@ -423,6 +496,10 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
                     ),
                 },
             )
+            tool["description"] = (
+                str(tool.get("description") or "")
+                + " Production mutations use a durable write-ahead idempotency intent; an unresolved PREPARED intent fails closed with MUTATION_RECONCILIATION_REQUIRED rather than auto-reexecuting."
+            )
 
         if name in _LEGACY_COMPATIBILITY_TOOLS:
             tool["description"] = "[LEGACY_COMPATIBILITY_ONLY] " + str(
@@ -434,6 +511,8 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
 # Patch only the adapter-facing descriptor/handler tables. The original module
 # remains importable for compatibility regression tests and migration tooling.
 _server.tool_descriptors = hardened_tool_descriptors
+_server.TOOL_HANDLERS["get_runtime_contract"] = _contract_with_adapter_wal
+_server.TOOL_HANDLERS["get_runtime_health"] = _health_with_adapter_wal
 for _name in _MUTATING_TOOLS:
     if _name in _ORIGINAL_HANDLERS:
         _server.TOOL_HANDLERS[_name] = _wrap_handler(
