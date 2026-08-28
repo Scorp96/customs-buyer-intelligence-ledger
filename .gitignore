@@ -18,6 +18,11 @@ env/
 *.pem
 *.key
 
+# Private production acceptance inputs/results
+.cbi-private-golden*.json
+private-golden/
+private-acceptance/
+
 # Logs / temporary files
 *.log
 *.tmp
