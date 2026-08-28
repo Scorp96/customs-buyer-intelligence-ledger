@@ -28,6 +28,41 @@ class V61ContractHardeningTests(unittest.TestCase):
         })
         self.investigation_id = started["investigation_id"]
 
+    def observation(
+        self,
+        claim_key: str,
+        suffix: str,
+        *,
+        value: object | None = None,
+        pivots: list[dict] | None = None,
+    ) -> dict:
+        return {
+            "claim_key": claim_key,
+            "result": "POSITIVE",
+            "owner_type": "ACCOUNT",
+            "owner_id": "C-HARDEN-SYNTH",
+            "value": value if value is not None else {"fixture": suffix},
+            "source": {
+                "source_family": "synthetic_official",
+                "source_type": "OFFICIAL",
+                "reference_type": "PUBLIC_URL",
+                "url": f"https://example.invalid/hardening/{suffix}",
+                "locator": f"https://example.invalid/hardening/{suffix}#record",
+                "raw_excerpt": f"Synthetic hardening fixture {suffix}",
+                "authority_level": "A1_OFFICIAL_PRIMARY",
+                "freshness": "CURRENT_CONFIRMED",
+                "observed_at": "2026-08-28T00:00:00Z",
+            },
+            "boundary": "Synthetic test fixture only; no live-company fact is asserted.",
+            "pivots": pivots or [],
+        }
+
+    def compile(self, observations: list[dict], bundle_id: str) -> dict:
+        return self.runtime.compile_and_append_research_bundle({
+            "investigation_id": self.investigation_id,
+            "bundle": {"bundle_id": bundle_id, "observations": observations},
+        })
+
     def test_complete_customs_party_and_freshness_vocabularies_are_exposed(self) -> None:
         required_roles = {
             "BUYER", "CONSIGNEE", "IMPORTER_OF_RECORD", "EXPORTER", "SHIPPER",
@@ -44,8 +79,19 @@ class V61ContractHardeningTests(unittest.TestCase):
         self.assertTrue(required_roles <= set(contract["enums"]["supply_chain_party_role"]))
         self.assertIn("CURRENT_CONFIRMED", contract["enums"]["freshness"])
         self.assertEqual(
+            set(contract["enums"]["pivot_state"]),
+            {
+                "OPEN_MATERIAL", "OPEN_OPTIONAL", "CONSUMED", "DUPLICATE",
+                "LOW_VALUE", "BLOCKED", "EXHAUSTED",
+            },
+        )
+        self.assertEqual(
             contract["production_contract_hardening"]["production_closure_strategy"],
             "DECISION_SATURATION",
+        )
+        self.assertEqual(
+            contract["production_contract_hardening"]["pivot_blocking_state"],
+            "OPEN_MATERIAL",
         )
 
     def test_resume_returns_structured_last_safe_state(self) -> None:
@@ -76,6 +122,132 @@ class V61ContractHardeningTests(unittest.TestCase):
         self.assertEqual(state["contacts"], [])
         self.assertEqual(state["routes"], [])
         self.assertEqual(state["conflicts"], [])
+
+    def test_information_route_updates_primary_outreach_readiness(self) -> None:
+        self.compile(
+            [self.observation("identity.legal_entity", "identity-route")],
+            "BUNDLE-HARDEN-IDENTITY-ROUTE",
+        )
+        self.runtime.store.append(
+            self.investigation_id,
+            "INFORMATION_RECORD_APPENDED",
+            {
+                "record": {
+                    "information_id": "INFO-HARDEN-ROUTE-001",
+                    "information_type": "ROUTE",
+                    "subject_type": "ACCOUNT",
+                    "subject_owner_id": "C-HARDEN-SYNTH",
+                    "route_scope": "BUYER_DIRECT",
+                    "temporal_status": "CURRENT_CONFIRMED",
+                    "outreach_eligible_effective": True,
+                    "value": {
+                        "channel": "EMAIL",
+                        "value": "buyer@example.invalid",
+                        "verified": True,
+                        "masked": False,
+                        "guessed": False,
+                    },
+                    "evidence_ids": ["EVD-HARDEN-HISTORICAL-ROUTE"],
+                    "source_url": "https://example.invalid/hardening/contact",
+                    "source_locator": "https://example.invalid/hardening/contact#route",
+                    "conflicts_with_information_ids": [],
+                }
+            },
+        )
+        readiness = self.runtime.evaluate_outreach_readiness({
+            "investigation_id": self.investigation_id,
+        })
+        self.assertEqual(readiness["outreach_readiness"], "COMPANY_ROUTE_READY")
+        self.assertEqual(readiness["readiness"], "COMPANY_ROUTE_READY")
+        self.assertIn("INFO-HARDEN-ROUTE-001", readiness["valid_information_route_ids"])
+        self.assertIn("INFORMATION_RECORD", readiness["canonical_route_sources"])
+        state = self.runtime.get_account_state({"investigation_id": self.investigation_id})
+        self.assertEqual(state["outreach_readiness"]["outreach_readiness"], "COMPANY_ROUTE_READY")
+        self.assertEqual(state["routes"][0]["information_id"], "INFO-HARDEN-ROUTE-001")
+
+    def test_pivot_seven_state_view_and_only_open_material_blocks(self) -> None:
+        self.compile(
+            [
+                self.observation(
+                    "identity.legal_entity",
+                    "pivot-material",
+                    pivots=[{
+                        "type": "ALIAS",
+                        "value": "Synthetic Material Alias",
+                        "materiality": "MATERIAL",
+                        "estimated_eiv": 9.0,
+                    }],
+                ),
+                self.observation(
+                    "product.fit",
+                    "pivot-optional",
+                    pivots=[{
+                        "type": "APPLICATION",
+                        "value": "Synthetic Low Value Application",
+                        "materiality": "OPTIONAL",
+                        "estimated_eiv": 0.01,
+                    }],
+                ),
+            ],
+            "BUNDLE-HARDEN-PIVOT-STATES",
+        )
+        state = self.runtime._v6_state(self.investigation_id)
+        statuses = {pivot["pivot_value"]: pivot["status"] for pivot in state["pivots"].values()}
+        self.assertEqual(statuses["Synthetic Material Alias"], "OPEN_MATERIAL")
+        self.assertEqual(statuses["Synthetic Low Value Application"], "OPEN_OPTIONAL")
+
+        material = self.runtime.get_material_pivots({"investigation_id": self.investigation_id})
+        self.assertEqual(material["count"], 1)
+        pivot = material["material_pivots"][0]
+        objective = self.runtime.submit_research_objective({
+            "investigation_id": self.investigation_id,
+            "objective": {
+                "claim_key": "identity.legal_entity",
+                "query_or_navigation": "Synthetic Material Alias official registry",
+                "source_family": "official_registry",
+            },
+        })
+        closed = self.runtime.close_pivot({
+            "investigation_id": self.investigation_id,
+            "pivot_id": pivot["pivot_id"],
+            "status": "CONSUMED",
+            "reason": "Consumed by a later independent objective using the exact alias.",
+            "consumed_by_objective_id": objective["objective_id"],
+        })
+        self.assertEqual(closed["status"], "CONSUMED")
+        material = self.runtime.get_material_pivots({"investigation_id": self.investigation_id})
+        self.assertEqual(material["count"], 0)
+
+    def test_blocked_pivot_is_terminal_but_not_decision_saturation_blocker(self) -> None:
+        self.compile(
+            [
+                self.observation(
+                    "identity.legal_entity",
+                    "pivot-blocked",
+                    pivots=[{
+                        "type": "REGISTRY",
+                        "value": "Synthetic Blocked Registry Pivot",
+                        "materiality": "MATERIAL",
+                        "estimated_eiv": 5.0,
+                    }],
+                )
+            ],
+            "BUNDLE-HARDEN-PIVOT-BLOCKED",
+        )
+        pivot = self.runtime.get_material_pivots({
+            "investigation_id": self.investigation_id,
+        })["material_pivots"][0]
+        closed = self.runtime.close_pivot({
+            "investigation_id": self.investigation_id,
+            "pivot_id": pivot["pivot_id"],
+            "status": "BLOCKED",
+            "reason": "Registry access is unavailable and no alternate authority route is currently available.",
+        })
+        self.assertEqual(closed["status"], "BLOCKED")
+        self.assertEqual(
+            self.runtime.get_material_pivots({"investigation_id": self.investigation_id})["count"],
+            0,
+        )
 
 
 if __name__ == "__main__":
