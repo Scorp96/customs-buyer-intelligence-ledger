@@ -91,6 +91,7 @@ _ORIGINAL_HANDLERS = dict(_server.TOOL_HANDLERS)
 _WAL_SCHEMA = "cbi.mutation-wal.v6.1"
 _TEST_CRASH_AFTER_HANDLER_ENV = "CBI_V61_TEST_CRASH_AFTER_HANDLER"
 _AUTOMATIC_RECONCILIATION_TOOLS = {
+    "queue_host_bundle",
     "resolve_or_create_account",
     "submit_research_objective",
 }
@@ -240,27 +241,46 @@ def _canonical_candidate_material(args: dict[str, Any]) -> tuple[dict[str, Any],
 
 
 def _prepare_resource_snapshot(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
-    if tool_name != "resolve_or_create_account":
-        return {}
-    material = _canonical_candidate_material(args)
-    if material is None:
-        return {}
-    candidate, requested_account_id, create_if_missing = material
-    registry = _server.RUNTIME.canonical_registry
-    events = registry.log.read()
-    resolution_before = registry.resolve(
-        candidate,
-        requested_account_id=requested_account_id,
-    )
-    return {
-        "kind": "CANONICAL_ACCOUNT_REGISTRY",
-        "registry_seq_before": len(events),
-        "registry_tail_hash_before": events[-1]["event_hash"] if events else "0" * 64,
-        "candidate_sha256": _digest(candidate),
-        "requested_account_id": requested_account_id,
-        "create_if_missing": create_if_missing,
-        "resolution_before": resolution_before,
-    }
+    if tool_name == "resolve_or_create_account":
+        material = _canonical_candidate_material(args)
+        if material is None:
+            return {}
+        candidate, requested_account_id, create_if_missing = material
+        registry = _server.RUNTIME.canonical_registry
+        events = registry.log.read()
+        resolution_before = registry.resolve(
+            candidate,
+            requested_account_id=requested_account_id,
+        )
+        return {
+            "kind": "CANONICAL_ACCOUNT_REGISTRY",
+            "registry_seq_before": len(events),
+            "registry_tail_hash_before": events[-1]["event_hash"] if events else "0" * 64,
+            "candidate_sha256": _digest(candidate),
+            "requested_account_id": requested_account_id,
+            "create_if_missing": create_if_missing,
+            "resolution_before": resolution_before,
+        }
+    if tool_name == "queue_host_bundle":
+        payload = args.get("payload")
+        if not isinstance(payload, dict):
+            return {}
+        request_sha256 = _digest(payload)
+        queue = _server.RUNTIME._v6_queue()
+        prior = next(
+            (
+                row
+                for row in queue.entries()
+                if str(row.get("request_sha256") or "") == request_sha256
+            ),
+            None,
+        )
+        return {
+            "kind": "HOST_BUNDLE_QUEUE",
+            "request_sha256": request_sha256,
+            "matching_entry_before": copy.deepcopy(prior),
+        }
+    return {}
 
 
 def _commit_receipt(
@@ -387,6 +407,60 @@ def _reconcile_canonical_account(
     return result
 
 
+def _reconcile_host_bundle_queue(
+    args: dict[str, Any],
+    stored: dict[str, Any],
+    request_hash: str,
+    path: Path,
+) -> dict[str, Any] | None:
+    snapshot = stored.get("resource_snapshot_before")
+    payload = args.get("payload")
+    if not isinstance(snapshot, dict) or snapshot.get("kind") != "HOST_BUNDLE_QUEUE" or not isinstance(payload, dict):
+        return None
+    payload_hash = _digest(payload)
+    if snapshot.get("request_sha256") != payload_hash:
+        return None
+    prior = snapshot.get("matching_entry_before")
+    if isinstance(prior, dict):
+        raw_result = {
+            **copy.deepcopy(prior),
+            "queued": False,
+            "deduplicated": True,
+        }
+        proof = "PREPARED_PRIOR_HOST_QUEUE_REQUEST_HASH_MATCH"
+    else:
+        queue = _server.RUNTIME._v6_queue()
+        current = [
+            row
+            for row in queue.entries()
+            if str(row.get("request_sha256") or "") == payload_hash
+        ]
+        if len(current) != 1:
+            return None
+        row = current[0]
+        raw_result = {
+            "bundle_queue_id": row["bundle_queue_id"],
+            "request_sha256": row["request_sha256"],
+            "status": row["status"],
+            "queued": True,
+            "deduplicated": False,
+            "path": row["path"],
+        }
+        proof = "HOST_QUEUE_REQUEST_HASH_PERSISTED_AFTER_PREPARED"
+    result = {
+        **raw_result,
+        "mutation_meta": _reconciled_meta(
+            "queue_host_bundle",
+            stored,
+            request_hash,
+            0,
+            proof,
+        ),
+    }
+    _commit_receipt(path, stored, result, 0)
+    return result
+
+
 def _reconcile_research_objective(
     args: dict[str, Any],
     stored: dict[str, Any],
@@ -452,6 +526,8 @@ def _reconcile_prepared(
 ) -> dict[str, Any] | None:
     if tool_name == "resolve_or_create_account":
         return _reconcile_canonical_account(args, stored, request_hash, path)
+    if tool_name == "queue_host_bundle":
+        return _reconcile_host_bundle_queue(args, stored, request_hash, path)
     if tool_name == "submit_research_objective":
         return _reconcile_research_objective(args, stored, request_hash, path)
     return None
