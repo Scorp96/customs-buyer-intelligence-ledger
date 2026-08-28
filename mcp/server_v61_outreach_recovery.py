@@ -178,12 +178,15 @@ def _append_with_render_snapshot(
 
 
 def _render_runtime_handler(arguments: dict[str, Any]) -> dict[str, Any]:
-    investigation_id = str(arguments.get("investigation_id") or "").strip()
+    runtime_args = copy.deepcopy(arguments)
+    runtime_args.pop("idempotency_key", None)
+    runtime_args.pop("expected_state_version", None)
+    investigation_id = str(runtime_args.get("investigation_id") or "").strip()
     if not investigation_id:
-        return _BASE_RENDER_HANDLER(arguments)
+        return _BASE_RENDER_HANDLER(runtime_args)
     lock = _RUNTIME.store.root / f".{investigation_id}.v6-mutation.lock"
     with exclusive_file_lock(lock, timeout_seconds=60.0):
-        return _BASE_RENDER_HANDLER(arguments)
+        return _BASE_RENDER_HANDLER(runtime_args)
 
 
 def _render_mcp_handler(arguments: dict[str, Any]) -> dict[str, Any]:
