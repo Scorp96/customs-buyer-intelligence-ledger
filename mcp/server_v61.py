@@ -10,9 +10,8 @@ state-version guards.
 The adapter journal is write-ahead. A PREPARED intent is durably written before
 a mutation handler executes. If the process dies after the handler commits but
 before the terminal receipt is written, a retry fails closed instead of blindly
-executing the mutation a second time. Exact automatic reconciliation still
-requires mutation-family-specific proof; the adapter never guesses that an
-indeterminate mutation is safe to replay.
+executing the mutation a second time unless mutation-family-specific durable
+state can mechanically prove and reconstruct the original result.
 """
 
 from __future__ import annotations
@@ -91,6 +90,7 @@ _ORIGINAL_TOOL_DESCRIPTORS = _server.tool_descriptors
 _ORIGINAL_HANDLERS = dict(_server.TOOL_HANDLERS)
 _WAL_SCHEMA = "cbi.mutation-wal.v6.1"
 _TEST_CRASH_AFTER_HANDLER_ENV = "CBI_V61_TEST_CRASH_AFTER_HANDLER"
+_AUTOMATIC_RECONCILIATION_TOOLS = {"submit_research_objective"}
 
 
 def _canonical(value: Any) -> str:
@@ -178,6 +178,7 @@ def _journal_status() -> dict[str, Any]:
                         "request_sha256": str(row.get("request_sha256") or ""),
                         "state_version_before": int(row.get("state_version_before") or 0),
                         "prepared_at": str(row.get("prepared_at") or ""),
+                        "automatic_reconciliation_supported": str(row.get("tool") or "") in _AUTOMATIC_RECONCILIATION_TOOLS,
                     })
             except (OSError, ValueError, TypeError, json.JSONDecodeError):
                 counts["INVALID"] += 1
@@ -189,7 +190,8 @@ def _journal_status() -> dict[str, Any]:
         "invalid_count": counts["INVALID"],
         "reconciliation_required": counts["PREPARED"] > 0 or counts["INVALID"] > 0,
         "prepared_intents": prepared,
-        "automatic_reexecution_of_prepared": False,
+        "automatic_reexecution_of_unproven_prepared": False,
+        "automatic_reconciliation_tools": sorted(_AUTOMATIC_RECONCILIATION_TOOLS),
     }
 
 
@@ -217,6 +219,98 @@ def _validated_expected_version(expected: Any, before: int) -> None:
         raise ValidationError(f"STATE_VERSION_CONFLICT expected={expected_int} current={before}")
 
 
+def _commit_receipt(
+    path: Path,
+    prepared: dict[str, Any],
+    result: dict[str, Any],
+    after: int,
+) -> None:
+    _atomic_json_write(
+        path,
+        {
+            **prepared,
+            "status": "COMMITTED",
+            "completed_at": _utc_now(),
+            "state_version_after": after,
+            "result_sha256": _digest(result),
+            "result": result,
+        },
+    )
+
+
+def _reconcile_research_objective(
+    args: dict[str, Any],
+    stored: dict[str, Any],
+    request_hash: str,
+    path: Path,
+) -> dict[str, Any] | None:
+    investigation_id = str(args.get("investigation_id") or "").strip()
+    raw = args.get("objective")
+    if not investigation_id or not isinstance(raw, dict):
+        return None
+    try:
+        state = _server.RUNTIME._v6_state(investigation_id)
+    except Exception:
+        return None
+
+    objective_id = str(raw.get("objective_id") or "").strip()
+    if not objective_id:
+        objective_id = f"OBJ-{_digest({'investigation_id': investigation_id, **raw})[:16]}"
+    record = state.get("objectives", {}).get(objective_id)
+    if not isinstance(record, dict) or record.get("input_sha256") != _digest(raw):
+        return None
+
+    event_seq = int(record.get("_event_seq") or 0)
+    before = int(stored.get("state_version_before") or 0)
+    if event_seq <= 0:
+        return None
+    if event_seq <= before:
+        raw_result = {
+            "accepted": True,
+            "deduplicated": True,
+            "objective_id": objective_id,
+        }
+        after = before
+    else:
+        payload = {key: value for key, value in record.items() if not str(key).startswith("_")}
+        raw_result = {
+            "accepted": True,
+            "deduplicated": False,
+            **payload,
+        }
+        after = event_seq
+
+    result = {
+        **raw_result,
+        "mutation_meta": {
+            "schema": "cbi.mutation-meta.v6.1",
+            "tool": "submit_research_objective",
+            "idempotency_key": str(stored.get("idempotency_key") or ""),
+            "request_sha256": request_hash,
+            "state_version_before": before,
+            "state_version_after": after,
+            "replayed": True,
+            "write_ahead_intent": True,
+            "reconciled_after_crash": True,
+            "reconciliation_proof": "OBJECTIVE_ID_INPUT_HASH_AND_EVENT_SEQ",
+        },
+    }
+    _commit_receipt(path, stored, result, after)
+    return result
+
+
+def _reconcile_prepared(
+    tool_name: str,
+    args: dict[str, Any],
+    stored: dict[str, Any],
+    request_hash: str,
+    path: Path,
+) -> dict[str, Any] | None:
+    if tool_name == "submit_research_objective":
+        return _reconcile_research_objective(args, stored, request_hash, path)
+    return None
+
+
 def _stored_terminal_result(stored: dict[str, Any], request_hash: str) -> dict[str, Any] | None:
     if stored.get("request_sha256") != request_hash:
         raise ValidationError(
@@ -232,9 +326,7 @@ def _stored_terminal_result(stored: dict[str, Any], request_hash: str) -> dict[s
         message = str(error.get("message") or "stored mutation error")
         raise ValidationError(f"IDEMPOTENT_REPLAY_ERROR: {message}")
     if status == "PREPARED":
-        raise ValidationError(
-            "MUTATION_RECONCILIATION_REQUIRED: prior attempt has a durable PREPARED intent without a terminal receipt; automatic re-execution is blocked to prevent duplicate mutation"
-        )
+        return None
     raise ValidationError("IDEMPOTENCY_JOURNAL_INVALID_STATE")
 
 
@@ -266,12 +358,24 @@ def _invoke_mutation(
 
     with exclusive_file_lock(lock, timeout_seconds=60.0):
         # A terminal receipt always wins over a stale optimistic-concurrency
-        # precondition. An unresolved PREPARED intent never auto-reexecutes.
+        # precondition. A PREPARED intent is reconciled only with durable proof.
         if path.exists():
             stored = json.loads(path.read_text(encoding="utf-8"))
             terminal = _stored_terminal_result(stored, request_hash)
             if terminal is not None:
                 return terminal
+            reconciled = _reconcile_prepared(
+                tool_name,
+                args,
+                stored,
+                request_hash,
+                path,
+            )
+            if reconciled is not None:
+                return reconciled
+            raise ValidationError(
+                "MUTATION_RECONCILIATION_REQUIRED: prior attempt has a durable PREPARED intent without a terminal receipt and its mutation family cannot yet be mechanically reconciled; automatic re-execution is blocked to prevent duplicate mutation"
+            )
 
         before = _state_version(args)
         _validated_expected_version(expected, before)
@@ -322,17 +426,7 @@ def _invoke_mutation(
         if os.environ.get(_TEST_CRASH_AFTER_HANDLER_ENV) == tool_name:
             os._exit(91)
 
-        _atomic_json_write(
-            path,
-            {
-                **prepared,
-                "status": "COMMITTED",
-                "completed_at": _utc_now(),
-                "state_version_after": after,
-                "result_sha256": _digest(result),
-                "result": result,
-            },
-        )
+        _commit_receipt(path, prepared, result, after)
         return result
 
 
@@ -353,12 +447,10 @@ def _contract_with_adapter_wal(arguments: dict[str, Any]) -> dict[str, Any]:
         "write_ahead_intent_required": True,
         "terminal_states": ["COMMITTED", "COMMITTED_ERROR"],
         "indeterminate_state": "PREPARED",
-        "prepared_auto_replay": False,
-        "prepared_retry_result": "MUTATION_RECONCILIATION_REQUIRED",
-        "reason": (
-            "A crash may occur after the underlying mutation commits but before the adapter terminal receipt is durable. "
-            "PREPARED therefore fails closed until mutation-family-specific reconciliation proves the outcome."
-        ),
+        "prepared_auto_replay_without_proof": False,
+        "prepared_unproven_retry_result": "MUTATION_RECONCILIATION_REQUIRED",
+        "automatic_reconciliation_tools": sorted(_AUTOMATIC_RECONCILIATION_TOOLS),
+        "automatic_reconciliation_requires_durable_proof": True,
         "exact_automatic_reconciliation_complete": False,
     }
     return contract
@@ -498,7 +590,7 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
             )
             tool["description"] = (
                 str(tool.get("description") or "")
-                + " Production mutations use a durable write-ahead idempotency intent; an unresolved PREPARED intent fails closed with MUTATION_RECONCILIATION_REQUIRED rather than auto-reexecuting."
+                + " Production mutations use a durable write-ahead idempotency intent; PREPARED recovery occurs only when durable mutation-family proof can reconstruct the result, otherwise the adapter fails closed."
             )
 
         if name in _LEGACY_COMPATIBILITY_TOOLS:
