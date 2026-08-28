@@ -117,21 +117,23 @@ def _normalize_start_contract(arguments: dict[str, Any]) -> dict[str, Any]:
     return args
 
 
+def _validated_expected_version(expected: Any, before: int) -> None:
+    if expected is None:
+        return
+    try:
+        expected_int = int(expected)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("expected_state_version must be an integer") from exc
+    if expected_int != before:
+        raise ValidationError(f"STATE_VERSION_CONFLICT expected={expected_int} current={before}")
+
+
 def _invoke_mutation(tool_name: str, handler: Callable[[dict[str, Any]], dict[str, Any]], arguments: dict[str, Any]) -> dict[str, Any]:
     args = copy.deepcopy(arguments)
     if tool_name == "start_investigation":
         args = _normalize_start_contract(args)
 
     expected = args.pop("expected_state_version", None)
-    before = _state_version(args)
-    if expected is not None:
-        try:
-            expected_int = int(expected)
-        except (TypeError, ValueError) as exc:
-            raise ValidationError("expected_state_version must be an integer") from exc
-        if expected_int != before:
-            raise ValidationError(f"STATE_VERSION_CONFLICT expected={expected_int} current={before}")
-
     key = str(args.get("idempotency_key") or "").strip()
     if key and not _KEY_RE.fullmatch(key):
         raise ValidationError("idempotency_key must be 8-160 characters using letters, digits, dot, underscore, colon or hyphen")
@@ -140,7 +142,7 @@ def _invoke_mutation(tool_name: str, handler: Callable[[dict[str, Any]], dict[st
     request_for_hash.pop("idempotency_key", None)
     request_hash = _digest({"tool": tool_name, "arguments": request_for_hash})
 
-    def execute() -> dict[str, Any]:
+    def execute(before: int) -> dict[str, Any]:
         result = handler(args)
         after = _state_version(args)
         return {
@@ -157,11 +159,16 @@ def _invoke_mutation(tool_name: str, handler: Callable[[dict[str, Any]], dict[st
         }
 
     if not key:
-        return execute()
+        before = _state_version(args)
+        _validated_expected_version(expected, before)
+        return execute(before)
 
     path = _idempotency_path(tool_name, key)
     lock = path.with_suffix(".lock")
     with exclusive_file_lock(lock, timeout_seconds=60.0):
+        # Idempotent replay takes precedence over a stale optimistic-concurrency
+        # precondition: once this exact key+request is durably committed, a
+        # retry must return the original result rather than re-evaluate state.
         if path.exists():
             stored = json.loads(path.read_text(encoding="utf-8"))
             if stored.get("request_sha256") != request_hash:
@@ -169,7 +176,9 @@ def _invoke_mutation(tool_name: str, handler: Callable[[dict[str, Any]], dict[st
             result = copy.deepcopy(stored["result"])
             result.setdefault("mutation_meta", {})["replayed"] = True
             return result
-        result = execute()
+        before = _state_version(args)
+        _validated_expected_version(expected, before)
+        result = execute(before)
         _atomic_json_write(path, {
             "schema": "cbi.mutation-receipt.v6.1",
             "tool": tool_name,
