@@ -129,6 +129,9 @@ class V61OutreachHardeningMixin:
             if self._route_matches_candidate(route, candidate, account_id)
         ]
         if not matching_routes:
+            # Keep the historical fail-closed reason code for downstream clients
+            # while also returning the more precise v6.1 Canonical Route blocker.
+            reasons.append("ROUTE_VALUE_OR_CHANNEL_NOT_BOUND_TO_EVIDENCE")
             reasons.append("ROUTE_NOT_BOUND_TO_CANONICAL_ROUTE_VIEW")
         if kind in {"WHATSAPP", "ZALO"} and not matching_routes:
             reasons.append(f"{kind}_CHANNEL_NOT_PROVEN")
