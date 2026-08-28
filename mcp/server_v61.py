@@ -90,7 +90,10 @@ _ORIGINAL_TOOL_DESCRIPTORS = _server.tool_descriptors
 _ORIGINAL_HANDLERS = dict(_server.TOOL_HANDLERS)
 _WAL_SCHEMA = "cbi.mutation-wal.v6.1"
 _TEST_CRASH_AFTER_HANDLER_ENV = "CBI_V61_TEST_CRASH_AFTER_HANDLER"
-_AUTOMATIC_RECONCILIATION_TOOLS = {"submit_research_objective"}
+_AUTOMATIC_RECONCILIATION_TOOLS = {
+    "resolve_or_create_account",
+    "submit_research_objective",
+}
 
 
 def _canonical(value: Any) -> str:
@@ -219,6 +222,47 @@ def _validated_expected_version(expected: Any, before: int) -> None:
         raise ValidationError(f"STATE_VERSION_CONFLICT expected={expected_int} current={before}")
 
 
+def _canonical_candidate_material(args: dict[str, Any]) -> tuple[dict[str, Any], str, bool] | None:
+    candidate = args.get("candidate") or args.get("account")
+    if not isinstance(candidate, dict):
+        return None
+    country = str(candidate.get("country") or "").strip()
+    if not country:
+        return None
+    normalized = {**candidate, "country": country}
+    requested_account_id = str(
+        args.get("requested_account_id") or candidate.get("account_id") or ""
+    ).strip()
+    create_if_missing = args.get("create_if_missing", True)
+    if not isinstance(create_if_missing, bool):
+        return None
+    return normalized, requested_account_id, create_if_missing
+
+
+def _prepare_resource_snapshot(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
+    if tool_name != "resolve_or_create_account":
+        return {}
+    material = _canonical_candidate_material(args)
+    if material is None:
+        return {}
+    candidate, requested_account_id, create_if_missing = material
+    registry = _server.RUNTIME.canonical_registry
+    events = registry.log.read()
+    resolution_before = registry.resolve(
+        candidate,
+        requested_account_id=requested_account_id,
+    )
+    return {
+        "kind": "CANONICAL_ACCOUNT_REGISTRY",
+        "registry_seq_before": len(events),
+        "registry_tail_hash_before": events[-1]["event_hash"] if events else "0" * 64,
+        "candidate_sha256": _digest(candidate),
+        "requested_account_id": requested_account_id,
+        "create_if_missing": create_if_missing,
+        "resolution_before": resolution_before,
+    }
+
+
 def _commit_receipt(
     path: Path,
     prepared: dict[str, Any],
@@ -236,6 +280,111 @@ def _commit_receipt(
             "result": result,
         },
     )
+
+
+def _reconciled_meta(
+    tool_name: str,
+    stored: dict[str, Any],
+    request_hash: str,
+    after: int,
+    proof: str,
+) -> dict[str, Any]:
+    return {
+        "schema": "cbi.mutation-meta.v6.1",
+        "tool": tool_name,
+        "idempotency_key": str(stored.get("idempotency_key") or ""),
+        "request_sha256": request_hash,
+        "state_version_before": int(stored.get("state_version_before") or 0),
+        "state_version_after": after,
+        "replayed": True,
+        "write_ahead_intent": True,
+        "reconciled_after_crash": True,
+        "reconciliation_proof": proof,
+    }
+
+
+def _reconcile_canonical_account(
+    args: dict[str, Any],
+    stored: dict[str, Any],
+    request_hash: str,
+    path: Path,
+) -> dict[str, Any] | None:
+    snapshot = stored.get("resource_snapshot_before")
+    material = _canonical_candidate_material(args)
+    if not isinstance(snapshot, dict) or snapshot.get("kind") != "CANONICAL_ACCOUNT_REGISTRY" or material is None:
+        return None
+    candidate, requested_account_id, create_if_missing = material
+    if snapshot.get("candidate_sha256") != _digest(candidate):
+        return None
+    if str(snapshot.get("requested_account_id") or "") != requested_account_id:
+        return None
+    if bool(snapshot.get("create_if_missing")) != create_if_missing:
+        return None
+
+    prior = snapshot.get("resolution_before")
+    if not isinstance(prior, dict):
+        return None
+    registry = _server.RUNTIME.canonical_registry
+    raw_result: dict[str, Any]
+    proof: str
+
+    if prior.get("status") != "NOT_FOUND" or not create_if_missing:
+        raw_result = {
+            **copy.deepcopy(prior),
+            "candidate_sha256": _digest(candidate),
+            "registry_path": str(registry.log.path),
+            "append_only": True,
+        }
+        proof = "PREPARED_PRIOR_CANONICAL_RESOLUTION"
+    else:
+        try:
+            seq_before = int(snapshot.get("registry_seq_before") or 0)
+            events = registry.log.read()
+        except Exception:
+            return None
+        current = registry.resolve(
+            candidate,
+            requested_account_id=requested_account_id,
+        )
+        if current.get("status") != "MATCHED" or not isinstance(current.get("match"), dict):
+            return None
+        account_id = str(current["match"].get("account_id") or "")
+        created = [
+            event
+            for event in events
+            if int(event.get("seq") or 0) > seq_before
+            and event.get("event_type") == "CANONICAL_ACCOUNT_CREATED"
+            and str((event.get("payload") or {}).get("account_id") or "") == account_id
+        ]
+        if len(created) != 1:
+            return None
+        raw_result = {
+            "status": "CREATED",
+            "match": {
+                "account_id": account_id,
+                "score": 100,
+                "reasons": ["ATOMIC_ALLOCATION"],
+                "origin": "CANONICAL_REGISTRY",
+            },
+            "candidates": [],
+            "candidate_sha256": _digest(candidate),
+            "registry_path": str(registry.log.path),
+            "append_only": True,
+        }
+        proof = "CANONICAL_ACCOUNT_CREATED_AFTER_PREPARED_REGISTRY_TAIL"
+
+    result = {
+        **raw_result,
+        "mutation_meta": _reconciled_meta(
+            "resolve_or_create_account",
+            stored,
+            request_hash,
+            0,
+            proof,
+        ),
+    }
+    _commit_receipt(path, stored, result, 0)
+    return result
 
 
 def _reconcile_research_objective(
@@ -282,18 +431,13 @@ def _reconcile_research_objective(
 
     result = {
         **raw_result,
-        "mutation_meta": {
-            "schema": "cbi.mutation-meta.v6.1",
-            "tool": "submit_research_objective",
-            "idempotency_key": str(stored.get("idempotency_key") or ""),
-            "request_sha256": request_hash,
-            "state_version_before": before,
-            "state_version_after": after,
-            "replayed": True,
-            "write_ahead_intent": True,
-            "reconciled_after_crash": True,
-            "reconciliation_proof": "OBJECTIVE_ID_INPUT_HASH_AND_EVENT_SEQ",
-        },
+        "mutation_meta": _reconciled_meta(
+            "submit_research_objective",
+            stored,
+            request_hash,
+            after,
+            "OBJECTIVE_ID_INPUT_HASH_AND_EVENT_SEQ",
+        ),
     }
     _commit_receipt(path, stored, result, after)
     return result
@@ -306,6 +450,8 @@ def _reconcile_prepared(
     request_hash: str,
     path: Path,
 ) -> dict[str, Any] | None:
+    if tool_name == "resolve_or_create_account":
+        return _reconcile_canonical_account(args, stored, request_hash, path)
     if tool_name == "submit_research_objective":
         return _reconcile_research_objective(args, stored, request_hash, path)
     return None
@@ -388,6 +534,9 @@ def _invoke_mutation(
             "state_version_before": before,
             "prepared_at": _utc_now(),
         }
+        resource_snapshot = _prepare_resource_snapshot(tool_name, args)
+        if resource_snapshot:
+            prepared["resource_snapshot_before"] = resource_snapshot
         _atomic_json_write(path, prepared)
 
         try:
