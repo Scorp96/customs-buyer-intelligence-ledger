@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Production v6.1 MCP entrypoint with mechanically proven start recovery.
+"""Production v6.1 MCP entrypoint with mechanically proven crash recovery.
 
 The stable :mod:`mcp.server_v61` adapter owns the general write-ahead WAL.
-This thin entry layer adds one mutation-family proof that is deliberately kept
-separate from the already-regression-stable core: ``start_investigation``.
+This thin entry layer adds mutation-family proofs that are deliberately kept
+separate from the already-regression-stable core.
 
-A PREPARED start is reconciled only when the durable session headers prove that
-exactly one investigation carries the same native ``start_idempotency_key``.
-The underlying runtime is then invoked only to reconstruct its response; its own
-start-key lookup must return that exact investigation. Ambiguous or missing
-proof remains fail-closed.
+A PREPARED mutation is reconciled only when durable state can identify the
+original side effect unambiguously. Missing or ambiguous proof remains
+fail-closed; this module never turns uncertainty into a replay.
 """
 
 from __future__ import annotations
@@ -29,6 +27,7 @@ from mcp import server_v61 as _v61  # noqa: E402
 _BASE_PREPARE_RESOURCE_SNAPSHOT = _v61._prepare_resource_snapshot
 _BASE_RECONCILE_PREPARED = _v61._reconcile_prepared
 _START_PROOF = "START_IDEMPOTENCY_KEY_AND_SESSION_HEADER"
+_INFORMATION_PROOF = "INFORMATION_ID_CONTENT_HASH_AND_EVENT_SEQ"
 
 
 def _matching_start_sessions(idempotency_key: str) -> list[dict[str, Any]]:
@@ -91,8 +90,6 @@ def _reconcile_start_investigation(
     if not isinstance(before_ids_raw, list):
         return None
     before_ids = {str(value) for value in before_ids_raw if str(value)}
-    # More than one pre-existing session with one start key is itself a durable
-    # integrity violation; never choose one by recency or filename order.
     if len(before_ids) > 1:
         return None
 
@@ -101,9 +98,6 @@ def _reconcile_start_investigation(
         return None
     investigation_id = durable_matches[0]["investigation_id"]
 
-    # The original runtime has native durable start-key idempotency. Calling it
-    # here is response reconstruction, not blind replay: it must resolve the
-    # already-proven session and must not allocate another investigation.
     reconstructed = _v61._ORIGINAL_HANDLERS["start_investigation"](copy.deepcopy(args))
     if str(reconstructed.get("investigation_id") or "") != investigation_id:
         return None
@@ -112,9 +106,6 @@ def _reconcile_start_investigation(
         return None
 
     raw_result = copy.deepcopy(reconstructed)
-    # Reconstruct the original call's resume bit from the PREPARED snapshot:
-    # if this investigation existed before PREPARED, the crashed call resumed;
-    # otherwise it created the durable session that is now being proven.
     if "resumed_existing" in raw_result:
         raw_result["resumed_existing"] = investigation_id in before_ids
 
@@ -132,6 +123,113 @@ def _reconcile_start_investigation(
     return result
 
 
+def _information_events(
+    investigation_id: str,
+    information_id: str,
+) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], dict[str, Any]]]]:
+    try:
+        events = _v61._server.RUNTIME.store.read(investigation_id)
+    except Exception:
+        return [], []
+    matches: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for event in events:
+        if event.get("event_type") != "INFORMATION_RECORD_APPENDED":
+            continue
+        payload = event.get("payload")
+        record = payload.get("record") if isinstance(payload, dict) else None
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("information_id") or "") == information_id:
+            matches.append((event, record))
+    return events, matches
+
+
+def _reconcile_information_record(
+    args: dict[str, Any],
+    stored: dict[str, Any],
+    request_hash: str,
+    path: Path,
+) -> dict[str, Any] | None:
+    investigation_id = str(args.get("investigation_id") or "").strip()
+    raw = args.get("record")
+    if not investigation_id or not isinstance(raw, dict):
+        return None
+    information_id = str(raw.get("information_id") or "").strip()
+    content_sha256 = str(raw.get("content_sha256") or "").strip().lower()
+    if not information_id or not content_sha256:
+        return None
+
+    events, matches = _information_events(investigation_id, information_id)
+    if len(matches) != 1:
+        return None
+    event, record = matches[0]
+    event_seq = int(event.get("seq") or 0)
+    before = int(stored.get("state_version_before") or 0)
+    if event_seq <= before:
+        return None
+    if str(record.get("content_sha256") or "").lower() != content_sha256:
+        return None
+
+    # Bind the event to the caller's durable request using fields that the
+    # runtime persists without derivation. The WAL request hash already proves
+    # the retry itself is byte-semantically the same request.
+    stable_fields = (
+        "information_id",
+        "investigation_id",
+        "related_account_id",
+        "subject_owner_id",
+        "claim_key",
+        "source_reference_type",
+        "source_locator",
+        "observed_at",
+        "content_sha256",
+    )
+    for field in stable_fields:
+        if field in raw and str(record.get(field) or "") != str(raw.get(field) or ""):
+            return None
+
+    information_records: dict[str, dict[str, Any]] = {}
+    for row in events:
+        if int(row.get("seq") or 0) > event_seq:
+            break
+        if row.get("event_type") != "INFORMATION_RECORD_APPENDED":
+            continue
+        payload = row.get("payload")
+        item = payload.get("record") if isinstance(payload, dict) else None
+        if isinstance(item, dict) and item.get("information_id"):
+            information_records[str(item["information_id"])] = item
+
+    historical_count = sum(
+        item.get("temporal_status") == "HISTORICAL"
+        or item.get("information_type") == "HISTORICAL"
+        for item in information_records.values()
+    )
+    raw_result = {
+        "accepted": True,
+        "information_id": information_id,
+        "append_only": True,
+        "historical_records_preserved": historical_count,
+        "total_information_records": len(information_records),
+        "effective_outreach_eligible": bool(
+            record.get("outreach_eligible_effective")
+        ),
+        "usage_warnings": list(record.get("usage_warnings") or []),
+        "policy": "PRESERVE_HISTORY_APPEND_NEW_INFORMATION_CLASSIFY_USE_SEPARATELY",
+    }
+    result = {
+        **raw_result,
+        "mutation_meta": _v61._reconciled_meta(
+            "append_information_record",
+            stored,
+            request_hash,
+            event_seq,
+            _INFORMATION_PROOF,
+        ),
+    }
+    _v61._commit_receipt(path, stored, result, event_seq)
+    return result
+
+
 def _reconcile_prepared(
     tool_name: str,
     args: dict[str, Any],
@@ -146,6 +244,13 @@ def _reconcile_prepared(
             request_hash,
             path,
         )
+    if tool_name == "append_information_record":
+        return _reconcile_information_record(
+            args,
+            stored,
+            request_hash,
+            path,
+        )
     return _BASE_RECONCILE_PREPARED(
         tool_name,
         args,
@@ -155,11 +260,12 @@ def _reconcile_prepared(
     )
 
 
-# Patch the core adapter by reference. Its tool wrappers resolve these globals
-# dynamically, so no duplicate mutation machinery is introduced here.
 _v61._prepare_resource_snapshot = _prepare_resource_snapshot
 _v61._reconcile_prepared = _reconcile_prepared
-_v61._AUTOMATIC_RECONCILIATION_TOOLS.add("start_investigation")
+_v61._AUTOMATIC_RECONCILIATION_TOOLS.update({
+    "start_investigation",
+    "append_information_record",
+})
 
 
 def main() -> int:
