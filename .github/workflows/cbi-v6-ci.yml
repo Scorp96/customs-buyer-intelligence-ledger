@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - cbi-v6-20260828
+      - cbi-v6-golden-20260828
   pull_request:
     branches:
       - main
