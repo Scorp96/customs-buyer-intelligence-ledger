@@ -183,6 +183,10 @@ class V61AdapterWalTests(unittest.TestCase):
             "submit_research_objective",
             wal_contract["automatic_reconciliation_tools"],
         )
+        self.assertIn(
+            "resolve_or_create_account",
+            wal_contract["automatic_reconciliation_tools"],
+        )
         self.assertFalse(wal_contract["exact_automatic_reconciliation_complete"])
 
         degraded = self._tool(recovered, 6, "get_runtime_health", {})
@@ -219,7 +223,7 @@ class V61AdapterWalTests(unittest.TestCase):
         self.assertEqual(healthy["mutation_wal"]["prepared_count"], 0)
         self.assertFalse(healthy["mutation_wal"]["reconciliation_required"])
 
-    def test_unproven_canonical_crash_fails_closed_and_does_not_duplicate(self) -> None:
+    def test_canonical_create_crash_is_reconciled_from_registry_tail(self) -> None:
         args = {
             "candidate": {
                 "account_id": "C-WAL-CANONICAL",
@@ -238,8 +242,38 @@ class V61AdapterWalTests(unittest.TestCase):
         self.assertEqual(len(canonical_log.read_text(encoding="utf-8").splitlines()), 1)
 
         recovered = self._spawn()
+        replayed = self._tool(recovered, 3, "resolve_or_create_account", args)
+        self.assertEqual(replayed["status"], "CREATED")
+        self.assertTrue(replayed["mutation_meta"]["replayed"])
+        self.assertTrue(replayed["mutation_meta"]["reconciled_after_crash"])
+        self.assertEqual(
+            replayed["mutation_meta"]["reconciliation_proof"],
+            "CANONICAL_ACCOUNT_CREATED_AFTER_PREPARED_REGISTRY_TAIL",
+        )
+        self.assertEqual(len(canonical_log.read_text(encoding="utf-8").splitlines()), 1)
+        health = self._tool(recovered, 4, "get_runtime_health", {})
+        self.assertEqual(health["mutation_wal"]["prepared_count"], 0)
+
+    def test_unproven_host_queue_crash_fails_closed_without_duplicate_queue_file(self) -> None:
+        args = {
+            "bundle_queue_id": "HOSTQ-20260828T000000Z-abcdef123456",
+            "payload": {
+                "investigation_id": "INV-WAL-HOST-QUEUE-SYNTH",
+                "bundle": {
+                    "bundle_id": "BUNDLE-WAL-HOST-QUEUE",
+                    "observations": [],
+                },
+            },
+            "idempotency_key": "wal-host-queue-crash-0001",
+        }
+        crashing = self._spawn("queue_host_bundle")
+        self._crash_call(crashing, 2, "queue_host_bundle", args)
+        queue_files = list(self.host_root.glob("HOSTQ-*.json"))
+        self.assertEqual(len(queue_files), 1)
+
+        recovered = self._spawn()
         response = self._rpc(recovered, 3, "tools/call", {
-            "name": "resolve_or_create_account",
+            "name": "queue_host_bundle",
             "arguments": args,
         })
         self.assertIn("error", response)
@@ -247,8 +281,7 @@ class V61AdapterWalTests(unittest.TestCase):
             "MUTATION_RECONCILIATION_REQUIRED",
             str(response["error"].get("message") or ""),
         )
-        self.assertEqual(len(canonical_log.read_text(encoding="utf-8").splitlines()), 1)
-
+        self.assertEqual(len(list(self.host_root.glob("HOSTQ-*.json"))), 1)
         health = self._tool(recovered, 4, "get_runtime_health", {})
         self.assertEqual(health["status"], "DEGRADED_RECONCILIATION_REQUIRED")
         self.assertEqual(health["mutation_wal"]["prepared_count"], 1)
