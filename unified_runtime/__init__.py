@@ -44,7 +44,12 @@ from .v6 import (
 from .hardening import (
     V61_CUSTOMS_PARTY_ROLES,
     V61_FRESHNESS_LEVELS,
+    V61_PIVOT_STATES,
     V61ProductionHardeningMixin,
+)
+from .authority_hardening import (
+    DECISION_RELEVANT_ROLES,
+    V61CurrentAuthorityMixin,
 )
 
 RUNTIME_VERSION = V6_RUNTIME_VERSION
@@ -53,10 +58,16 @@ CBI_MCP_TOOL_NAMES = V6_CBI_MCP_TOOL_NAMES
 FRESHNESS_LEVELS = V61_FRESHNESS_LEVELS
 
 
-class UnifiedRuntime(V61ProductionHardeningMixin, V6RuntimeMixin, _CompatibilityRuntime):
+class UnifiedRuntime(
+    V61CurrentAuthorityMixin,
+    V61ProductionHardeningMixin,
+    V6RuntimeMixin,
+    _CompatibilityRuntime,
+):
     """v6 governance runtime layered over the stable v5 compatibility surface."""
 
     pass
+
 
 __all__ = [
     "BUILD_ID",
@@ -93,4 +104,6 @@ __all__ = [
     "PEER_STAGES",
     "RESEARCH_CONFIDENCE_GRADES",
     "V61_CUSTOMS_PARTY_ROLES",
+    "V61_PIVOT_STATES",
+    "DECISION_RELEVANT_ROLES",
 ]
