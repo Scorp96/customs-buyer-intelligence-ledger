@@ -78,12 +78,26 @@ def main() -> int:
             assert set(close_schema["properties"]["status"]["enum"]) == {
                 "CONSUMED", "DUPLICATE", "LOW_VALUE", "BLOCKED", "EXHAUSTED",
             }
+            portfolio_schema = tools["get_portfolio_queue"]["inputSchema"]
+            assert "include_non_active" in portfolio_schema["properties"]
+            assert "include_non_production" in portfolio_schema["properties"]
+            compile_schema = tools["compile_and_append_research_bundle"]["inputSchema"]
+            freshness = (
+                compile_schema["properties"]["bundle"]["properties"]["observations"]
+                ["items"]["properties"]["source"]["properties"]["freshness"]["enum"]
+            )
+            assert "CURRENT_CONFIRMED" in freshness
+            assert "CURRENT_LIKELY" in freshness
+            assert "Canonical Route View" in tools["prepare_outreach"]["description"]
             passed.extend([
                 "initialize_v61_adapter",
                 "decision_saturation_public_contract",
                 "mutation_guards_discoverable",
                 "required_idempotency_in_public_schema",
                 "canonical_pivot_transition_schema",
+                "portfolio_diagnostic_flags_discoverable",
+                "strict_freshness_schema_discoverable",
+                "canonical_route_outreach_contract_discoverable",
             ])
 
             missing_key_args = {
