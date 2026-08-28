@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -11,6 +12,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "mcp" / "server_v61.py"
+
+
+def canonical(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def digest(value: object) -> str:
+    return hashlib.sha256(canonical(value).encode("utf-8")).hexdigest()
 
 
 class V61AdapterWalTests(unittest.TestCase):
@@ -179,14 +188,12 @@ class V61AdapterWalTests(unittest.TestCase):
         wal_contract = contract["production_adapter_mutation_wal"]
         self.assertTrue(wal_contract["write_ahead_intent_required"])
         self.assertFalse(wal_contract["prepared_auto_replay_without_proof"])
-        self.assertIn(
+        for tool_name in {
             "submit_research_objective",
-            wal_contract["automatic_reconciliation_tools"],
-        )
-        self.assertIn(
             "resolve_or_create_account",
-            wal_contract["automatic_reconciliation_tools"],
-        )
+            "queue_host_bundle",
+        }:
+            self.assertIn(tool_name, wal_contract["automatic_reconciliation_tools"])
         self.assertFalse(wal_contract["exact_automatic_reconciliation_complete"])
 
         degraded = self._tool(recovered, 6, "get_runtime_health", {})
@@ -254,7 +261,7 @@ class V61AdapterWalTests(unittest.TestCase):
         health = self._tool(recovered, 4, "get_runtime_health", {})
         self.assertEqual(health["mutation_wal"]["prepared_count"], 0)
 
-    def test_unproven_host_queue_crash_fails_closed_without_duplicate_queue_file(self) -> None:
+    def test_host_queue_crash_is_reconciled_from_persisted_request_hash(self) -> None:
         args = {
             "bundle_queue_id": "HOSTQ-20260828T000000Z-abcdef123456",
             "payload": {
@@ -272,8 +279,58 @@ class V61AdapterWalTests(unittest.TestCase):
         self.assertEqual(len(queue_files), 1)
 
         recovered = self._spawn()
-        response = self._rpc(recovered, 3, "tools/call", {
-            "name": "queue_host_bundle",
+        replayed = self._tool(recovered, 3, "queue_host_bundle", args)
+        self.assertTrue(replayed["queued"])
+        self.assertFalse(replayed["deduplicated"])
+        self.assertTrue(replayed["mutation_meta"]["replayed"])
+        self.assertTrue(replayed["mutation_meta"]["reconciled_after_crash"])
+        self.assertEqual(
+            replayed["mutation_meta"]["reconciliation_proof"],
+            "HOST_QUEUE_REQUEST_HASH_PERSISTED_AFTER_PREPARED",
+        )
+        self.assertEqual(len(list(self.host_root.glob("HOSTQ-*.json"))), 1)
+        health = self._tool(recovered, 4, "get_runtime_health", {})
+        self.assertEqual(health["mutation_wal"]["prepared_count"], 0)
+
+    def test_unknown_prepared_mutation_family_stays_fail_closed(self) -> None:
+        bootstrap = self._spawn()
+        self._stop(bootstrap)
+        args = {
+            "investigation_id": "INV-UNPROVEN-PROMOTION",
+            "peer_id": "PEER-UNPROVEN",
+            "promotion_reason": "Synthetic unproven PREPARED fixture for adapter fail-closed behavior.",
+            "idempotency_key": "wal-unproven-promote-0001",
+        }
+        request_arguments = {
+            key: value for key, value in args.items() if key != "idempotency_key"
+        }
+        request_hash = digest({
+            "tool": "promote_anchor",
+            "arguments": request_arguments,
+        })
+        wal_root = self.root / "mcp-idempotency-v61"
+        wal_root.mkdir(parents=True, exist_ok=True)
+        wal_path = wal_root / (
+            "promote_anchor-"
+            + hashlib.sha256(args["idempotency_key"].encode("utf-8")).hexdigest()
+            + ".json"
+        )
+        wal_path.write_text(
+            canonical({
+                "schema": "cbi.mutation-wal.v6.1",
+                "status": "PREPARED",
+                "tool": "promote_anchor",
+                "idempotency_key": args["idempotency_key"],
+                "request_sha256": request_hash,
+                "state_version_before": 0,
+                "prepared_at": "2026-08-28T00:00:00Z",
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+        recovered = self._spawn()
+        response = self._rpc(recovered, 2, "tools/call", {
+            "name": "promote_anchor",
             "arguments": args,
         })
         self.assertIn("error", response)
@@ -281,8 +338,7 @@ class V61AdapterWalTests(unittest.TestCase):
             "MUTATION_RECONCILIATION_REQUIRED",
             str(response["error"].get("message") or ""),
         )
-        self.assertEqual(len(list(self.host_root.glob("HOSTQ-*.json"))), 1)
-        health = self._tool(recovered, 4, "get_runtime_health", {})
+        health = self._tool(recovered, 3, "get_runtime_health", {})
         self.assertEqual(health["status"], "DEGRADED_RECONCILIATION_REQUIRED")
         self.assertEqual(health["mutation_wal"]["prepared_count"], 1)
         self.assertFalse(
