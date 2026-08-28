@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import unittest
+from pathlib import Path
 
 from scripts.run_private_golden_acceptance import (
     READ_ONLY_TOOLS,
     run_manifest,
     validate_manifest,
 )
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class DummyRuntime:
@@ -122,6 +128,18 @@ class V61PrivateGoldenRunnerTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["failed_count"], 1)
         self.assertFalse(result["results"][0]["assertions"][0]["passed"])
+
+    def test_direct_cli_help_runs_from_repository_root(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "run_private_golden_acceptance.py"), "--help"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("Run read-only v6 Golden acceptance", completed.stdout)
 
 
 if __name__ == "__main__":
