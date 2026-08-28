@@ -1,0 +1,50 @@
+name: CBI v6 load acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Acceptance profile
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - full
+      canonical_accounts:
+        description: Canonical account count for full profile
+        required: true
+        default: "5000"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v6-load-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  load-acceptance:
+    name: ${{ inputs.profile }} load acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Smoke performance acceptance
+        if: ${{ inputs.profile == 'smoke' }}
+        run: python scripts/run_v6_load_acceptance.py --profile smoke --enforce-targets
+
+      - name: Full structural load acceptance
+        if: ${{ inputs.profile == 'full' }}
+        run: >-
+          python scripts/run_v6_load_acceptance.py
+          --profile full
+          --canonical-accounts "${{ inputs.canonical_accounts }}"
