@@ -18,6 +18,7 @@ from unified_runtime.v6 import DEFAULT_CLAIM_CATALOG
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "mcp" / "server_v61_outreach_recovery.py"
 PREVIOUS_SERVER = ROOT / "mcp" / "server_v61_closure_recovery.py"
+LEGACY_RENDER_SERVER = ROOT / "tests" / "fixtures" / "server_v61_legacy_render_shim.py"
 
 
 class V61OutreachWalRecoveryTests(unittest.TestCase):
@@ -486,7 +487,7 @@ class V61OutreachWalRecoveryTests(unittest.TestCase):
         }
         crashing = self._spawn(
             "render_outreach_action_card",
-            server=PREVIOUS_SERVER,
+            server=LEGACY_RENDER_SERVER,
         )
         self._crash_call(crashing, 3, "render_outreach_action_card", arguments)
         event = next(
