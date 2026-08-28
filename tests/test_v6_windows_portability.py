@@ -14,14 +14,72 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 
 
 class V6WindowsPortabilityTests(unittest.TestCase):
-    def test_mcp_launcher_discovers_python_dynamically(self) -> None:
+    def test_mcp_launcher_discovers_supported_python_dynamically(self) -> None:
         config = json.loads((PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))
         server = config["mcpServers"]["buyer-outreach-actions"]
         self.assertEqual(server["command"], "powershell.exe")
         command = server["args"][-1]
         self.assertIn("Programs\\Python", command)
         self.assertIn(".cache\\codex-runtimes", command)
+        self.assertIn("sys.version_info >= (3,10)", command)
+        self.assertIn("Install Python 3.10+ or launch Codex Desktop", command)
+        self.assertNotIn("install.ps1", command)
         self.assertNotIn("C:\\Users\\scorp", command)
+
+    @unittest.skipUnless(os.name == "nt", "Windows-only installed-layout launcher regression")
+    def test_mcp_launcher_cold_starts_from_installed_userprofile_layout(self) -> None:
+        config = json.loads((PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        server = config["mcpServers"]["buyer-outreach-actions"]
+        with tempfile.TemporaryDirectory(prefix="cbi-v6-mcp-launcher-") as temp:
+            base = Path(temp)
+            profile = base / "profile"
+            destination = profile / "plugins" / "customs-buyer-intelligence"
+            shutil.copytree(
+                PLUGIN_ROOT,
+                destination,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+            )
+            environment = dict(os.environ)
+            environment["USERPROFILE"] = str(profile)
+            environment["CBI_SESSION_ROOT"] = str(base / "会话 数据")
+            environment["PYTHONDONTWRITEBYTECODE"] = "1"
+            process = subprocess.Popen(
+                [server["command"], *server["args"]],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                env=environment,
+            )
+            try:
+                assert process.stdin is not None and process.stdout is not None
+                process.stdin.write(json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {"protocolVersion": "2025-06-18"},
+                }) + "\n")
+                process.stdin.flush()
+                response = json.loads(process.stdout.readline().lstrip("\ufeff"))
+                self.assertEqual(response["result"]["serverInfo"]["version"], "6.1.0")
+                process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n")
+                process.stdin.flush()
+                tools = json.loads(process.stdout.readline().lstrip("\ufeff"))["result"]["tools"]
+                self.assertEqual(len(tools), 42)
+            finally:
+                if process.stdin:
+                    process.stdin.close()
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+                if process.stdout:
+                    process.stdout.close()
+                if process.stderr:
+                    process.stderr.close()
 
     def test_cold_copy_runs_from_utf8_chinese_and_space_path(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cbi-v6-portable-") as temp:
@@ -29,7 +87,7 @@ class V6WindowsPortabilityTests(unittest.TestCase):
             shutil.copytree(
                 PLUGIN_ROOT,
                 destination,
-                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+                ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
             )
             environment = dict(os.environ)
             environment["CBI_SESSION_ROOT"] = str(Path(temp) / "会话 数据")
