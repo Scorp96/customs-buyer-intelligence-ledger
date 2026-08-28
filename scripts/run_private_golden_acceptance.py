@@ -5,6 +5,12 @@ A local, gitignored JSON manifest points at existing durable investigations and
 defines read-only assertions. No Runtime mutation, CRM writeback, outreach
 preparation, migration, account creation, or resume/initialization action is
 permitted by this runner.
+
+``cross_assertions`` allow a Golden manifest to prove relationships between
+independent read-only case results without changing Runtime state. This is used
+for requirements such as the Arecibo regression where three named businesses
+must retain distinct Canonical Account identities rather than being silently
+merged.
 """
 
 from __future__ import annotations
@@ -43,6 +49,8 @@ GRADE_RANK = {
     "NQ": 0, "D": 1, "C": 2, "B-": 3, "B": 4,
     "B+": 5, "A-": 6, "A": 7, "A+": 8,
 }
+
+CROSS_ASSERTION_OPS = {"all_distinct", "all_equal", "eq", "ne"}
 
 
 def get_path(value: Any, path: str) -> Any:
@@ -151,12 +159,98 @@ def validate_manifest(manifest: Any) -> list[dict[str, Any]]:
     return normalized
 
 
+def validate_cross_assertions(
+    manifest: dict[str, Any],
+    case_ids: set[str],
+) -> list[dict[str, Any]]:
+    raw = manifest.get("cross_assertions", [])
+    if raw is None:
+        raw = []
+    if not isinstance(raw, list):
+        raise ValueError("manifest.cross_assertions must be an array when provided")
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, assertion in enumerate(raw):
+        if not isinstance(assertion, dict):
+            raise ValueError(f"cross_assertions[{index}] must be an object")
+        assertion_id = str(assertion.get("assertion_id") or "").strip()
+        if not assertion_id or assertion_id in seen:
+            raise ValueError(
+                f"cross_assertions[{index}].assertion_id must be unique and non-empty"
+            )
+        seen.add(assertion_id)
+        op = str(assertion.get("op") or "").strip().lower()
+        if op not in CROSS_ASSERTION_OPS:
+            raise ValueError(f"{assertion_id}: unsupported cross assertion op {op!r}")
+        refs = assertion.get("refs")
+        if not isinstance(refs, list) or len(refs) < 2 or len(refs) > 50:
+            raise ValueError(f"{assertion_id}: refs must contain between 2 and 50 references")
+        if op in {"eq", "ne"} and len(refs) != 2:
+            raise ValueError(f"{assertion_id}: {op} requires exactly two references")
+        normalized_refs: list[dict[str, str]] = []
+        for ref_index, ref in enumerate(refs):
+            if not isinstance(ref, dict):
+                raise ValueError(f"{assertion_id}: refs[{ref_index}] must be an object")
+            case_id = str(ref.get("case_id") or "").strip()
+            path = str(ref.get("path") or "").strip()
+            if case_id not in case_ids:
+                raise ValueError(f"{assertion_id}: unknown case_id {case_id!r}")
+            if not path:
+                raise ValueError(f"{assertion_id}: refs[{ref_index}].path must be non-empty")
+            normalized_refs.append({"case_id": case_id, "path": path})
+        normalized.append({
+            "assertion_id": assertion_id,
+            "op": op,
+            "refs": normalized_refs,
+        })
+    return normalized
+
+
+def assert_cross_rule(
+    responses: dict[str, dict[str, Any]],
+    assertion: dict[str, Any],
+) -> dict[str, Any]:
+    observed: list[Any] = []
+    for ref in assertion["refs"]:
+        case_id = ref["case_id"]
+        if case_id not in responses:
+            raise KeyError(f"case {case_id!r} has no successful read-only response")
+        observed.append(get_path(responses[case_id], ref["path"]))
+    op = assertion["op"]
+    if op == "all_distinct":
+        try:
+            passed = len(set(observed)) == len(observed)
+        except TypeError:
+            passed = len({json.dumps(row, sort_keys=True, default=str) for row in observed}) == len(observed)
+    elif op == "all_equal":
+        passed = all(row == observed[0] for row in observed[1:])
+    elif op == "eq":
+        passed = observed[0] == observed[1]
+    elif op == "ne":
+        passed = observed[0] != observed[1]
+    else:  # validation prevents this path
+        raise ValueError(f"unsupported cross assertion op: {op}")
+    return {
+        "assertion_id": assertion["assertion_id"],
+        "op": op,
+        "refs": assertion["refs"],
+        "observed": observed,
+        "passed": passed,
+    }
+
+
 def run_manifest(runtime: UnifiedRuntime, manifest: dict[str, Any]) -> dict[str, Any]:
     cases = validate_manifest(manifest)
+    cross_assertions = validate_cross_assertions(
+        manifest,
+        {case["case_id"] for case in cases},
+    )
     results: list[dict[str, Any]] = []
+    responses: dict[str, dict[str, Any]] = {}
     for case in cases:
         try:
             response = getattr(runtime, case["tool"])(case["arguments"])
+            responses[case["case_id"]] = response
             assertions = [assert_rule(response, row) for row in case["assertions"]]
             results.append({
                 "case_id": case["case_id"],
@@ -172,15 +266,38 @@ def run_manifest(runtime: UnifiedRuntime, manifest: dict[str, Any]) -> dict[str,
                 "error": f"{type(exc).__name__}: {exc}",
                 "assertions": [],
             })
+
+    cross_results: list[dict[str, Any]] = []
+    for assertion in cross_assertions:
+        try:
+            cross_results.append(assert_cross_rule(responses, assertion))
+        except Exception as exc:
+            cross_results.append({
+                "assertion_id": assertion["assertion_id"],
+                "op": assertion["op"],
+                "refs": assertion["refs"],
+                "passed": False,
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+
     passed_count = sum(row["passed"] for row in results)
+    cross_passed_count = sum(row["passed"] for row in cross_results)
+    passed = (
+        passed_count == len(results)
+        and cross_passed_count == len(cross_results)
+    )
     return {
         "schema": "cbi.private-golden-acceptance.v6.1",
         "read_only": True,
         "case_count": len(results),
         "passed_count": passed_count,
         "failed_count": len(results) - passed_count,
-        "passed": passed_count == len(results),
+        "cross_assertion_count": len(cross_results),
+        "cross_passed_count": cross_passed_count,
+        "cross_failed_count": len(cross_results) - cross_passed_count,
+        "passed": passed,
         "results": results,
+        "cross_assertions": cross_results,
     }
 
 
