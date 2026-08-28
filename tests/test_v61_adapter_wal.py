@@ -88,6 +88,30 @@ class V61AdapterWalTests(unittest.TestCase):
         return response["result"]["structuredContent"]
 
     @staticmethod
+    def _crash_call(
+        process: subprocess.Popen[str],
+        request_id: int,
+        name: str,
+        arguments: dict,
+    ) -> None:
+        assert process.stdin is not None and process.stdout is not None
+        process.stdin.write(json.dumps({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        }, ensure_ascii=True) + "\n")
+        process.stdin.flush()
+        if process.stdout.readline() != "":
+            raise AssertionError("crash-injected mutation unexpectedly returned a response")
+        process.wait(timeout=10)
+        if process.returncode != 91:
+            raise AssertionError(f"crash-injected adapter exit code was {process.returncode}")
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None and not stream.closed:
+                stream.close()
+
+    @staticmethod
     def _stop(process: subprocess.Popen[str]) -> None:
         if process.poll() is None:
             if process.stdin is not None:
@@ -106,7 +130,7 @@ class V61AdapterWalTests(unittest.TestCase):
         for process in self.processes:
             self._stop(process)
 
-    def test_crash_after_handler_never_blindly_replays_mutation(self) -> None:
+    def test_objective_crash_is_mechanically_reconciled_without_duplicate(self) -> None:
         bootstrap = self._spawn()
         start_args = {
             "account": {
@@ -142,23 +166,7 @@ class V61AdapterWalTests(unittest.TestCase):
         }
 
         crashing = self._spawn("submit_research_objective")
-        assert crashing.stdin is not None and crashing.stdout is not None
-        crashing.stdin.write(json.dumps({
-            "jsonrpc": "2.0",
-            "id": 4,
-            "method": "tools/call",
-            "params": {
-                "name": "submit_research_objective",
-                "arguments": objective_args,
-            },
-        }, ensure_ascii=True) + "\n")
-        crashing.stdin.flush()
-        self.assertEqual(crashing.stdout.readline(), "")
-        crashing.wait(timeout=10)
-        self.assertEqual(crashing.returncode, 91)
-        for stream in (crashing.stdin, crashing.stdout, crashing.stderr):
-            if stream is not None and not stream.closed:
-                stream.close()
+        self._crash_call(crashing, 4, "submit_research_objective", objective_args)
 
         wal_files = list((self.root / "mcp-idempotency-v61").glob("submit_research_objective-*.json"))
         self.assertEqual(len(wal_files), 1)
@@ -170,26 +178,32 @@ class V61AdapterWalTests(unittest.TestCase):
         contract = self._tool(recovered, 5, "get_runtime_contract", {})
         wal_contract = contract["production_adapter_mutation_wal"]
         self.assertTrue(wal_contract["write_ahead_intent_required"])
-        self.assertFalse(wal_contract["prepared_auto_replay"])
+        self.assertFalse(wal_contract["prepared_auto_replay_without_proof"])
+        self.assertIn(
+            "submit_research_objective",
+            wal_contract["automatic_reconciliation_tools"],
+        )
         self.assertFalse(wal_contract["exact_automatic_reconciliation_complete"])
 
-        health = self._tool(recovered, 6, "get_runtime_health", {})
-        self.assertEqual(health["status"], "DEGRADED_RECONCILIATION_REQUIRED")
-        self.assertEqual(health["mutation_wal"]["prepared_count"], 1)
-        self.assertTrue(health["mutation_wal"]["reconciliation_required"])
-        self.assertEqual(
-            health["mutation_wal"]["prepared_intents"][0]["tool"],
-            "submit_research_objective",
+        degraded = self._tool(recovered, 6, "get_runtime_health", {})
+        self.assertEqual(degraded["status"], "DEGRADED_RECONCILIATION_REQUIRED")
+        self.assertEqual(degraded["mutation_wal"]["prepared_count"], 1)
+        self.assertTrue(degraded["mutation_wal"]["reconciliation_required"])
+        self.assertTrue(
+            degraded["mutation_wal"]["prepared_intents"][0]["automatic_reconciliation_supported"]
         )
 
-        replay = self._rpc(recovered, 7, "tools/call", {
-            "name": "submit_research_objective",
-            "arguments": objective_args,
-        })
-        self.assertIn("error", replay)
-        self.assertIn(
-            "MUTATION_RECONCILIATION_REQUIRED",
-            str(replay["error"].get("message") or ""),
+        replayed = self._tool(
+            recovered,
+            7,
+            "submit_research_objective",
+            objective_args,
+        )
+        self.assertTrue(replayed["mutation_meta"]["replayed"])
+        self.assertTrue(replayed["mutation_meta"]["reconciled_after_crash"])
+        self.assertEqual(
+            replayed["mutation_meta"]["reconciliation_proof"],
+            "OBJECTIVE_ID_INPUT_HASH_AND_EVENT_SEQ",
         )
 
         after = self._tool(
@@ -200,6 +214,47 @@ class V61AdapterWalTests(unittest.TestCase):
         )
         self.assertEqual(after["objective_count"], 1)
         self.assertEqual(after["last_safe_seq"], before_version + 1)
+
+        healthy = self._tool(recovered, 9, "get_runtime_health", {})
+        self.assertEqual(healthy["mutation_wal"]["prepared_count"], 0)
+        self.assertFalse(healthy["mutation_wal"]["reconciliation_required"])
+
+    def test_unproven_canonical_crash_fails_closed_and_does_not_duplicate(self) -> None:
+        args = {
+            "candidate": {
+                "account_id": "C-WAL-CANONICAL",
+                "country": "Synthetic",
+                "name": "Synthetic Canonical WAL Buyer",
+            },
+            "requested_account_id": "C-WAL-CANONICAL",
+            "create_if_missing": True,
+            "idempotency_key": "wal-canonical-crash-0001",
+        }
+        crashing = self._spawn("resolve_or_create_account")
+        self._crash_call(crashing, 2, "resolve_or_create_account", args)
+
+        canonical_log = self.session_root / ".runtime" / "canonical" / "accounts.jsonl"
+        self.assertTrue(canonical_log.is_file())
+        self.assertEqual(len(canonical_log.read_text(encoding="utf-8").splitlines()), 1)
+
+        recovered = self._spawn()
+        response = self._rpc(recovered, 3, "tools/call", {
+            "name": "resolve_or_create_account",
+            "arguments": args,
+        })
+        self.assertIn("error", response)
+        self.assertIn(
+            "MUTATION_RECONCILIATION_REQUIRED",
+            str(response["error"].get("message") or ""),
+        )
+        self.assertEqual(len(canonical_log.read_text(encoding="utf-8").splitlines()), 1)
+
+        health = self._tool(recovered, 4, "get_runtime_health", {})
+        self.assertEqual(health["status"], "DEGRADED_RECONCILIATION_REQUIRED")
+        self.assertEqual(health["mutation_wal"]["prepared_count"], 1)
+        self.assertFalse(
+            health["mutation_wal"]["prepared_intents"][0]["automatic_reconciliation_supported"]
+        )
 
 
 if __name__ == "__main__":
