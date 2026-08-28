@@ -44,6 +44,21 @@ _EVENT_TYPES = {
     "promote_anchor": "V6_ANCHOR_PROMOTED",
     "close_pivot": "V6_PIVOT_CLOSED",
 }
+_PEER_STAGES = {
+    "DISCOVERED",
+    "QUALIFIED",
+    "ANCHOR_ELIGIBLE",
+    "PROMOTED_ANCHOR",
+    "FULLY_AUDITED",
+}
+_PEER_FACT_KEYS = {
+    "entity_verified",
+    "product_fit_verified",
+    "business_or_trade_verified",
+    "relationship_verified",
+    "commercial_novelty",
+    "canonical_new",
+}
 
 
 def _correlated_event(
@@ -72,61 +87,105 @@ def _correlated_event(
     return matches[0] if len(matches) == 1 else None
 
 
-def _matches_request(tool_name: str, args: dict[str, Any], payload: dict[str, Any]) -> bool:
-    if str(payload.get("investigation_id") or "") != str(args.get("investigation_id") or ""):
+def _matches_peer_discovery(args: dict[str, Any], payload: dict[str, Any]) -> bool:
+    raw = args.get("peer")
+    if not isinstance(raw, dict):
         return False
+    for field in (
+        "name",
+        "country",
+        "tax_id",
+        "network_branch",
+        "discovered_from_owner_id",
+        "discovered_by_observation_id",
+    ):
+        if field not in raw:
+            continue
+        expected = str(raw.get(field) or "")
+        actual = str(payload.get(field) or "")
+        if field == "network_branch":
+            expected = expected.upper()
+        if actual != expected:
+            return False
+    if "relationship_evidence_ids" in raw:
+        expected_ids = [str(item) for item in raw.get("relationship_evidence_ids") or []]
+        if payload.get("relationship_evidence_ids") != expected_ids:
+            return False
+    return (
+        bool(str(payload.get("peer_id") or ""))
+        and payload.get("stage") == "DISCOVERED"
+    )
 
+
+def _matches_peer_evaluation(args: dict[str, Any], payload: dict[str, Any]) -> bool:
+    if str(payload.get("peer_id") or "") != str(args.get("peer_id") or ""):
+        return False
+    assessment = args.get("assessment")
+    persisted_facts = payload.get("assessment")
+    if not isinstance(assessment, dict) or not isinstance(persisted_facts, dict):
+        return False
+    for field in _PEER_FACT_KEYS:
+        if field in assessment and persisted_facts.get(field) is not (assessment.get(field) is True):
+            return False
+    if "fact_evidence_ids" in assessment:
+        supplied = assessment.get("fact_evidence_ids")
+        persisted = payload.get("fact_evidence_ids")
+        if not isinstance(supplied, dict) or not isinstance(persisted, dict):
+            return False
+        for key, value in supplied.items():
+            if [str(item) for item in (value or [])] != persisted.get(key):
+                return False
+    if "commercial_novelty_basis" in assessment:
+        if str(payload.get("commercial_novelty_basis") or "") != str(
+            assessment.get("commercial_novelty_basis") or ""
+        ).strip():
+            return False
+    return str(payload.get("stage") or "") in _PEER_STAGES
+
+
+def _matches_anchor_promotion(args: dict[str, Any], payload: dict[str, Any]) -> bool:
+    return (
+        str(payload.get("peer_id") or "") == str(args.get("peer_id") or "")
+        and str(payload.get("promotion_reason") or "")
+        == str(args.get("promotion_reason") or "").strip()
+        and payload.get("stage") == "PROMOTED_ANCHOR"
+        and payload.get("six_branch_research_required") is True
+        and payload.get("contact_coverage_required") is False
+    )
+
+
+def _matches_pivot_close(args: dict[str, Any], payload: dict[str, Any]) -> bool:
+    if (
+        str(payload.get("pivot_id") or "") != str(args.get("pivot_id") or "")
+        or str(payload.get("status") or "") != str(args.get("status") or "").upper()
+        or str(payload.get("reason") or "") != str(args.get("reason") or "").strip()
+    ):
+        return False
+    if "consumed_by_objective_id" in args and str(
+        payload.get("consumed_by_objective_id") or ""
+    ) != str(args.get("consumed_by_objective_id") or ""):
+        return False
+    if "max_remaining_eiv" in args:
+        try:
+            if float(payload.get("max_remaining_eiv")) != float(args.get("max_remaining_eiv")):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def _matches_request(tool_name: str, args: dict[str, Any], payload: dict[str, Any]) -> bool:
+    # The SessionStore selected above already binds the event to investigation_id.
+    # Several v6 lifecycle event payloads deliberately omit that redundant field,
+    # so investigation identity must not be inferred from payload presence.
     if tool_name == "append_peer_discovery":
-        raw = args.get("peer")
-        if not isinstance(raw, dict):
-            return False
-        for field in (
-            "peer_id",
-            "account_id",
-            "name",
-            "country",
-            "relationship_type",
-        ):
-            if field in raw and str(payload.get(field) or "") != str(raw.get(field) or ""):
-                return False
-        return payload.get("stage") == "DISCOVERED"
-
+        return _matches_peer_discovery(args, payload)
     if tool_name == "evaluate_peer":
-        if str(payload.get("peer_id") or "") != str(args.get("peer_id") or ""):
-            return False
-        assessment = args.get("assessment")
-        if not isinstance(assessment, dict):
-            return False
-        for field in (
-            "target_fit",
-            "evidence_grade",
-            "commercial_novelty",
-            "canonical_new",
-        ):
-            if field in assessment and payload.get(field) != assessment.get(field):
-                return False
-        return str(payload.get("stage") or "") in {
-            "DISCOVERED",
-            "QUALIFIED",
-            "ANCHOR_ELIGIBLE",
-        }
-
+        return _matches_peer_evaluation(args, payload)
     if tool_name == "promote_anchor":
-        return (
-            str(payload.get("peer_id") or "") == str(args.get("peer_id") or "")
-            and str(payload.get("promotion_reason") or "")
-            == str(args.get("promotion_reason") or "").strip()
-            and payload.get("stage") == "PROMOTED_ANCHOR"
-            and payload.get("six_branch_research_required") is True
-        )
-
+        return _matches_anchor_promotion(args, payload)
     if tool_name == "close_pivot":
-        return (
-            str(payload.get("pivot_id") or "") == str(args.get("pivot_id") or "")
-            and str(payload.get("status") or "") == str(args.get("status") or "").upper()
-            and str(payload.get("reason") or "") == str(args.get("reason") or "").strip()
-        )
-
+        return _matches_pivot_close(args, payload)
     return False
 
 
