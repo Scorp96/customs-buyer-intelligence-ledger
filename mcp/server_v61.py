@@ -6,6 +6,13 @@ adapter hardens the public v6 surface without silently rewriting historical v5
 semantics: Decision Saturation is the only production closure strategy, every
 mutation requires durable idempotency, and callers can use optimistic
 state-version guards.
+
+The adapter journal is write-ahead. A PREPARED intent is durably written before
+a mutation handler executes. If the process dies after the handler commits but
+before the terminal receipt is written, a retry fails closed instead of blindly
+executing the mutation a second time. Exact automatic reconciliation still
+requires mutation-family-specific proof; the adapter never guesses that an
+indeterminate mutation is safe to replay.
 """
 
 from __future__ import annotations
@@ -16,6 +23,7 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -81,6 +89,8 @@ _PRODUCTION_FRESHNESS = [
 _KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,160}$")
 _ORIGINAL_TOOL_DESCRIPTORS = _server.tool_descriptors
 _ORIGINAL_HANDLERS = dict(_server.TOOL_HANDLERS)
+_WAL_SCHEMA = "cbi.mutation-wal.v6.1"
+_TEST_CRASH_AFTER_HANDLER_ENV = "CBI_V61_TEST_CRASH_AFTER_HANDLER"
 
 
 def _canonical(value: Any) -> str:
@@ -89,6 +99,10 @@ def _canonical(value: Any) -> str:
 
 def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _journal_root() -> Path:
@@ -114,6 +128,18 @@ def _idempotency_path(tool_name: str, key: str) -> Path:
     return _journal_root() / f"{safe_tool}-{safe_key}.json"
 
 
+def _fsync_directory(path: Path) -> None:
+    """Best-effort directory-entry durability after atomic replace on POSIX."""
+
+    if os.name == "nt" or not hasattr(os, "O_DIRECTORY"):
+        return
+    descriptor = os.open(str(path), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _atomic_json_write(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
     payload = (_canonical(value) + "\n").encode("utf-8")
@@ -124,6 +150,7 @@ def _atomic_json_write(path: Path, value: dict[str, Any]) -> None:
     finally:
         os.close(descriptor)
     os.replace(temporary, path)
+    _fsync_directory(path.parent)
 
 
 def _normalize_start_contract(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -150,6 +177,27 @@ def _validated_expected_version(expected: Any, before: int) -> None:
         raise ValidationError(f"STATE_VERSION_CONFLICT expected={expected_int} current={before}")
 
 
+def _stored_terminal_result(stored: dict[str, Any], request_hash: str) -> dict[str, Any] | None:
+    if stored.get("request_sha256") != request_hash:
+        raise ValidationError(
+            "IDEMPOTENCY_KEY_CONFLICT: key already committed with different request content"
+        )
+    status = str(stored.get("status") or "").upper()
+    if isinstance(stored.get("result"), dict) and status in {"", "COMMITTED"}:
+        result = copy.deepcopy(stored["result"])
+        result.setdefault("mutation_meta", {})["replayed"] = True
+        return result
+    if status == "COMMITTED_ERROR":
+        error = stored.get("error") if isinstance(stored.get("error"), dict) else {}
+        message = str(error.get("message") or "stored mutation error")
+        raise ValidationError(f"IDEMPOTENT_REPLAY_ERROR: {message}")
+    if status == "PREPARED":
+        raise ValidationError(
+            "MUTATION_RECONCILIATION_REQUIRED: prior attempt has a durable PREPARED intent without a terminal receipt; automatic re-execution is blocked to prevent duplicate mutation"
+        )
+    raise ValidationError("IDEMPOTENCY_JOURNAL_INVALID_STATE")
+
+
 def _invoke_mutation(
     tool_name: str,
     handler: Callable[[dict[str, Any]], dict[str, Any]],
@@ -173,48 +221,74 @@ def _invoke_mutation(
     request_for_hash = copy.deepcopy(args)
     request_for_hash.pop("idempotency_key", None)
     request_hash = _digest({"tool": tool_name, "arguments": request_for_hash})
-
-    def execute(before: int) -> dict[str, Any]:
-        result = handler(args)
-        after = _state_version(args)
-        return {
-            **result,
-            "mutation_meta": {
-                "schema": "cbi.mutation-meta.v6.1",
-                "tool": tool_name,
-                "idempotency_key": key,
-                "request_sha256": request_hash,
-                "state_version_before": before,
-                "state_version_after": after,
-                "replayed": False,
-            },
-        }
-
     path = _idempotency_path(tool_name, key)
     lock = path.with_suffix(".lock")
+
     with exclusive_file_lock(lock, timeout_seconds=60.0):
-        # Idempotent replay takes precedence over a stale optimistic-concurrency
-        # precondition: once this exact key+request is durably committed, a
-        # retry must return the original result rather than re-evaluate state.
+        # A terminal receipt always wins over a stale optimistic-concurrency
+        # precondition. An unresolved PREPARED intent never auto-reexecutes.
         if path.exists():
             stored = json.loads(path.read_text(encoding="utf-8"))
-            if stored.get("request_sha256") != request_hash:
-                raise ValidationError(
-                    "IDEMPOTENCY_KEY_CONFLICT: key already committed with different request content"
-                )
-            result = copy.deepcopy(stored["result"])
-            result.setdefault("mutation_meta", {})["replayed"] = True
-            return result
+            terminal = _stored_terminal_result(stored, request_hash)
+            if terminal is not None:
+                return terminal
+
         before = _state_version(args)
         _validated_expected_version(expected, before)
-        result = execute(before)
+        prepared = {
+            "schema": _WAL_SCHEMA,
+            "status": "PREPARED",
+            "tool": tool_name,
+            "idempotency_key": key,
+            "request_sha256": request_hash,
+            "state_version_before": before,
+            "prepared_at": _utc_now(),
+        }
+        _atomic_json_write(path, prepared)
+
+        try:
+            raw_result = handler(args)
+            after = _state_version(args)
+            result = {
+                **raw_result,
+                "mutation_meta": {
+                    "schema": "cbi.mutation-meta.v6.1",
+                    "tool": tool_name,
+                    "idempotency_key": key,
+                    "request_sha256": request_hash,
+                    "state_version_before": before,
+                    "state_version_after": after,
+                    "replayed": False,
+                    "write_ahead_intent": True,
+                },
+            }
+        except Exception as exc:
+            _atomic_json_write(
+                path,
+                {
+                    **prepared,
+                    "status": "COMMITTED_ERROR",
+                    "completed_at": _utc_now(),
+                    "error": {
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                },
+            )
+            raise
+
+        # Test-only cold-process crash injection. The PREPARED intent remains
+        # durable while the handler's side effect has already committed.
+        if os.environ.get(_TEST_CRASH_AFTER_HANDLER_ENV) == tool_name:
+            os._exit(91)
+
         _atomic_json_write(
             path,
             {
-                "schema": "cbi.mutation-receipt.v6.1",
-                "tool": tool_name,
-                "idempotency_key": key,
-                "request_sha256": request_hash,
+                **prepared,
+                "status": "COMMITTED",
+                "completed_at": _utc_now(),
+                "state_version_after": after,
                 "result_sha256": _digest(result),
                 "result": result,
             },
