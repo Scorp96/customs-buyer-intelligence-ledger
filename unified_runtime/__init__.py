@@ -51,6 +51,11 @@ from .authority_hardening import (
     DECISION_RELEVANT_ROLES,
     V61CurrentAuthorityMixin,
 )
+from .commercial_hardening import (
+    COMMERCIAL_OPPORTUNITY_FACTORS,
+    OPPORTUNITY_LIFT_WEIGHTS,
+    V61CommercialOpportunityMixin,
+)
 from .portfolio_hardening import (
     PORTFOLIO_ENVIRONMENTS,
     PORTFOLIO_LIFECYCLES,
@@ -65,6 +70,7 @@ FRESHNESS_LEVELS = V61_FRESHNESS_LEVELS
 
 class UnifiedRuntime(
     V61PortfolioHardeningMixin,
+    V61CommercialOpportunityMixin,
     V61CurrentAuthorityMixin,
     V61ProductionHardeningMixin,
     V6RuntimeMixin,
@@ -88,7 +94,6 @@ __all__ = [
     "INFORMATION_CONFIDENCE",
     "INFORMATION_ROUTE_SCOPES",
     "INFORMATION_SOURCE_TYPES",
-    "INFORMATION_SUBJECT_TYPES",
     "INFORMATION_TEMPORAL_STATUS",
     "INFORMATION_TYPES",
     "NETWORK_BRANCHES",
@@ -112,6 +117,8 @@ __all__ = [
     "V61_CUSTOMS_PARTY_ROLES",
     "V61_PIVOT_STATES",
     "DECISION_RELEVANT_ROLES",
+    "COMMERCIAL_OPPORTUNITY_FACTORS",
+    "OPPORTUNITY_LIFT_WEIGHTS",
     "PORTFOLIO_ENVIRONMENTS",
     "PORTFOLIO_LIFECYCLES",
 ]
