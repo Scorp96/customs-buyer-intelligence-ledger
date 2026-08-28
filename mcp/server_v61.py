@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """v6.1 production MCP adapter over the stable compatibility server.
 
-The large compatibility server remains readable and regression-stable.  This
+The large compatibility server remains readable and regression-stable. This
 adapter hardens the public v6 surface without silently rewriting historical v5
-semantics: Decision Saturation is the only production closure strategy, and
-mutation calls can use durable idempotency plus optimistic state-version checks.
+semantics: Decision Saturation is the only production closure strategy, every
+mutation requires durable idempotency, and callers can use optimistic
+state-version guards.
 """
 
 from __future__ import annotations
@@ -57,6 +58,14 @@ _LEGACY_COMPATIBILITY_TOOLS = {
     "append_peer_receipt",
     "evaluate_commercial_readiness",
 }
+
+_PIVOT_TERMINAL_STATES = [
+    "CONSUMED",
+    "DUPLICATE",
+    "LOW_VALUE",
+    "BLOCKED",
+    "EXHAUSTED",
+]
 
 _KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,160}$")
 _ORIGINAL_TOOL_DESCRIPTORS = _server.tool_descriptors
@@ -112,7 +121,9 @@ def _normalize_start_contract(arguments: dict[str, Any]) -> dict[str, Any]:
     if isinstance(policy, dict):
         strategy = str(policy.get("closure_strategy") or "").strip().upper()
         if strategy and strategy != "DECISION_SATURATION":
-            raise ValidationError("network_policy.closure_strategy must be DECISION_SATURATION on the v6.1 production surface")
+            raise ValidationError(
+                "network_policy.closure_strategy must be DECISION_SATURATION on the v6.1 production surface"
+            )
         policy.pop("closure_strategy", None)
     return args
 
@@ -128,15 +139,25 @@ def _validated_expected_version(expected: Any, before: int) -> None:
         raise ValidationError(f"STATE_VERSION_CONFLICT expected={expected_int} current={before}")
 
 
-def _invoke_mutation(tool_name: str, handler: Callable[[dict[str, Any]], dict[str, Any]], arguments: dict[str, Any]) -> dict[str, Any]:
+def _invoke_mutation(
+    tool_name: str,
+    handler: Callable[[dict[str, Any]], dict[str, Any]],
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
     args = copy.deepcopy(arguments)
     if tool_name == "start_investigation":
         args = _normalize_start_contract(args)
 
     expected = args.pop("expected_state_version", None)
     key = str(args.get("idempotency_key") or "").strip()
-    if key and not _KEY_RE.fullmatch(key):
-        raise ValidationError("idempotency_key must be 8-160 characters using letters, digits, dot, underscore, colon or hyphen")
+    if not key:
+        raise ValidationError(
+            f"idempotency_key is required for production mutation tool {tool_name}"
+        )
+    if not _KEY_RE.fullmatch(key):
+        raise ValidationError(
+            "idempotency_key must be 8-160 characters using letters, digits, dot, underscore, colon or hyphen"
+        )
 
     request_for_hash = copy.deepcopy(args)
     request_for_hash.pop("idempotency_key", None)
@@ -150,18 +171,13 @@ def _invoke_mutation(tool_name: str, handler: Callable[[dict[str, Any]], dict[st
             "mutation_meta": {
                 "schema": "cbi.mutation-meta.v6.1",
                 "tool": tool_name,
-                "idempotency_key": key or None,
+                "idempotency_key": key,
                 "request_sha256": request_hash,
                 "state_version_before": before,
                 "state_version_after": after,
                 "replayed": False,
             },
         }
-
-    if not key:
-        before = _state_version(args)
-        _validated_expected_version(expected, before)
-        return execute(before)
 
     path = _idempotency_path(tool_name, key)
     lock = path.with_suffix(".lock")
@@ -172,25 +188,33 @@ def _invoke_mutation(tool_name: str, handler: Callable[[dict[str, Any]], dict[st
         if path.exists():
             stored = json.loads(path.read_text(encoding="utf-8"))
             if stored.get("request_sha256") != request_hash:
-                raise ValidationError("IDEMPOTENCY_KEY_CONFLICT: key already committed with different request content")
+                raise ValidationError(
+                    "IDEMPOTENCY_KEY_CONFLICT: key already committed with different request content"
+                )
             result = copy.deepcopy(stored["result"])
             result.setdefault("mutation_meta", {})["replayed"] = True
             return result
         before = _state_version(args)
         _validated_expected_version(expected, before)
         result = execute(before)
-        _atomic_json_write(path, {
-            "schema": "cbi.mutation-receipt.v6.1",
-            "tool": tool_name,
-            "idempotency_key": key,
-            "request_sha256": request_hash,
-            "result_sha256": _digest(result),
-            "result": result,
-        })
+        _atomic_json_write(
+            path,
+            {
+                "schema": "cbi.mutation-receipt.v6.1",
+                "tool": tool_name,
+                "idempotency_key": key,
+                "request_sha256": request_hash,
+                "result_sha256": _digest(result),
+                "result": result,
+            },
+        )
         return result
 
 
-def _wrap_handler(tool_name: str, handler: Callable[[dict[str, Any]], dict[str, Any]]) -> Callable[[dict[str, Any]], dict[str, Any]]:
+def _wrap_handler(
+    tool_name: str,
+    handler: Callable[[dict[str, Any]], dict[str, Any]],
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
     def wrapped(arguments: dict[str, Any]) -> dict[str, Any]:
         return _invoke_mutation(tool_name, handler, arguments)
 
@@ -205,40 +229,91 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
         if not isinstance(schema, dict):
             continue
         properties = schema.setdefault("properties", {})
+
         if name == "start_investigation":
             network = properties.get("network_policy")
             if isinstance(network, dict):
                 closure = network.get("properties", {}).get("closure_strategy")
                 if isinstance(closure, dict):
                     closure.clear()
-                    closure.update({
+                    closure.update(
+                        {
+                            "type": "string",
+                            "const": "DECISION_SATURATION",
+                            "description": (
+                                "Production v6 closure policy. Legacy queue saturation is compatibility history only."
+                            ),
+                        }
+                    )
+
+        if name == "close_pivot":
+            status = properties.get("status")
+            if isinstance(status, dict):
+                status.clear()
+                status.update(
+                    {
                         "type": "string",
-                        "const": "DECISION_SATURATION",
-                        "description": "Production v6 closure policy. Legacy queue saturation is compatibility history only.",
-                    })
+                        "enum": _PIVOT_TERMINAL_STATES,
+                        "description": (
+                            "Canonical terminal Pivot transition. Newly compiled Pivots are OPEN_MATERIAL or OPEN_OPTIONAL."
+                        ),
+                    }
+                )
+            properties["duplicate_of_pivot_id"] = {
+                "type": "string",
+                "description": "Required when status=DUPLICATE; must reference another Pivot in the investigation.",
+            }
+            properties["exhausted_by_objective_id"] = {
+                "type": "string",
+                "description": "Required when status=EXHAUSTED; must reference a later independent objective containing the Pivot value.",
+            }
+            properties["max_remaining_eiv"] = {
+                "type": "number",
+                "minimum": 0,
+                "description": "Required for LOW_VALUE and EXHAUSTED and must be below the Decision Saturation threshold.",
+            }
+            tool["description"] = (
+                "Transition one open Pivot into CONSUMED, DUPLICATE, LOW_VALUE, BLOCKED or EXHAUSTED. "
+                "Only OPEN_MATERIAL blocks Decision Saturation; history is append-only."
+            )
+
         if name in _MUTATING_TOOLS:
-            properties.setdefault("idempotency_key", {
+            properties["idempotency_key"] = {
                 "type": "string",
                 "minLength": 8,
                 "maxLength": 160,
-                "description": "Durable replay key. Strongly recommended during the compatibility transition; future v6 production schemas will require it.",
-            })
-            properties.setdefault("expected_state_version", {
-                "type": "integer",
-                "minimum": 0,
-                "description": "Optional optimistic-concurrency guard; stale writers fail with STATE_VERSION_CONFLICT.",
-            })
+                "description": "Required durable replay key for every production mutation.",
+            }
+            required = schema.setdefault("required", [])
+            if "idempotency_key" not in required:
+                required.append("idempotency_key")
+            properties.setdefault(
+                "expected_state_version",
+                {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": (
+                        "Optional optimistic-concurrency guard; stale writers fail with STATE_VERSION_CONFLICT."
+                    ),
+                },
+            )
+
         if name in _LEGACY_COMPATIBILITY_TOOLS:
-            tool["description"] = "[LEGACY_COMPATIBILITY_ONLY] " + str(tool.get("description") or "")
+            tool["description"] = "[LEGACY_COMPATIBILITY_ONLY] " + str(
+                tool.get("description") or ""
+            )
     return tools
 
 
-# Patch only the adapter-facing descriptor/handler tables.  The original module
+# Patch only the adapter-facing descriptor/handler tables. The original module
 # remains importable for compatibility regression tests and migration tooling.
 _server.tool_descriptors = hardened_tool_descriptors
 for _name in _MUTATING_TOOLS:
     if _name in _ORIGINAL_HANDLERS:
-        _server.TOOL_HANDLERS[_name] = _wrap_handler(_name, _ORIGINAL_HANDLERS[_name])
+        _server.TOOL_HANDLERS[_name] = _wrap_handler(
+            _name,
+            _ORIGINAL_HANDLERS[_name],
+        )
 
 
 def main() -> int:
