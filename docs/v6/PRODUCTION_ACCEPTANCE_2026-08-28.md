@@ -1,149 +1,253 @@
 # Customs Buyer Intelligence v6.1 — Production Acceptance Status
 
-Date: 2026-08-28
-
-Branch: `cbi-v6-20260828`
-
-Baseline import commit: `c9588e0fbb5c24a4329a4d1270d091f3dc52178a`
-
-Draft PR: `#1` — **do not merge** until the remaining production blockers are closed and the final acceptance matrix is rerun.
+Original acceptance date: 2026-08-28  
+Last updated: 2026-08-29  
+Branch: `cbi-v6-20260828`  
+Draft PR: `#1` — **do not merge yet**
 
 ## Current status
 
-**V6.1 CONTRACT HARDENING ACTIVE — CROSS-PLATFORM REGRESSION GREEN — PRODUCTION ACCEPTANCE NOT YET COMPLETE**
+**V6.1 ARCHITECTURE / CRASH RECOVERY / BACKUP / SCALE GATES ARE STRUCTURALLY VALIDATED — PRODUCTION ACCEPTANCE REMAINS OPEN FOR PRIVATE GOLDEN AND LOCAL PACKAGING VALIDATION.**
 
-The implementation is now reproducibly green in independent GitHub runners on Windows and Linux. Several specification gaps have been closed or materially reduced, but remaining data-model/commercial/golden/load gates still prevent a Production Ready declaration.
+The runtime and production MCP adapter now satisfy the implemented architecture, durability, idempotency, Decision Saturation, commercial-opportunity, portfolio, backup/recovery and load regressions in independent GitHub CI. This document deliberately does **not** declare Production Ready because the specification requires real Golden-case regression, including the named Arecibo case, and those private production records are not stored in GitHub.
 
-## Independent cold-CI verification
+`main` remains unchanged. PR #1 remains Draft.
 
-The GitHub workflow checks out a clean merge ref and does not depend on the local Codex/Work Python environment.
+## Current production head and MCP entry
 
-| Environment | Result | Unit suite | MCP compatibility | MCP v6 protocol | MCP v6.1 production adapter | Privacy |
+Runtime/acceptance head validated before this documentation-only refresh:
+
+```text
+08e5f079c741d1aefc4f67735c465a4d2760acfe
+```
+
+`.mcp.json` launches:
+
+```text
+mcp/server_v61_backup_recovery.py
+```
+
+This entry layers validated backup/recovery guards over the existing v6.1 production mutation/WAL/reconciliation stack.
+
+## Independent production-branch CI
+
+Standard workflow run:
+
+```text
+GitHub Actions run 33220250679
+```
+
+| Environment | Result | unittest | MCP compatibility | MCP v6 protocol | MCP v6.1 adapter | Privacy |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| Ubuntu 24.04 / Python 3.11 | PASS | 136/136 | 58/58 | 30/30 | 10/10 | PASS |
-| Windows Server 2025 / Python 3.11 | PASS | 136/136 | 58/58 | 30/30 | 10/10 | PASS |
+| Ubuntu 24.04 / Python 3.11 | PASS | 241 tests, 3 Windows-only skips | 58/58 | 30/30 | 16/16 | PASS |
+| Windows Server 2025 / Python 3.11 | PASS | 241/241 | 58/58 | 30/30 | 16/16 | PASS |
 
-CI also validates JSON manifests, validates `agents/openai.yaml` using an ephemeral CI-only PyYAML install, and runs parser/intelligence/outreach/strategic/v3 compatibility self-tests.
+Both jobs also validate JSON manifests, agent YAML, compatibility parser, intelligence, outreach, strategic and v3 self-tests.
 
-## Closed or materially hardened items
+The intelligence self-test intentionally contains an internal negative scenario named `empty_input_deep_dive_never_blank` whose case status is `failed`; the self-test's top-level status is `passed`. That negative fixture is not a CI failure.
 
-### PASS — Plugin entry point uses Decision Saturation semantics
+## Normal 100-Evidence performance gate
 
-The plugin manifest no longer tells the Host to stop because an Anchor/Pivot queue is merely saturated. It now requires Claim/Pivot/Anchor/EIV Decision Saturation and explicitly rejects fixed queue, fixed depth or Source Family coverage as closure authority.
+Specification targets:
 
-### PASS — Production MCP public closure contract is Decision-Saturation-first
+```text
+100-Evidence Bundle < 5 s
+simple state query < 0.5 s
+Resume < 3 s
+```
 
-`.mcp.json` launches `mcp/server_v61.py`. On this production adapter, `start_investigation.network_policy.closure_strategy` is exposed as `DECISION_SATURATION`; a caller that explicitly sends `QUEUE_PIVOT_SATURATION` is rejected. The original compatibility server remains available to historical regression/migration code rather than being silently rewritten.
+Production-head measurements from run `33220250679`:
 
-### PARTIAL/PASSING TESTS — Durable idempotency and optimistic version guards
+| Environment | 100-Evidence Bundle | State query | Resume | Result |
+| --- | ---: | ---: | ---: | --- |
+| Ubuntu | 0.023923 s | 0.065816 s | 0.186384 s | PASS |
+| Windows | 0.340653 s | 0.168886 s | 0.437428 s | PASS |
 
-The production adapter now supports:
+Daily-backup first-mutation latency was observed separately and is **not** defined as a production SLO. On this small CI fixture it measured 0.014678 s on Ubuntu and 0.178598 s on Windows; the second same-day mutation reused the daily snapshot rather than creating another copy.
 
-- durable `idempotency_key` receipts;
-- request/result hashes;
-- exact replay of a committed result;
-- same-key/different-request conflict rejection;
-- `expected_state_version` stale-writer rejection;
-- mutation metadata containing before/after state versions;
-- replay precedence over a stale retry version.
+## Exact scalability acceptance
 
-Cold adapter protocol tests pass on Windows and Linux.
+Dedicated exact-scale workflow run `33191266068` completed successfully on scale-validation commit `9657dbede12b69c2838a5a282912d01644b303ea`.
 
-**Remaining strict-spec gap:** `idempotency_key` is still optional during the compatibility transition. The v6 specification ultimately requires it on every mutation API. The generic adapter journal also does not yet prove a zero-window transaction that atomically couples every legacy mutation with its adapter receipt; critical native paths have their own stronger deterministic/idempotent controls, but the uniform envelope is not yet a complete Source-of-Truth transaction layer.
+Validated counts:
 
-### PASS — Complete Customs Party Role vocabulary is accepted/exposed
+| Dimension | Required | Observed |
+| --- | ---: | ---: |
+| Canonical Accounts | 5,000 | 5,000 |
+| simultaneous Investigations | 1,000 | 1,000 |
+| Evidence | 100,000 | 100,000 |
+| Source Attempts | 100,000 | 100,000 |
+| Peers | 20,000 | 20,000 |
+| active portfolio investigations | 1,000 | 1,000 |
+| superseded in acceptance portfolio | 0 expected | 0 |
+| quarantined in acceptance portfolio | 0 expected | 0 |
 
-The v6.1 hardening layer exposes and validates BUYER, CONSIGNEE, IMPORTER_OF_RECORD, EXPORTER, SHIPPER, DECLARED_MANUFACTURER, PROBABLE_MANUFACTURER, TRADING_INTERMEDIARY, CUSTOMS_BROKER, NOTIFY_PARTY, FORWARDER and SUPPLIER_GROUP. A compatibility alias for `PROBABLE_ACTUAL_MANUFACTURER` is retained.
+Additional provenance:
 
-**Remaining model improvement:** shipment role, commercial/business role and buyer relationship are still not first-class independent dimensions everywhere.
+```text
+Evidence Compiler investigation samples : 1,000
+SourceAttempt API samples                : 1,000
+Peer discovery API samples               : 1,000
+cold hash-chain aggregate                : 6.818774 s
+canonical registry query                 : 0.122093 s
+portfolio query                          : 119.102838 s
+sample state reconstruction              : 0.046186 s
+```
 
-### PASS — Freshness vocabulary now distinguishes Current Confirmed vs Current Likely
+This run proves the required durable-state scale envelope. It does not claim a single-record mutation-throughput SLO that the specification does not define.
 
-The public/runtime vocabulary now includes `CURRENT_CONFIRMED` and `CURRENT_LIKELY` while retaining legacy aliases for backward compatibility.
+## Backup and recovery — PASS on production branch
 
-**Remaining audit:** older internal compatibility rules that still treat `CURRENT`/`RECENT` as equivalent need progressive migration before legacy aliases can be retired.
+The production entry now automatically creates validated logical snapshots:
 
-### STRUCTURALLY RESOLVED — Resume returns a LAST_SAFE_STATE payload
+```text
+daily before the first production mutation
+before migration
+before CRM commit preparation
+before schema upgrade
+```
 
-`resume_investigation` now includes last committed mutation, pending host bundles, current objectives, critical conflicts, material open pivots and portfolio priority. Basic regression is green. A populated production investigation still needs live regression after deployment.
+Recovery supports:
 
-### STRUCTURALLY RESOLVED — `get_account_state` exposes the full v6 view
+```text
+latest valid snapshot
++ proven append-only live tail replay
+```
 
-The hardening layer adds structured identity, brands, products, trade, suppliers, buying group, contacts, routes, claims, conflicts, network, material pivots, next objectives and v6 CRM sync state. No absent information is fabricated; empty dimensions remain empty.
+Safety properties covered by regression include:
 
-### PARTIAL — Canonical Route View now includes safe append-only Information Records
+- snapshot file inventory and SHA-256 validation;
+- valid-prefix capture when a live append-only chain has a corrupt tail;
+- corrupt or divergent live tails do not overwrite the snapshot state;
+- restore is staged into a separate target and never overwrites the live root;
+- canonical, pending-journal and host-queue target roots are explicitly isolated from live environment aliases;
+- invalid pending/host sidecars prevent activation instead of being trusted;
+- Windows 8.3 short-path aliases cannot bypass protected-root overlap checks;
+- append-only replay occurs only when ancestry is mechanically provable;
+- the adapter WAL is not represented as a fake globally atomic snapshot; adapter reconciliation remains based on durable domain state.
 
-Outreach readiness no longer has to rely exclusively on compiled `contact.company_route` / `contact.named_route` observations. The hardening layer derives a Canonical Route View from current, verified, account-owned, BUYER_DIRECT append-only Information Records and keeps the route safety gates (not masked, not guessed, channel proof where needed, source lineage present).
+The snapshot contract is intentionally described as **per-component serialized logical state**, not as one globally transactional nanosecond snapshot. Recovery authority comes from validated hash-chain ancestry.
 
-This directly addresses the previously observed class of Information-History-vs-Outreach-Readiness drift.
+## Mutation, crash and offline durability — PASS structurally
 
-**Remaining acceptance gate:** rerun the exact populated Western Woods/C001 route regression before declaring this bug class fully closed.
+Production mutation APIs require idempotency on the hardened public adapter and persist request/result lineage. The WAL/reconciliation inventory has explicit regression for every guarded production mutation family. Where exact recovery is mechanically provable, the original result is reconstructed without duplicate mutation; where proof is absent, recovery remains fail-closed rather than guessing.
 
-### PASS — Durable append-only runtime and crash/integrity controls remain green
+Covered families include account/start/objective/information/bundle/provider planning/receipts/peer lifecycle/pivot/closure/outreach/migration/batch sync/host queue and pending journal paths.
 
-Regression continues to cover hash-chain integrity, corrupt-tail quarantine, dead-process lock recovery, concurrent writers, closure tail-change protection and migration source preservation.
+Additional verified behavior:
 
-### PASS — Batch compiler / host queue / peer / CRM safety regressions remain green
+- MCP process/session kill does not make the durable Investigation unrecoverable;
+- legacy Resume is byte-for-byte read-only;
+- host research bundle persistence survives MCP process death and replays exactly once after restart;
+- concurrent identical mutations cannot steal another idempotency correlation;
+- stale writer/version conflicts remain rejected;
+- unknown/unproven PREPARED mutations remain fail-closed.
 
-Exactly-once bundle replay, host queue recreation/sync, peer staged promotion, Commercial/Research/Outreach separation, CRM receipt validation and guarded draft-only outreach remain green in cold CI.
+## v6 semantic gates — PASS structurally
 
-## Open Production blockers
+The prior architecture blockers in this document are no longer open code gaps:
 
-### P0-01 — Canonical Pivot state machine is still incomplete
+- canonical seven-state Pivot view is exposed and only `OPEN_MATERIAL` blocks Decision Saturation;
+- `BLOCKED` Pivot is terminal and does not masquerade as an open material research path;
+- current Decision Chain support requires evidence-bound current association/role/procurement relevance rather than a bare company association;
+- Commercial Value is independent of CRM/contact readiness;
+- ten Commercial Opportunity factors are exposed with Evidence lineage; unknown factors remain unknown rather than fabricated negatives;
+- one active Investigation per canonical account + scope is enforced in the production portfolio view;
+- synthetic/placeholder sessions are excluded from the production portfolio;
+- Canonical Route View binds safe append-only Information Records and compiled route Evidence without promoting masked/guessed/cross-owner routes;
+- Peer promotion remains staged; contact coverage is not a prerequisite for Anchor Eligibility;
+- Research Objective Planner is Claim/EIV-driven rather than a fixed website checklist;
+- Evidence Compiler supports bundle processing and source-type normalization;
+- batch ingestion supports partial success and idempotent replay;
+- Claim Closure + Decision Saturation terminates when material unresolved work is actually exhausted.
 
-The v6 implementation still stores/uses compatibility Pivot statuses such as `OPEN`, `NOT_MATERIAL` and `BLOCKED`. The target canonical states are `OPEN_MATERIAL`, `OPEN_OPTIONAL`, `CONSUMED`, `DUPLICATE`, `LOW_VALUE`, `BLOCKED` and `EXHAUSTED`.
+## P0 acceptance matrix
 
-Only `OPEN_MATERIAL` should block Decision Saturation. The current implementation still treats `BLOCKED` as part of `_material_pivots`, so this remains a real semantic gap rather than a naming-only issue.
+The specification states that all P0 criteria must be satisfied before Production Ready. The current distinction is between **structurally/chaos verified** and **private real-case verified**.
 
-### P0-02 — Uniform mutation envelope is not yet mandatory/atomic everywhere
+| Criterion | Current status | Evidence boundary |
+| --- | --- | --- |
+| AC-P0-01 — session kill then `resume_investigation` succeeds | PASS | process-kill/resume and read-only Resume regressions |
+| AC-P0-02 — Runtime offline, Host can durable-queue Research Bundle | PASS | MCP-death host persistence + restart exactly-once replay regression |
+| AC-P0-03 — Arecibo can become Anchor Eligible from trade/entity/product Evidence without Zalo/Instagram completion | **PENDING PRIVATE GOLDEN** | generic semantic regression passes, but the specification explicitly names the real Arecibo case |
+| AC-P0-04 — Commercial Grade unaffected by CRM Sync | PASS | commercial-dimension and A+/CRM-independent regressions |
+| AC-P0-05 — Notify Party does not enter Buyer Decision Chain | PASS structurally | party-role/current-authority boundaries; Edwin Seda remains a private Golden assertion |
+| AC-P0-06 — Brand transition does not auto-merge canonical entities | PASS structurally | canonical/non-merge regressions; Arecibo Home Center vs Home Design remains a private Golden assertion |
+| AC-P0-07 — Planner returns Objectives, not checklist calls | PASS | Claim/EIV objective planner regressions |
+| AC-P0-08 — Evidence Compiler handles `source_type` | PASS | compiler/protocol/bundle regressions |
+| AC-P0-09 — Batch ingestion supports partial success | PASS | partial-success/idempotent bundle regressions |
+| AC-P0-10 — Claim Closure + Decision Saturation can terminate | PASS | saturation/closure regressions, including race/freshness invalidation |
 
-The adapter implementation is tested and useful, but strict Production acceptance still requires mandatory `idempotency_key` for every mutation, one canonical persisted mutation envelope, atomic coupling between mutation commit and mutation receipt (or an equivalent recoverable write-ahead protocol), and typed replay/conflict semantics across every mutation family.
+Because AC-P0-03 is an explicitly named real-case criterion, **Production Ready remains blocked until the private Golden run passes.**
 
-### P0-03 — Current Decision Chain evidence boundary needs a dedicated prerequisite model
+## Remaining production acceptance blockers
 
-A positive person association must not automatically prove current purchasing authority. Decision-chain support should require evidence-bound named person, current company association, current or sufficiently recent role, role/procurement relevance and authority scope/confidence.
+### BLOCKER 1 — Real private Golden suite on the current hardened runtime
 
-This is required to prevent recurrence of the previously observed case where a record explicitly said “not yet verified current purchasing decision maker” while the aggregate Decision Chain Claim was nevertheless supported.
+The repository intentionally contains only synthetic Golden metadata. The required private read-only regression must cover at least:
 
-### P0-04 — Commercial Opportunity model is still under-featured
+```text
+Western Woods
+Arecibo Home Center
+Arecibo Home Design
+Chimelis Home Center
+Tesoro en Maderas II
+Forza Distribution
+Edwin Seda
+Hangzhou Promise
+```
 
-Commercial Value is correctly independent from CRM/contact readiness, but it still relies mainly on weighted Claims and does not expose the complete evidence-bound opportunity model required by v6: visible volume, purchase frequency, shipment size, supplier diversity/concentration, recency, recent supplier change, annualized visible volume, growth and replacement window.
+The local runner is:
 
-Do **not** fix the Western Woods grade regression by lowering a score threshold. Add evidence-bound opportunity dimensions first, then rerun golden cases.
+```text
+scripts/run_private_golden_acceptance.py
+```
 
-### P0-05 — Production portfolio lifecycle/dedup requires live reconciliation
+It accepts only an allow-list of read-only runtime calls and rejects mutation, Resume/initialization, CRM writeback, outreach preparation, migration and account creation. Private manifests/results are protected by `.gitignore` patterns:
 
-Prior live state showed duplicate/placeholder/test investigations and multiple active states for the same canonical account. Source hardening in this branch has not yet proven that the deployed portfolio excludes TEST/MIGRATION/SUPERSEDED/ARCHIVED investigations or enforces one active investigation per canonical account + scope.
+```text
+.cbi-private-golden*.json
+private-golden/
+private-acceptance/
+```
 
-The required lifecycle should support the equivalent of ACTIVE, SUPERSEDED, ARCHIVED, TEST, MIGRATION_ONLY and QUARANTINED.
+No private Golden manifest or result may be committed to GitHub.
 
-### P0-06 — Real golden cases have not yet been rerun on this exact hardened head
+Minimum semantic assertions include:
 
-Current repository fixtures are synthetic regression metadata. Production acceptance still requires real persisted regression for at least Western Woods, Arecibo Home Center, Arecibo Home Design, Chimelis Home Center, Tesoro en Maderas II, Forza Distribution, Edwin Seda and Hangzhou Promise.
+- Western Woods Commercial Value >= A;
+- Arecibo Home Center and Arecibo Home Design remain distinct canonical entities;
+- Arecibo Anchor Eligibility is not blocked merely by incomplete Zalo/Instagram/contact coverage when trade/entity/product Evidence is sufficient;
+- Tesoro en Maderas II reaches the expected A+ / Anchor-Eligible semantics before Full Audit when the durable Evidence supports them;
+- Edwin Seda is not promoted into buyer Decision Chain without current decision-authority Evidence and remains appropriately classified as intermediary/broker where that is what the Evidence supports;
+- the remaining named Golden cases preserve identity/product/trade/network boundaries without fabricated certainty.
 
-Previous live findings (Western Woods A- vs expected >= A, Arecibo canonical entities not present, Route/Decision-Chain drift) remain regression targets until explicitly rerun and closed.
+### BLOCKER 2 — Local plugin/skill packaging validation evidence
 
-### P1-01 — Full performance/scalability targets are not yet demonstrated
+GitHub CI validates repository JSON/YAML, runtime protocols, privacy and self-tests. The final locally installed plugin/skill package still needs the official local product validator/installation validation to be executed against the exact checked-out head and its result recorded. This is intentionally separate from GitHub runtime tests because it depends on the local product installation environment.
 
-The current suite includes a 1,000-observation deterministic load test, but it does not yet prove the complete target envelope: 100 Evidence Bundle < 5 s local, simple state query < 500 ms, Resume < 3 s, 10k evidence / 1k pivots / 500 peers per large investigation, 5,000 canonical accounts, 1,000 simultaneous investigations, 100k evidence/source attempts and 20k peers.
+Do not invent a validator command in this document; use the currently installed product's documented validator interface when executing this gate.
 
-A dedicated benchmark/load workflow is still required.
+## Private Golden command contract
 
-### P1-02 — Remote transport outage is distinct from local host-queue durability
+From the repository root, after syncing the exact production branch, the read-only runner contract is:
 
-Local/process-independent HostBundleQueue durability is strongly covered and green. A ChatGPT-to-remote-MCP transport failure still cannot invoke an MCP tool through the failed tunnel. If remote always-online queueing is a requirement, it needs a separately reachable authorized host-side persistence service or equivalent architecture.
+```text
+python scripts/run_private_golden_acceptance.py \
+  --session-root "<REAL_SESSION_ROOT>" \
+  --manifest ".cbi-private-golden.json" \
+  --output "private-acceptance/private-golden-result.json"
+```
+
+On PowerShell the same arguments can be supplied on one line. The manifest root is `{"cases": [...]}`. Each case requires a unique `case_id`, a read-only `tool`, an `arguments` object and one or more assertions. Supported assertion operators are `eq`, `ne`, `truthy`, `falsy`, `contains`, `not_contains`, `in`, `not_in`, `grade_at_least`, `number_at_least`, and `length_at_least`.
+
+The runner exits `0` only when every private case passes.
 
 ## Merge gate
 
-PR #1 remains Draft and must not be merged until, at minimum:
+PR #1 must remain Draft and **must not be merged into `main`** until both remaining blockers are closed:
 
-1. canonical Pivot state semantics are implemented and tested;
-2. uniform mutation idempotency/atomicity is brought to the strict production contract;
-3. Decision Chain prerequisite/evidence-boundary regression is green;
-4. Commercial Opportunity factors are implemented without threshold gaming;
-5. portfolio lifecycle/canonical-active-investigation rules are verified against real deployed state;
-6. real golden cases are rerun on the hardened head;
-7. crash/offline/load acceptance is completed at target scale;
-8. Windows + Linux cold CI remains green after those changes.
+1. the real private Golden suite passes against the user's durable production state on the current hardened runtime;
+2. the exact locally installed plugin/skill package passes the official local product validator/installation validation.
 
-Only then should the branch be considered for merge into `main` or a Production Ready declaration.
+After those two local gates, rerun the standard Windows + Linux CI on the final documentation/acceptance head, record the local Golden/validator evidence without committing private customer data, and only then consider changing the PR out of Draft or declaring Production Ready.
