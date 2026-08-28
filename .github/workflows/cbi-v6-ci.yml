@@ -53,6 +53,9 @@ jobs:
       - name: Run unittest regression suite
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
+      - name: Run 100-Evidence structural smoke acceptance
+        run: python scripts/run_v6_load_acceptance.py --profile smoke
+
       - name: Run MCP compatibility self-test
         run: python mcp/self_test.py
 
