@@ -2,23 +2,26 @@
 """Strict correlated fallback for Sync child information-record recovery.
 
 The full batch implementation remains byte-identical in
-``server_v61_sync_recovery_base``.  This wrapper adds exactly one missing proof
+``server_v61_sync_recovery_base``. This wrapper adds exactly one missing proof
 path discovered by cold CI: a pending-sync child can crash after
 ``append_information_record`` has durably appended its event but before the
 pending sidecar/child-WAL terminal receipt is written.
 
-Recovery first delegates to the existing mutation-family chain.  Only when that
+Recovery first delegates to the existing mutation-family chain. Only when that
 chain cannot recover does this wrapper accept one exact
 INFORMATION_RECORD_APPENDED event whose sequence is after the child PREPARED
 state version and whose mutation correlation, tool, information identity,
-content hash and stable request fields all match.  Missing or ambiguous proof
-remains fail-closed; no side effect is re-executed.
+content hash and stable request fields all match. Timestamp comparison is
+semantic UTC comparison so equivalent ``+00:00`` and ``Z`` encodings do not
+create a false mismatch. Missing or ambiguous proof remains fail-closed; no
+side effect is re-executed.
 """
 
 from __future__ import annotations
 
 import copy
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +47,19 @@ _STABLE_INFORMATION_FIELDS = (
     "observed_at",
     "content_sha256",
 )
+
+
+def _stable_value(field: str, value: Any) -> str:
+    text = str(value or "").strip()
+    if field != "observed_at" or not text:
+        return text
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    if parsed.tzinfo is None:
+        return text
+    return parsed.astimezone(timezone.utc).isoformat()
 
 
 def _correlated_information_result(
@@ -86,7 +102,8 @@ def _correlated_information_result(
         ):
             continue
         if any(
-            field in raw and str(record.get(field) or "") != str(raw.get(field) or "")
+            field in raw
+            and _stable_value(field, record.get(field)) != _stable_value(field, raw.get(field))
             for field in _STABLE_INFORMATION_FIELDS
         ):
             continue
@@ -159,7 +176,7 @@ def _recover_target_result(
     return None
 
 
-# The base module's batch functions resolve this global at call time.  Replace
+# The base module's batch functions resolve this global at call time. Replace
 # only the proof resolver; selection, child WAL, sidecar persistence, locking,
 # fail-closed behavior and public handlers remain unchanged.
 _base._recover_target_result = _recover_target_result
