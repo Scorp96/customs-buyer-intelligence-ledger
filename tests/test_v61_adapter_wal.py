@@ -167,7 +167,22 @@ class V61AdapterWalTests(unittest.TestCase):
         self.assertEqual(wal["state_version_before"], before_version)
 
         recovered = self._spawn()
-        replay = self._rpc(recovered, 5, "tools/call", {
+        contract = self._tool(recovered, 5, "get_runtime_contract", {})
+        wal_contract = contract["production_adapter_mutation_wal"]
+        self.assertTrue(wal_contract["write_ahead_intent_required"])
+        self.assertFalse(wal_contract["prepared_auto_replay"])
+        self.assertFalse(wal_contract["exact_automatic_reconciliation_complete"])
+
+        health = self._tool(recovered, 6, "get_runtime_health", {})
+        self.assertEqual(health["status"], "DEGRADED_RECONCILIATION_REQUIRED")
+        self.assertEqual(health["mutation_wal"]["prepared_count"], 1)
+        self.assertTrue(health["mutation_wal"]["reconciliation_required"])
+        self.assertEqual(
+            health["mutation_wal"]["prepared_intents"][0]["tool"],
+            "submit_research_objective",
+        )
+
+        replay = self._rpc(recovered, 7, "tools/call", {
             "name": "submit_research_objective",
             "arguments": objective_args,
         })
@@ -179,7 +194,7 @@ class V61AdapterWalTests(unittest.TestCase):
 
         after = self._tool(
             recovered,
-            6,
+            8,
             "get_investigation_state",
             {"investigation_id": investigation_id},
         )
