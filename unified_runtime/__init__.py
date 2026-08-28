@@ -47,6 +47,7 @@ from .hardening import (
     V61_PIVOT_STATES,
     V61ProductionHardeningMixin,
 )
+from .resume_hardening import V61ResumeReadOnlyMixin
 from .authority_hardening import (
     DECISION_RELEVANT_ROLES,
     V61CurrentAuthorityMixin,
@@ -75,6 +76,7 @@ class UnifiedRuntime(
     V61CommercialOpportunityMixin,
     V61CurrentAuthorityMixin,
     V61ProductionHardeningMixin,
+    V61ResumeReadOnlyMixin,
     V6RuntimeMixin,
     _CompatibilityRuntime,
 ):
@@ -119,6 +121,7 @@ __all__ = [
     "RESEARCH_CONFIDENCE_GRADES",
     "V61_CUSTOMS_PARTY_ROLES",
     "V61_PIVOT_STATES",
+    "V61ResumeReadOnlyMixin",
     "DECISION_RELEVANT_ROLES",
     "COMMERCIAL_OPPORTUNITY_FACTORS",
     "OPPORTUNITY_LIFT_WEIGHTS",
