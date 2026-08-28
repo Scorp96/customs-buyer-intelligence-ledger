@@ -1,0 +1,10 @@
+[
+  {"name": "Western Woods", "fixture_role": "synthetic_company_route_case"},
+  {"name": "Arecibo Home Center", "fixture_role": "synthetic_identity_conflict_case"},
+  {"name": "Arecibo Home Design", "fixture_role": "synthetic_canonical_dedup_case"},
+  {"name": "Chimelis", "fixture_role": "synthetic_negative_exhaustion_case"},
+  {"name": "Tesoro", "fixture_role": "synthetic_peer_promotion_case"},
+  {"name": "Forza", "fixture_role": "synthetic_material_pivot_case"},
+  {"name": "Edwin Seda", "fixture_role": "synthetic_named_route_case"},
+  {"name": "Hangzhou Promise", "fixture_role": "synthetic_supplier_relationship_case"}
+]

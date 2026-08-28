@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xinghuai.local/schemas/customs-buyer-intelligence-v5.4.json",
+  "title": "Customs Buyer Intelligence v5.4 Evidence, Saturation and CRM Receipt Structures",
+  "type": "object",
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+    "sourceAttempt": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["attempt_id", "investigation_id", "owner_type", "owner_id", "module_or_branch", "source_family", "query", "started_at", "completed_at", "checked_at", "tool_or_operator", "execution_id", "result", "result_count", "raw_result_locator", "content_sha256", "evidence_ids", "pivots_generated", "blocked_reason"],
+      "properties": {
+        "attempt_id": {"type": "string", "minLength": 1},
+        "investigation_id": {"type": "string", "minLength": 1},
+        "owner_type": {"type": "string", "minLength": 1},
+        "owner_id": {"type": "string", "minLength": 1},
+        "module_or_branch": {"type": "string", "minLength": 1},
+        "source_family": {"type": "string", "minLength": 1},
+        "query": {"type": "string", "minLength": 1},
+        "started_at": {"type": "string", "format": "date-time"},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "checked_at": {"type": "string", "format": "date-time"},
+        "tool_or_operator": {"type": "string", "minLength": 1},
+        "execution_id": {"type": "string", "minLength": 1},
+        "result": {"enum": ["POSITIVE", "NEGATIVE", "NEGATIVE_EXHAUSTED", "BLOCKED", "NOT_APPLICABLE", "NOT_APPLICABLE_JUSTIFIED"]},
+        "result_count": {"type": "integer", "minimum": 0},
+        "raw_result_locator": {"type": "string", "minLength": 1},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "pivots_generated": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "blocked_reason": {"type": "string"}
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "owner_type", "owner_id", "claim_key", "module_or_branch", "source_type", "source_family", "reference_type", "url", "locator", "observed_at", "content_sha256", "snapshot_locator", "claim_type", "freshness", "evidence_grade", "boundary", "conflict"],
+      "properties": {
+        "evidence_id": {"type": "string", "minLength": 1},
+        "owner_type": {"type": "string", "minLength": 1},
+        "owner_id": {"type": "string", "minLength": 1},
+        "claim_key": {"type": "string", "minLength": 1},
+        "module_or_branch": {"type": "string", "minLength": 1},
+        "source_type": {"type": "string", "minLength": 1},
+        "source_family": {"type": "string", "minLength": 1},
+        "reference_type": {"enum": ["PUBLIC_URL", "USER_INPUT", "CUSTOMS_RECORD", "LEGACY_CRM", "CRM_RECORD", "LOCAL_ARTIFACT", "PROVIDER_RECEIPT", "DERIVED_CALCULATION"]},
+        "url": {"type": "string"},
+        "locator": {"type": "string"},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "snapshot_locator": {"type": "string", "minLength": 1},
+        "claim_type": {"enum": ["FACT", "INFERENCE", "HYPOTHESIS", "RECOMMENDATION", "PROVIDER_ASSERTION", "CONTACT", "IDENTITY", "LEGAL_STATUS", "BUSINESS_PROFILE", "PRODUCT", "CUSTOMS", "TRADE", "SUPPLY_CHAIN", "RELATIONSHIP", "AUTHORITY", "ROUTE", "NEGATIVE_SEARCH", "CRM_WRITEBACK"]},
+        "freshness": {"enum": ["CURRENT", "RECENT", "STALE", "HISTORICAL", "UNKNOWN"]},
+        "evidence_grade": {"enum": ["A1", "A2", "B1", "B2", "C1", "C2", "D"]},
+        "boundary": {"type": "string", "minLength": 1},
+        "conflict": {"type": "string"},
+        "commercial_gate_tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["CUSTOMS_IMPORT_FACT", "PRODUCT_MATCH", "LEGAL_EXISTENCE", "OFFICIAL_PRESENCE", "OFFICIAL_CONTACT", "DECISION_CHAIN", "CONTACT_SOURCE", "PVC_BUSINESS_RELATIONSHIP", "DEVELOPMENT_ROUTE"]}
+        }
+      },
+      "allOf": [{"if": {"properties": {"reference_type": {"const": "PUBLIC_URL"}}}, "then": {"properties": {"url": {"type": "string", "minLength": 1, "pattern": "^https?://\\S+$"}}}, "else": {"properties": {"url": {"type": "string", "maxLength": 0}}}}]
+    },
+    "pivotEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pivot_id", "pivot_type", "pivot_value", "generated_by_attempt_id", "generated_at", "consumed_by_attempt_id", "consumed_at", "consumption_result", "status"],
+      "properties": {
+        "pivot_id": {"type": "string", "minLength": 1},
+        "pivot_type": {"type": "string", "minLength": 1},
+        "pivot_value": {"type": "string", "minLength": 1},
+        "generated_by_attempt_id": {"type": "string", "minLength": 1},
+        "generated_at": {"type": "string", "format": "date-time"},
+        "consumed_by_attempt_id": {"type": "string"},
+        "consumed_at": {"type": "string"},
+        "consumption_result": {"type": "string"},
+        "status": {"enum": ["OPEN", "CONSUMED"]}
+      }
+    },
+    "informationRecord": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["information_id", "investigation_id", "related_account_id", "subject_type", "subject_owner_id", "relationship_to_account", "information_type", "claim_key", "value", "source_type", "source_reference_type", "source_url", "source_locator", "observed_at", "content_sha256", "confidence", "temporal_status", "route_scope", "outreach_eligible_claimed", "supersedes_information_ids", "conflicts_with_information_ids", "evidence_ids", "notes"],
+      "properties": {
+        "information_id": {"type": "string", "minLength": 1},
+        "investigation_id": {"type": "string", "minLength": 1},
+        "related_account_id": {"type": "string", "minLength": 1},
+        "subject_type": {"enum": ["ACCOUNT", "PEER", "PERSON", "COMPANY", "BRAND", "SUPPLIER", "REFERRAL", "CHANNEL", "ADDRESS", "OTHER"]},
+        "subject_owner_id": {"type": "string", "minLength": 1},
+        "relationship_to_account": {"type": "string", "minLength": 1},
+        "information_type": {"enum": ["FACT", "CONTACT", "ROUTE", "CONFLICT", "BLOCKED_SOURCE", "NEGATIVE_SEARCH_NOTE", "PIVOT", "HISTORICAL", "PARTY_ROLE"]},
+        "claim_key": {"type": "string", "minLength": 1},
+        "value": {"type": "object", "minProperties": 1},
+        "source_type": {"enum": ["OFFICIAL", "OFFICIAL_CONTACT", "GOVERNMENT", "REGISTRY", "DIRECTORY", "MAPS", "SOCIAL", "CUSTOMS", "TRADE_DATA", "PROVIDER", "USER_INPUT", "LEGACY_CRM", "DERIVED_CALCULATION", "OTHER_PUBLIC"]},
+        "source_reference_type": {"enum": ["PUBLIC_URL", "USER_INPUT", "CUSTOMS_RECORD", "LEGACY_CRM", "CRM_RECORD", "LOCAL_ARTIFACT", "PROVIDER_RECEIPT", "DERIVED_CALCULATION"]},
+        "source_url": {"type": "string"},
+        "source_locator": {"type": "string", "minLength": 1},
+        "observed_at": {"type": "string", "format": "date-time"},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "confidence": {"enum": ["HIGH", "MEDIUM_HIGH", "MEDIUM", "LOW"]},
+        "temporal_status": {"enum": ["CURRENT", "HISTORICAL", "UNKNOWN"]},
+        "route_scope": {"enum": ["BUYER_DIRECT", "CROSS_ENTITY", "SUPPLIER_REFERRAL", "PRODUCT_CHANNEL", "IDENTITY_ONLY", "NOT_A_ROUTE"]},
+        "outreach_eligible_claimed": {"type": "boolean"},
+        "outreach_eligible_effective": {"type": "boolean"},
+        "supersedes_information_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "conflicts_with_information_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "evidence_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "usage_warnings": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "notes": {"type": "string"}
+      },
+      "allOf": [{"if": {"properties": {"source_reference_type": {"const": "PUBLIC_URL"}}}, "then": {"properties": {"source_url": {"type": "string", "minLength": 1, "pattern": "^https?://\\S+$"}}}, "else": {"properties": {"source_url": {"type": "string", "maxLength": 0}}}}]
+    },
+    "providerPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "allowed_providers", "required_capabilities", "cost_consent"],
+      "properties": {
+        "mode": {"enum": ["PUBLIC_ONLY", "CONNECTED_PROVIDERS_OPTIONAL", "CONNECTED_PROVIDERS_REQUIRED"]},
+        "allowed_providers": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "required_capabilities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "cost_consent": {"type": "boolean"}
+      }
+    },
+    "providerContact": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["contact_id", "kind", "value", "owner_entity_id", "masked", "guessed", "provider_verified", "route_eligible", "evidence_id", "channel_proof"],
+      "properties": {
+        "contact_id": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "minLength": 1},
+        "value": {"type": "string", "minLength": 1},
+        "owner_entity_id": {"type": "string", "minLength": 1},
+        "masked": {"type": "boolean"},
+        "guessed": {"type": "boolean"},
+        "provider_verified": {"type": "boolean"},
+        "route_eligible": {"type": "boolean"},
+        "evidence_id": {"type": "string"},
+        "channel_proof": {"type": "boolean"}
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_target_fit", "minimum_evidence_grade", "require_commercial_novelty", "require_canonical_new", "closure_strategy"],
+      "properties": {
+        "max_anchor_depth": {"type": "integer", "minimum": 0, "deprecated": true, "description": "v5.3 migration hint only; not a completion or promotion cap"},
+        "max_promoted_anchors": {"type": "integer", "minimum": 0, "deprecated": true, "description": "v5.3 migration hint only; not a completion or promotion cap"},
+        "minimum_target_fit": {"enum": ["A", "A+"], "default": "A"},
+        "minimum_evidence_grade": {"enum": ["B", "A"], "default": "B"},
+        "require_commercial_novelty": {"type": "boolean", "const": true},
+        "require_canonical_new": {"type": "boolean", "const": true},
+        "closure_strategy": {"const": "QUEUE_PIVOT_SATURATION"}
+      }
+    },
+    "supplyChainParty": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["entity_id", "name", "role"],
+      "properties": {
+        "entity_id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "role": {"enum": ["BUYER", "IMPORTER_OF_RECORD", "EXPORTER", "TRADING_INTERMEDIARY", "DECLARED_MANUFACTURER", "PROBABLE_ACTUAL_MANUFACTURER", "SUPPLIER_GROUP"]},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "pendingReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "journal_id", "investigation_id", "target_tool", "payload", "queued_at", "request_sha256", "status"],
+      "properties": {
+        "schema": {"enum": ["cbi.pending-receipt.v5.3", "cbi.pending-receipt.v5.4"]},
+        "journal_id": {"type": "string", "pattern": "^PEND-[0-9TZ-]+-[0-9a-f]{12}$"},
+        "investigation_id": {"type": "string", "minLength": 1},
+        "target_tool": {"enum": ["append_information_record", "append_execution_receipt", "append_provider_receipt", "append_peer_receipt", "append_crm_writeback_receipt"]},
+        "payload": {"type": "object"},
+        "queued_at": {"type": "string", "format": "date-time"},
+        "request_sha256": {"$ref": "#/$defs/sha256"},
+        "status": {"enum": ["PENDING", "SYNCED", "DEDUPLICATED", "FAILED_VALIDATION", "RETRYABLE_FAILURE"]}
+      }
+    },
+    "crmWritebackReceipt": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["writeback_id", "investigation_id", "account_id", "transaction_id", "writer", "target_workbook_path", "workbook_sha256_before", "workbook_sha256_after", "committed_at", "status", "atomic_commit", "sparse_patch", "history_guard_passed", "post_commit_reimport_verified", "unintended_diff_count", "touched_sheets", "row_assertions", "cell_assertions", "previous_current_diff", "audit_artifact_locator", "audit_artifact_sha256"],
+      "properties": {
+        "writeback_id": {"type": "string", "minLength": 1},
+        "investigation_id": {"type": "string", "minLength": 1},
+        "account_id": {"type": "string", "minLength": 1},
+        "transaction_id": {"type": "string", "minLength": 1},
+        "writer": {"const": "ARTIFACT_TOOL"},
+        "target_workbook_path": {"type": "string", "minLength": 1},
+        "workbook_sha256_before": {"$ref": "#/$defs/sha256"},
+        "workbook_sha256_after": {"$ref": "#/$defs/sha256"},
+        "committed_at": {"type": "string", "format": "date-time"},
+        "status": {"enum": ["COMMITTED", "NO_CHANGE_VERIFIED"]},
+        "atomic_commit": {"const": true},
+        "sparse_patch": {"const": true},
+        "history_guard_passed": {"const": true},
+        "post_commit_reimport_verified": {"const": true},
+        "unintended_diff_count": {"const": 0},
+        "touched_sheets": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "row_assertions": {"type": "array", "items": {"type": "object", "minProperties": 1}},
+        "cell_assertions": {"type": "array", "items": {"type": "object", "minProperties": 1}},
+        "previous_current_diff": {"type": "array", "items": {"type": "object", "required": ["sheet", "record_key", "column", "previous", "current"]}},
+        "audit_artifact_locator": {"type": "string", "minLength": 1},
+        "audit_artifact_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "providerReceipt": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["provider_receipt_id", "investigation_id", "account_id", "provider", "provider_class", "requested_capability", "target_module", "plan_id", "planned_call_id", "tool_name", "tool_call_id", "query", "requested_at", "completed_at", "result", "result_count", "raw_result_locator", "content_sha256", "evidence_ids", "pivots_generated", "contacts_returned", "companies_returned", "billing_or_credit_notice", "blocked_reason", "permissions", "freshness", "conflicts", "status"],
+      "properties": {
+        "provider_receipt_id": {"type": "string", "minLength": 1},
+        "investigation_id": {"type": "string", "minLength": 1},
+        "account_id": {"type": "string", "minLength": 1},
+        "provider": {"type": "string", "minLength": 1},
+        "provider_class": {"enum": ["CONTACT_ENRICHMENT", "ABM_INTENT", "GTM_ORCHESTRATION", "LOGISTICS_TRACKING", "TRADE_DATA_INFRA"]},
+        "requested_capability": {"type": "string", "minLength": 1},
+        "target_module": {"type": "string", "minLength": 1},
+        "plan_id": {"type": "string", "minLength": 1},
+        "planned_call_id": {"type": "string", "minLength": 1},
+        "tool_name": {"type": "string", "minLength": 1},
+        "tool_call_id": {"type": "string", "minLength": 1},
+        "query": {"type": "string", "minLength": 1},
+        "requested_at": {"type": "string", "format": "date-time"},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "result": {"enum": ["POSITIVE", "NEGATIVE", "BLOCKED"]},
+        "result_count": {"type": "integer", "minimum": 0},
+        "raw_result_locator": {"type": "string", "minLength": 1},
+        "content_sha256": {"$ref": "#/$defs/sha256"},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "pivots_generated": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "contacts_returned": {"type": "array", "items": {"$ref": "#/$defs/providerContact"}},
+        "companies_returned": {"type": "array", "items": {"type": "object"}},
+        "billing_or_credit_notice": {"type": "string"},
+        "blocked_reason": {"type": "string"},
+        "permissions": {"type": "object"},
+        "freshness": {"type": "string", "minLength": 1},
+        "conflicts": {"type": "array"},
+        "status": {"enum": ["SUCCESS", "BLOCKED"]}
+      }
+    }
+  }
+}

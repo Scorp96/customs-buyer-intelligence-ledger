@@ -1,0 +1,1293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.codex/customs-buyer-intelligence/buyer-intelligence-schema.json",
+  "title": "Customs Buyer Intelligence Result",
+  "description": "Auditable v4.2 intelligence-first output. A complete human-readable buyer dossier is primary; outreach is an independent WeCom-compatible appendix and never suppresses research.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "status",
+    "mode",
+    "rules_version",
+    "generated_at",
+    "input_snapshot",
+    "record_identity",
+    "normalized_shipment",
+    "data_quality",
+    "entity_resolution",
+    "buyer_intelligence",
+    "contacts",
+    "contact_status",
+    "commercial_scoring",
+    "facts",
+    "inferences",
+    "unknowns",
+    "recommended_actions",
+    "exclusion_reason",
+    "evidence",
+    "errors",
+    "completed_sections",
+    "missing_sections"
+    ,"research_status"
+    ,"field_audit"
+    ,"products"
+    ,"calculations"
+    ,"calculation_scenarios"
+    ,"route"
+    ,"entities"
+    ,"contact_evidence_ledger"
+    ,"trade_history"
+    ,"sources"
+    ,"hypotheses"
+    ,"scores"
+    ,"crm"
+    ,"next_actions"
+    ,"unresolved"
+    ,"manual_checks"
+    ,"research_coverage"
+    ,"cross_record_contamination"
+    ,"supplier_intelligence"
+    ,"quality_gate"
+    ,"claim_ledger"
+    ,"audit_trail"
+    ,"provenance"
+    ,"trade_history_summary"
+    ,"review_ledger"
+    ,"competition_matrix"
+    ,"evidence_binding_summary"
+    ,"outreach_status"
+    ,"outreach"
+    ,"strategic_intelligence"
+    ,"learning_ledger"
+    ,"decision_layers"
+    ,"intelligence_dossier"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "4.2.0"
+    },
+    "intelligence_dossier": {
+      "type": "object",
+      "required": ["primary_product", "outreach_appendix_only", "material_findings", "buyer_role_scenarios", "business_decision", "value_gate"],
+      "properties": {
+        "primary_product": {"const": "full_intelligence_dossier"},
+        "outreach_appendix_only": {"const": true},
+        "material_findings": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+        "buyer_role_scenarios": {"type": "array", "minItems": 2, "items": {"type": "object"}},
+        "product_form_scenarios": {"type": "array", "items": {"type": "object"}},
+        "business_decision": {"type": "object"},
+        "value_gate": {"type": "object", "required": ["passed", "checks", "failed_gates"]}
+      }
+    },
+    "strategic_intelligence": {"type": "object"},
+    "learning_ledger": {"type": "object"},
+    "decision_layers": {"type": "object"},
+    "outreach_status": {"type": "string"},
+    "outreach": {
+      "type": "object",
+      "required": ["completion", "email_routing", "timezone"],
+      "properties": {
+        "email_routing": {
+          "type": "object",
+          "required": ["discovered_email_count", "accounted_email_count", "omission_check_passed", "all_routes"],
+          "properties": {
+            "discovered_email_count": {"type": "integer", "minimum": 0},
+            "accounted_email_count": {"type": "integer", "minimum": 0},
+            "omission_check_passed": {"const": true},
+            "all_routes": {"type": "array", "items": {"type": "object"}}
+          }
+        },
+        "timezone": {"type": "object"},
+        "completion": {
+          "type": "object",
+          "required": ["terminal_state", "report_only_output_forbidden", "completion_contract_passed", "action", "block_reasons", "email_route_omission_check_passed", "simultaneous_multi_send_prohibited", "draft_transport", "server_side_draft_created", "provider_draft_id", "connector_receipt"],
+          "properties": {
+            "terminal_state": {"type": "string", "enum": ["SENDABLE_DRAFT", "DRAFT_BLOCKED", "NO_OUTREACH_RECOMMENDED"]},
+            "report_only_output_forbidden": {"const": true},
+            "completion_contract_passed": {"const": true},
+            "email_route_omission_check_passed": {"const": true},
+            "simultaneous_multi_send_prohibited": {"const": true},
+            "action": {
+              "type": "object",
+              "required": ["enabled", "sends_message"],
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "sends_message": {"const": false}
+              }
+            },
+            "block_reasons": {"type": "array", "items": {"type": "string"}},
+            "draft_transport": {"const": "mailto_wecom_tencent_enterprise_compatible"},
+            "server_side_draft_created": {"const": false},
+            "provider_draft_id": {"type": "null"},
+            "connector_receipt": {"type": "null"}
+          }
+        }
+      }
+    },
+    "research_status": {"type": "string", "enum": ["fast_scan_complete", "research_complete", "incomplete_research"]},
+    "field_audit": {"type": "array", "items": {"type": "object"}},
+    "products": {"type": "array", "items": {"type": "object"}},
+    "calculations": {"type": "array", "items": {"type": "object"}},
+    "calculation_scenarios": {"type": "array", "items": {"type": "object"}},
+    "route": {"type": "object"},
+    "entities": {"type": "object"},
+    "contact_evidence_ledger": {"type": "array", "items": {"type": "object"}},
+    "trade_history": {"type": "array", "items": {"type": "object"}},
+    "trade_history_summary": {"type": "object"},
+    "review_ledger": {"type": "array", "items": {"type": "object"}},
+    "competition_matrix": {"type": "object"},
+    "evidence_binding_summary": {"type": "object"},
+    "sources": {"type": "array", "items": {"type": "object"}},
+    "hypotheses": {"type": "array", "items": {"type": "object"}},
+    "scores": {"type": "object"},
+    "crm": {"type": "object"},
+    "next_actions": {"type": "array", "items": {"type": "object"}},
+    "unresolved": {"type": "array", "items": {"type": "object"}},
+    "manual_checks": {"type": "array", "items": {"type": "object"}},
+    "research_coverage": {"type": "array", "items": {"type": "object"}},
+    "cross_record_contamination": {"type": "object"},
+    "supplier_intelligence": {"type": "object"},
+    "quality_gate": {"type": "object"},
+    "claim_ledger": {"type": "array", "items": {"type": "object"}},
+    "audit_trail": {"type": "array", "items": {"type": "object"}},
+    "provenance": {"type": "object"},
+    "status": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "partial",
+        "failed"
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "fast-scan",
+        "deep-dive"
+      ]
+    },
+    "rules_version": {
+      "type": [
+        "integer",
+        "string",
+        "null"
+      ]
+    },
+    "generated_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_snapshot": {
+      "$ref": "#/$defs/inputSnapshot"
+    },
+    "record_identity": {
+      "$ref": "#/$defs/recordIdentity"
+    },
+    "normalized_shipment": {
+      "$ref": "#/$defs/normalizedShipment"
+    },
+    "data_quality": {
+      "$ref": "#/$defs/dataQuality"
+    },
+    "entity_resolution": {
+      "$ref": "#/$defs/entityResolution"
+    },
+    "buyer_intelligence": {
+      "$ref": "#/$defs/buyerIntelligence"
+    },
+    "contacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/contact"
+      }
+    },
+    "contact_status": {
+      "$ref": "#/$defs/contactStatus"
+    },
+    "commercial_scoring": {
+      "$ref": "#/$defs/commercialScoring"
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
+    },
+    "inferences": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/unknown"
+      }
+    },
+    "recommended_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    },
+    "exclusion_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidenceSource"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/error"
+      }
+    },
+    "completed_sections": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "missing_sections": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "cli": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "input_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "input_encoding": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enrichment_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "related_records_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rules_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nullableNumber": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "inputSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "sha256",
+        "raw_input",
+        "immutable"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "raw_input": {
+          "type": "string"
+        },
+        "immutable": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "recordIdentity": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "data_source",
+        "record_date",
+        "master_bill",
+        "house_bill",
+        "container_numbers"
+      ],
+      "properties": {
+        "data_source": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "record_date": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "master_bill": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "house_bill": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "container_numbers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "party": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "raw_name",
+        "legal_name",
+        "role"
+      ],
+      "properties": {
+        "raw_name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "legal_name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "country": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "raw_description",
+        "normalized_category",
+        "match_level",
+        "confidence",
+        "reason_codes",
+        "specifications"
+      ],
+      "properties": {
+        "raw_description": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "normalized_category": {
+          "type": "string",
+          "minLength": 1
+        },
+        "match_level": {
+          "type": "string",
+          "enum": [
+            "EXACT",
+            "RELATED",
+            "INCIDENTAL",
+            "NONE",
+            "UNKNOWN"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reasonCodes"
+        },
+        "matched_features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "specifications": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "length_mm",
+            "width_mm",
+            "thickness_mm",
+            "density_g_cm3"
+          ],
+          "properties": {
+            "length_mm": {
+              "$ref": "#/$defs/nullableNumber"
+            },
+            "width_mm": {
+              "$ref": "#/$defs/nullableNumber"
+            },
+            "thickness_mm": {
+              "$ref": "#/$defs/nullableNumber"
+            },
+            "density_g_cm3": {
+              "$ref": "#/$defs/nullableNumber"
+            }
+          }
+        }
+      }
+    },
+    "quantity": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "declared_quantity",
+        "declared_unit",
+        "weight_kg",
+        "gross_weight_kg",
+        "package_count",
+        "package_type",
+        "estimated_sheets",
+        "estimate"
+      ],
+      "properties": {
+        "declared_quantity": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "declared_unit": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "quantity_scope": {
+          "type": "string"
+        },
+        "weight_kg": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "gross_weight_kg": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "package_count": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "package_type": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "package_count_is_product_quantity": {
+          "type": "boolean"
+        },
+        "estimated_sheets": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "estimate": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        }
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "declared_origin",
+        "manufacturing_origin",
+        "manufacturing_origin_status",
+        "place_of_receipt",
+        "port_of_lading",
+        "transshipment_ports",
+        "port_of_discharge",
+        "final_delivery_location"
+      ],
+      "properties": {
+        "declared_origin": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "manufacturing_origin": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "manufacturing_origin_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "place_of_receipt": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "port_of_lading": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "transshipment_ports": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "port_of_discharge": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "final_delivery_location": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "fieldScope": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "shipment_level",
+        "line_item",
+        "ambiguous"
+      ],
+      "properties": {
+        "shipment_level": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "line_item": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ambiguous": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "normalizedShipment": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "supplier",
+        "buyer",
+        "product",
+        "quantity",
+        "route",
+        "field_scope"
+      ],
+      "properties": {
+        "supplier": {
+          "$ref": "#/$defs/party"
+        },
+        "buyer": {
+          "$ref": "#/$defs/party"
+        },
+        "product": {
+          "$ref": "#/$defs/product"
+        },
+        "quantity": {
+          "$ref": "#/$defs/quantity"
+        },
+        "route": {
+          "$ref": "#/$defs/route"
+        },
+        "field_scope": {
+          "$ref": "#/$defs/fieldScope"
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "medium",
+            "high"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/nullableString"
+        }
+      }
+    },
+    "dataQuality": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "status",
+        "score",
+        "possible_contamination",
+        "shipment_line_conflict",
+        "unit_conflict",
+        "origin_port_conflict",
+        "scoring_suspended",
+        "warnings",
+        "field_scope"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "possible_contamination": {
+          "type": "boolean"
+        },
+        "shipment_line_conflict": {
+          "type": "boolean"
+        },
+        "unit_conflict": {
+          "type": "boolean"
+        },
+        "origin_port_conflict": {
+          "type": "boolean"
+        },
+        "origin_field_interpretation": {
+          "type": "string"
+        },
+        "scoring_suspended": {
+          "type": "boolean"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/warning"
+          }
+        },
+        "field_scope": {
+          "$ref": "#/$defs/fieldScope"
+        }
+      }
+    },
+    "affiliate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "relationship",
+        "do_not_merge"
+      ],
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relationship": {
+          "type": "string",
+          "minLength": 1
+        },
+        "do_not_merge": {
+          "type": "boolean"
+        }
+      }
+    },
+    "entityResolution": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "status",
+        "legal_name",
+        "matched",
+        "confidence",
+        "match_basis",
+        "legal_registration",
+        "address_type",
+        "official_channels",
+        "possible_affiliates"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "MATCHED",
+            "UNVERIFIED",
+            "NO_MATCH",
+            "UNKNOWN"
+          ]
+        },
+        "legal_name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "matched": {
+          "type": "boolean"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "match_basis": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "legal_registration": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "address_type": {
+          "type": "string"
+        },
+        "official_channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "possible_affiliates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/affiliate"
+          }
+        }
+      }
+    },
+    "buyerIntelligence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "buyer_role",
+        "secondary_roles",
+        "candidate_roles",
+        "role_confidence",
+        "role_status",
+        "reason_codes",
+        "purchase_pattern",
+        "direct_import_probability"
+      ],
+      "properties": {
+        "buyer_role": {
+          "$ref": "#/$defs/buyerRole"
+        },
+        "secondary_roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/buyerRole"
+          }
+        },
+        "candidate_roles": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "object"
+            ]
+          }
+        },
+        "role_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "role_status": {
+          "type": "string",
+          "enum": [
+            "VERIFIED",
+            "INFERRED",
+            "PROVISIONAL",
+            "UNVERIFIED"
+          ]
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reasonCodes"
+        },
+        "business_model": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "company_scale": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "purchase_pattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "current_supplier": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "direct_import_probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "buyerRole": {
+      "type": "string",
+      "enum": [
+        "DIRECT_IMPORTER",
+        "DISTRIBUTOR",
+        "RETAILER",
+        "MANUFACTURER",
+        "END_USER",
+        "PROJECT_BUYER",
+        "TRADING_COMPANY",
+        "FREIGHT_FORWARDER",
+        "NVOCC",
+        "IMPORTER_OF_RECORD",
+        "REGISTERED_AGENT_ENTITY",
+        "ECOMMERCE_AGGREGATOR",
+        "UNKNOWN"
+      ]
+    },
+    "contact": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "title",
+        "decision_role",
+        "verification",
+        "email_status",
+        "usable_for_outreach",
+        "evidence_grade"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "title": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "decision_role": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "verification": {
+          "type": "string",
+          "enum": [
+            "VERIFIED",
+            "ASSOCIATED",
+            "UNVERIFIED"
+          ]
+        },
+        "email": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "email_status": {
+          "type": "string",
+          "enum": [
+            "OFFICIAL_COMPANY_EMAIL",
+            "VERIFIED_PERSONAL_BUSINESS_EMAIL",
+            "HISTORICAL_EMAIL",
+            "INFERRED_EMAIL",
+            "UNVERIFIED_EMAIL"
+          ]
+        },
+        "phone": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "social": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "usable_for_outreach": {
+          "type": "boolean"
+        },
+        "evidence_grade": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "contactStatus": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "verified_procurement_contact",
+        "official_general_channel",
+        "message"
+      ],
+      "properties": {
+        "verified_procurement_contact": {
+          "type": "boolean"
+        },
+        "official_general_channel": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "scoreComponent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "score",
+        "maximum",
+        "status",
+        "reason_codes",
+        "evidence_refs"
+      ],
+      "properties": {
+        "score": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reasonCodes"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "commercialScoring": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "status",
+        "components",
+        "risk_penalties",
+        "observed_score",
+        "total_score",
+        "score_range",
+        "score_completeness",
+        "provisional",
+        "grade",
+        "buyer_authenticity",
+        "product_fit",
+        "sales_priority",
+        "deep_dive_eligible"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "components": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/scoreComponent"
+          }
+        },
+        "risk_penalties": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "code",
+              "points"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "points": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "observed_score": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "total_score": {
+          "$ref": "#/$defs/nullableNumber"
+        },
+        "score_range": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/nullableNumber"
+          }
+        },
+        "score_completeness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "provisional": {
+          "type": "boolean"
+        },
+        "grade": {
+          "type": "string",
+          "enum": [
+            "A+",
+            "A",
+            "A-",
+            "B+",
+            "B",
+            "C",
+            "D",
+            "UNSCORABLE"
+          ]
+        },
+        "buyer_authenticity": {
+          "type": "string"
+        },
+        "product_fit": {
+          "type": "string"
+        },
+        "sales_priority": {
+          "type": "string"
+        },
+        "deep_dive_eligible": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reasonCodes"
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "claim_id",
+        "claim",
+        "classification",
+        "evidence_grade",
+        "confidence",
+        "source_ids",
+        "date_checked",
+        "reason_codes"
+      ],
+      "properties": {
+        "claim_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claim": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classification": {
+          "type": "string",
+          "enum": [
+            "fact",
+            "inference"
+          ]
+        },
+        "evidence_grade": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "date_checked": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/reasonCodes"
+        }
+      }
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "field",
+        "status",
+        "reason_code"
+      ],
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason_code": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "priority",
+        "action",
+        "reason_code"
+      ],
+      "properties": {
+        "priority": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason_code": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "evidenceSource": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "source_id",
+        "type",
+        "evidence_grade",
+        "source",
+        "date_checked"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_grade": {
+          "type": "string",
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "date_checked": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "stage",
+        "code",
+        "message",
+        "retry_count",
+        "retryable"
+      ],
+      "properties": {
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "reasonCodes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

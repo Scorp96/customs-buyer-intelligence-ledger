@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Customs Buyer Intelligence v4.2 Enrichment",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source_id", "url", "source_type", "checked_at"],
+        "properties": {
+          "source_id": {"type": "string"},
+          "url": {"type": "string"},
+          "source_type": {"type": "string"},
+          "evidence_grade": {"type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2", "D"]},
+          "publication_date": {"type": ["string", "null"]},
+          "checked_at": {"type": "string"},
+          "quoted_or_visible_text": {"type": ["string", "null"]},
+          "negative_or_conflicting_evidence": {"type": "array"}
+        }
+      }
+    },
+    "field_claims": {"type": "array", "items": {"type": "object", "required": ["field", "raw_value", "source_ids"]}},
+    "contacts": {"type": "array", "items": {"type": "object", "required": ["source_ids"]}},
+    "entity_relationships": {"type": "array", "items": {"type": "object", "required": ["entity_a", "entity_b", "relationship_type", "source_ids"]}},
+    "trade_history": {"type": "array", "items": {"type": "object", "required": ["date", "product_raw", "data_level", "provider", "source_ids"]}},
+    "assistant_reviews": {"oneOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}]},
+    "competition": {"type": "object"},
+    "research_coverage": {"type": "array", "items": {"type": "object", "required": ["step", "status"]}},
+    "buyer_profile": {"type": "object"},
+    "intelligence_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["statement", "classification"],
+        "properties": {
+          "statement": {"type": "string"},
+          "classification": {"type": "string", "enum": ["FACT", "INFERENCE", "HYPOTHESIS", "RECOMMENDATION", "UNKNOWN"]},
+          "reasoning": {"type": ["string", "null"]},
+          "business_impact": {"type": ["string", "null"]},
+          "counter_explanation": {"type": ["string", "null"]},
+          "source_ids": {"type": "array", "items": {"type": "string"}},
+          "verification_method": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "buyer_role_scenarios": {"type": "array", "items": {"type": "object"}},
+    "product_form_scenarios": {"type": "array", "items": {"type": "object"}},
+    "business_decision": {"type": "object"},
+    "mail_preference": {"type": "string", "enum": ["wecom_tencent_enterprise_mail", "system_default_mailto"]},
+    "buyer_evidence_ledger": {
+      "type": "array",
+      "items": {"type": "object", "required": ["claim", "claim_type", "verified", "allowed_for_external_use"]}
+    },
+    "seller_capability_ledger": {
+      "type": "array",
+      "items": {"type": "object", "required": ["claim", "status", "verified", "allowed_for_external_use"]}
+    },
+    "language_evidence": {"type": "object"},
+    "outreach_context": {
+      "type": "object",
+      "properties": {
+        "mode": {"type": "string", "enum": ["RESEARCH_ONLY", "OUTREACH_PREVIEW", "CREATE_DRAFT", "SEND_CONFIRMED"]},
+        "buyer_timezone": {"type": ["string", "null"]},
+        "current_datetime": {"type": ["string", "null"]},
+        "primary_language": {"type": ["string", "null"]},
+        "buyer_problem_hypotheses": {"type": "array", "items": {"type": "object"}},
+        "value_keys": {"type": "array", "items": {"type": "string"}},
+        "draft": {"type": "object"},
+        "user_previewed": {"type": "boolean"},
+        "send_confirmed": {"type": "boolean"},
+        "unsubscribed": {"type": "boolean"},
+        "rejected_contact": {"type": "boolean"},
+        "last_first_email_at": {"type": ["string", "null"]},
+        "automatic_batch_send": {"type": "boolean"},
+        "target_route_verified": {"type": "boolean"}
+      }
+    },
+    "strategic_context": {
+      "type": "object",
+      "properties": {
+        "decision_centers": {"type": "array", "items": {"type": "object"}},
+        "brand_chain": {"type": "object"},
+        "pricing_context": {"type": "object"},
+        "commercial_value_dimensions": {"type": "array", "items": {"type": "object"}},
+        "lock_in_factors": {"type": "array", "items": {"type": "object"}},
+        "assistant_audit": {"type": "object"}
+      }
+    },
+    "feedback_events": {"type": "array", "items": {"type": "object"}},
+    "approved_learning_rules": {"type": "array", "items": {"type": "object"}},
+    "calibrated_conversion_model": {"type": "object"}
+  }
+}

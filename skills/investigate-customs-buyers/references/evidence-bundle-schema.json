@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Customs Buyer Intelligence Evidence Bundle",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "sources": {"type": "array", "items": {"type": "object"}},
+    "image_observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "observations", "checked_at"],
+        "properties": {
+          "path": {"type": "string"},
+          "page": {"type": ["integer", "null"]},
+          "crop_or_coordinates": {"type": ["string", "object", "null"]},
+          "observations": {"type": "array", "items": {"type": "object"}},
+          "checked_at": {"type": "string"}
+        }
+      }
+    },
+    "manual_checks": {"type": "array", "items": {"type": "object"}}
+  }
+}

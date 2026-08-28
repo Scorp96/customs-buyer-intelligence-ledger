@@ -1,0 +1,281 @@
+{
+  "version": 4,
+  "product_classification": {
+    "precedence": ["NONE", "INCIDENTAL", "EXACT", "RELATED"],
+    "rules": [
+      {
+        "id": "structural_pvc_foam_core",
+        "match_level": "NONE",
+        "normalized_category": "STRUCTURAL_PVC_FOAM_CORE",
+        "phrases": [
+          "structural pvc foam core",
+          "marine foam core",
+          "sandwich composite core",
+          "pvc foam core material"
+        ]
+      },
+      {
+        "id": "pvc_profile_or_unrelated_foam",
+        "match_level": "NONE",
+        "normalized_category": "NON_TARGET_PVC_OR_FOAM_PRODUCT",
+        "phrases": [
+          "pvc square tube",
+          "pvc tube",
+          "pvc pipe",
+          "pvc skirting board",
+          "foam floor mat",
+          "floor foam mat",
+          "frp grating"
+        ]
+      },
+      {
+        "id": "finished_display",
+        "match_level": "INCIDENTAL",
+        "normalized_category": "FINISHED_DISPLAY_OR_FIXTURE",
+        "phrases": [
+          "pvc display stand",
+          "pvc display rack",
+          "cosmetic display",
+          "display fixture",
+          "point of sale display",
+          "pos display stand"
+        ]
+      },
+      {
+        "id": "pvc_foam_board",
+        "match_level": "EXACT",
+        "normalized_category": "PVC_FOAM_BOARD",
+        "phrases": [
+          "pvc foam board",
+          "pvc foamed board",
+          "foamed pvc board",
+          "聚氯乙烯发泡板",
+          "pvc发泡板"
+        ]
+      },
+      {
+        "id": "pvc_celuka_or_crust_board",
+        "match_level": "EXACT",
+        "normalized_category": "PVC_CELUKA_BOARD",
+        "phrases": [
+          "pvc celuka board",
+          "celuka pvc board",
+          "pvc crust board",
+          "pvc结皮板",
+          "结皮发泡板"
+        ]
+      },
+      {
+        "id": "expanded_pvc_sheet",
+        "match_level": "EXACT",
+        "normalized_category": "EXPANDED_PVC_SHEET",
+        "phrases": [
+          "expanded pvc sheet",
+          "expanded pvc board"
+        ]
+      },
+      {
+        "id": "pvc_wall_panel",
+        "match_level": "RELATED",
+        "normalized_category": "PVC_WALL_PANEL",
+        "phrases": [
+          "pvc wall panel",
+          "pvc wall cladding",
+          "wall cladding pvc",
+          "pvc墙板",
+          "pvc墙面板"
+        ]
+      },
+      {
+        "id": "rigid_pvc_sheet",
+        "match_level": "RELATED",
+        "normalized_category": "RIGID_PVC_SHEET_OR_PLATE",
+        "phrases": [
+          "rigid pvc sheet",
+          "rigid pvc plate",
+          "non porous pvc plate",
+          "non-porous pvc plate",
+          "hard pvc plate"
+        ]
+      }
+    ],
+    "fallback": {
+      "match_level": "UNKNOWN",
+      "normalized_category": "UNCLASSIFIED",
+      "reason_code": "insufficient_product_semantics"
+    }
+  },
+  "data_quality": {
+    "severity_deductions": {
+      "high": 15,
+      "medium": 7,
+      "info": 1
+    },
+    "scoring_suspend_codes": [
+      "cross_record_house_bill_collision",
+      "cross_record_container_collision",
+      "severe_record_contamination"
+    ],
+    "foam_density_range_g_cm3": [0.2, 0.95],
+    "container_collision_window_days": 30,
+    "port_country_map": {
+      "charlotte amalie": "US Virgin Islands",
+      "st thomas": "US Virgin Islands",
+      "qingdao": "China",
+      "ningbo": "China",
+      "shanghai": "China",
+      "caucedo": "Dominican Republic",
+      "san juan": "Puerto Rico",
+      "busan": "South Korea",
+      "da nang": "Vietnam",
+      "davao": "Philippines",
+      "kingston": "Jamaica"
+    }
+  },
+  "entity_resolution": {
+    "confirmed_bases": [
+      "registration_number",
+      "tax_id",
+      "government_filing",
+      "official_parent_statement",
+      "official_dba",
+      "official_annual_report",
+      "official_cross_link"
+    ],
+    "complementary_bases": [
+      "official_legal_name",
+      "exact_address",
+      "official_domain",
+      "official_phone"
+    ],
+    "prohibited_bases": [
+      "similar_name",
+      "same_person_name",
+      "same_city",
+      "similar_product",
+      "same_supplier",
+      "same_forwarder",
+      "third_party_suggestion"
+    ]
+  },
+  "buyer_roles": {
+    "allowed": [
+      "DIRECT_IMPORTER",
+      "DISTRIBUTOR",
+      "RETAILER",
+      "MANUFACTURER",
+      "END_USER",
+      "PROJECT_BUYER",
+      "TRADING_COMPANY",
+      "FREIGHT_FORWARDER",
+      "NVOCC",
+      "IMPORTER_OF_RECORD",
+      "REGISTERED_AGENT_ENTITY",
+      "ECOMMERCE_AGGREGATOR",
+      "UNKNOWN"
+    ],
+    "logistics_phrases": [
+      "freight forwarder",
+      "forwarding",
+      "nvocc",
+      "non vessel operating common carrier",
+      "customs broker",
+      "shipping agency"
+    ],
+    "distribution_phrases": [
+      "distributor",
+      "wholesaler",
+      "wholesale",
+      "building materials supplier",
+      "hardware distributor"
+    ],
+    "retail_phrases": [
+      "retailer",
+      "retail store",
+      "hardware store",
+      "home improvement store",
+      "ferreteria",
+      "ferretería"
+    ],
+    "manufacturing_phrases": [
+      "manufacturer",
+      "manufacturing",
+      "factory",
+      "production plant"
+    ],
+    "trading_phrases": [
+      "trading company",
+      "import export company",
+      "imp exp",
+      "general trading"
+    ],
+    "ior_phrases": [
+      "importer of record",
+      "import agency",
+      "trade agency",
+      "registered importer"
+    ]
+  },
+  "contacts": {
+    "verification_statuses": ["VERIFIED", "ASSOCIATED", "UNVERIFIED"],
+    "email_statuses": [
+      "OFFICIAL_COMPANY_EMAIL",
+      "VERIFIED_PERSONAL_BUSINESS_EMAIL",
+      "HISTORICAL_EMAIL",
+      "INFERRED_EMAIL",
+      "UNVERIFIED_EMAIL"
+    ],
+    "formal_email_statuses": [
+      "OFFICIAL_COMPANY_EMAIL",
+      "VERIFIED_PERSONAL_BUSINESS_EMAIL"
+    ]
+  },
+  "evidence": {
+    "grades": {
+      "A": "government_registry_or_official_company_source",
+      "B": "official_social_company_linkedin_annual_report_or_reliable_industry_body",
+      "C": "trade_database_directory_or_third_party_business_database",
+      "D": "calculation_or_inference"
+    },
+    "confidence_caps": {
+      "A": 0.98,
+      "B": 0.9,
+      "C": 0.75,
+      "D": 0.6
+    }
+  },
+  "scenario_engine": {
+    "default_densities_g_cm3": [0.35, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.80, 0.90],
+    "default_sheets_per_package": [1, 5, 10, 20, 25, 50],
+    "maximum_scenarios": 3,
+    "claim_class": "HYPOTHESIS"
+  },
+  "scoring": {
+    "weights": {
+      "buyer_authenticity": 15,
+      "product_fit": 25,
+      "purchase_scale": 15,
+      "repeat_purchase": 15,
+      "channel_value": 10,
+      "direct_import_probability": 10,
+      "reachability": 5,
+      "data_quality": 5
+    },
+    "risk_penalties": {
+      "registered_agent_address": -5,
+      "no_visible_business_channel": -5,
+      "probable_ior_or_aggregator": -15,
+      "freight_forwarder_or_nvocc": -30
+    },
+    "grade_boundaries": [
+      {"minimum": 90, "grade": "A+"},
+      {"minimum": 80, "grade": "A"},
+      {"minimum": 75, "grade": "A-"},
+      {"minimum": 68, "grade": "B+"},
+      {"minimum": 60, "grade": "B"},
+      {"minimum": 40, "grade": "C"},
+      {"minimum": 0, "grade": "D"}
+    ],
+    "deep_dive_minimum_score": 68
+  }
+}

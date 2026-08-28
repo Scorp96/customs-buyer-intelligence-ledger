@@ -1,0 +1,6 @@
+interface:
+  display_name: "Customs Buyer Intelligence v6.1"
+  short_description: "先查先答；全审计按Claim、EIV和决策饱和运行"
+  default_prompt: "Use $investigate-customs-buyers in ANSWER_FIRST mode by default: search visible public sources and immediately return the latest verified company/contact/phone/email/person/route findings with concrete source links and boundaries, followed by one development email and one instant-chat message, both deeply tailored. Do not create Runtime history, Evidence, audit documents, Closure, CRM changes, workbook output or executable actions unless I explicitly request persistence or full audit. In explicit FULL_AUDIT use v6.1 Claims, Expected Information Value, the evidence-bound batch compiler, monotonic Peer lifecycle, Decision Saturation, independent Commercial Value/Research Confidence/Outreach Readiness/CRM state and the durable host queue. A target count such as ten Buyers never authorizes automatic persistence."
+policy:
+  allow_implicit_invocation: true

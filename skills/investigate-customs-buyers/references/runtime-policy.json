@@ -1,0 +1,184 @@
+{
+  "version": "6.1",
+  "default_interaction_mode": "ANSWER_FIRST",
+  "persistent_default_mode": "EXHAUSTIVE",
+  "legacy_adapter": {
+    "version": "5.4.1",
+    "purpose": "Preserve the offline Fast Scan and Deep Dive plan builder without changing v6 Claim/EIV/Decision Saturation policy."
+  },
+  "modes": {
+    "fast-scan": {
+      "offline_only": true,
+      "purpose": "batch_or_explicit_preliminary_screening",
+      "may_issue_research_complete": false,
+      "terminal_state": "PAUSED_RESOURCE_LIMIT"
+    },
+    "deep-dive": {
+      "offline_only": false,
+      "purpose": "single_buyer_exhaustive_investigation",
+      "may_issue_research_complete": true,
+      "completion_basis": "claim_eiv_decision_saturation",
+      "fixed_seconds_are_completion": false,
+      "fixed_query_count_is_completion": false,
+      "fixed_page_count_is_completion": false,
+      "first_positive_is_completion": false,
+      "priority_grade_reduces_depth": false,
+      "resource_limit_state": "PAUSED_RESOURCE_LIMIT",
+      "search_batch_size": 4,
+      "max_online_concurrency": 2
+    }
+  },
+  "circuit_breaker": {
+    "immediate_statuses": [401, 403, 429],
+    "single_retry_statuses": [500, 502, 503, 504],
+    "transport_failures": [
+      "timeout",
+      "dns_failure",
+      "tls_failure",
+      "connection_reset",
+      "empty_response",
+      "tool_unavailable"
+    ],
+    "max_failures_per_domain": 2,
+    "global_consecutive_transport_failures": 2,
+    "global_total_transport_failures": 3,
+    "cross_tool_retry_forbidden": true,
+    "breaker_result": "INCOMPLETE_BLOCKED",
+    "breaker_never_means_complete": true
+  },
+  "architecture": {
+    "layers": [
+      "HOST_RESEARCH_AGENT",
+      "EVIDENCE_COMPILER",
+      "GOVERNANCE_RUNTIME",
+      "ARTIFACT_TOOL_TRANSACTION"
+    ],
+    "sidecar": "PORTFOLIO_SCHEDULER_AND_BUDGET_CONTROLLER",
+    "runtime_executes_web_search": false,
+    "transport_session_owns_state": false
+  },
+  "canonical_resolution": {
+    "runtime_owned": true,
+    "ambiguous_match_is_rejected": true,
+    "atomic_allocation": true,
+    "start_is_resumable_and_idempotent": true
+  },
+  "information_retention": {
+    "preserve_historical_records": true,
+    "append_all_sourced_new_findings": true,
+    "derive_current_view_without_overwrite": true,
+    "outreach_eligibility_is_separate_from_ingestion": true
+  },
+  "claim_states": [
+    "UNSEEN",
+    "SEARCHING",
+    "SUPPORTED",
+    "STRONGLY_SUPPORTED",
+    "CONFLICTED",
+    "REFUTED",
+    "NEGATIVE_EXHAUSTED",
+    "BLOCKED",
+    "NOT_APPLICABLE",
+    "STALE"
+  ],
+  "completion": {
+    "strategy": "DECISION_SATURATION",
+    "source_profile_is_mandatory_checklist": false,
+    "fixed_time_query_page_depth_or_anchor_count_closes": false,
+    "first_positive_closes": false,
+    "grade_closes": false,
+    "budget_exhaustion_closes": false,
+    "fast_scan_can_close": false
+  },
+  "eiv": {
+    "formula": "probability * decision_impact * evidence_quality_gain * commercial_weight / search_cost",
+    "budget_by_grade": {
+      "A+": 100,
+      "A": 60,
+      "A-": 40,
+      "B+": 20,
+      "B": 10,
+      "B-": 8,
+      "C": 5,
+      "D": 3,
+      "NQ": 0
+    }
+  },
+  "commercial_dimensions": {
+    "commercial_value": ["A+", "A", "A-", "B+", "B", "B-", "C", "D", "NQ"],
+    "research_confidence": ["R0", "R1", "R2", "R3", "R4", "R5"],
+    "outreach_readiness": [
+      "BLOCKED",
+      "IDENTITY_ONLY",
+      "COMPANY_ROUTE_READY",
+      "NAMED_ROUTE_READY",
+      "FOLLOW_UP_READY",
+      "SEND_READY"
+    ],
+    "crm_state_is_separate": true,
+    "contact_or_crm_caps_commercial_value": false
+  },
+  "peer_policy": {
+    "stages": [
+      "DISCOVERED",
+      "QUALIFIED",
+      "ANCHOR_ELIGIBLE",
+      "PROMOTED_ANCHOR",
+      "FULLY_AUDITED"
+    ],
+    "contact_coverage_required_for_anchor_eligibility": false,
+    "positive_facts_require_peer_owned_evidence": true,
+    "lifecycle_is_monotonic": true,
+    "undispositioned_peer_blocks_saturation": true,
+    "branch_closure": "CLAIM_AND_EIV_BASED"
+  },
+  "evidence_compiler": {
+    "minimum_batch_size": 1,
+    "maximum_batch_size": 1000,
+    "partial_success": true,
+    "idempotent_replay": true,
+    "raw_full_content_persisted": false,
+    "provider_credentials_rejected": true,
+    "declared_hash_must_match_raw_material": true,
+    "maximum_observation_bytes": 2097152,
+    "maximum_bundle_bytes": 33554432,
+    "concurrent_bundle_replay": "EXACTLY_ONCE"
+  },
+  "durability": {
+    "append_only_hash_chain": true,
+    "serialized_session_writers": true,
+    "fsync": true,
+    "explicit_resume": true,
+    "host_queue_independent_of_mcp": true,
+    "integrity_failure": "QUARANTINED_READ_ONLY",
+    "dead_process_lock_recovery": true,
+    "closure_and_outreach_use_atomic_tail_check": true
+  },
+  "negative_policy": {
+    "plain_negative_is_terminal": false,
+    "negative_exhausted_requires_multiple_independent_strategies": true,
+    "blocked_can_become_not_applicable": false,
+    "critical_claim_not_applicable_default": false,
+    "declared_strategies_bind_to_actual_attempt_queries": true
+  },
+  "crm_writeback": {
+    "prepare_tool": "prepare_crm_writeback",
+    "receipt_tool": "append_crm_writeback_receipt",
+    "writer": "ARTIFACT_TOOL",
+    "actual_post_commit_hash_verified": true
+  },
+  "migration": {
+    "mutate_v5_in_place": false,
+    "strategy": "COPY_MIGRATE_VERIFY_EXTERNAL_SWITCH",
+    "empty_source_rejected": true,
+    "overlapping_roots_rejected": true,
+    "source_manifest_reverified_after_copy": true
+  },
+  "provider_orchestration": {
+    "default_mode": "PUBLIC_ONLY",
+    "connected_provider_modes_require_explicit_allowlist": true,
+    "paid_credit_requires_explicit_consent": true,
+    "runtime_invokes_other_plugins": false,
+    "send_tools_allowed": false
+  }
+}
