@@ -75,6 +75,77 @@ class V61PrivateGoldenRunnerTests(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertEqual(result["passed_count"], 2)
         self.assertEqual(result["failed_count"], 0)
+        self.assertEqual(result["cross_assertion_count"], 0)
+
+    def test_cross_case_all_distinct_can_prove_three_accounts_not_merged(self) -> None:
+        manifest = {
+            "cases": [
+                {
+                    "case_id": "arecibo-home-center",
+                    "tool": "get_account_state",
+                    "arguments": {"investigation_id": "C-ARECIBO-HOME-CENTER"},
+                    "assertions": [{"path": "account.account_id", "op": "truthy"}],
+                },
+                {
+                    "case_id": "arecibo-home-design",
+                    "tool": "get_account_state",
+                    "arguments": {"investigation_id": "C-ARECIBO-HOME-DESIGN"},
+                    "assertions": [{"path": "account.account_id", "op": "truthy"}],
+                },
+                {
+                    "case_id": "chimelis-home-center",
+                    "tool": "get_account_state",
+                    "arguments": {"investigation_id": "C-CHIMELIS-HOME-CENTER"},
+                    "assertions": [{"path": "account.account_id", "op": "truthy"}],
+                },
+            ],
+            "cross_assertions": [
+                {
+                    "assertion_id": "arecibo-canonical-accounts-remain-distinct",
+                    "op": "all_distinct",
+                    "refs": [
+                        {"case_id": "arecibo-home-center", "path": "account.account_id"},
+                        {"case_id": "arecibo-home-design", "path": "account.account_id"},
+                        {"case_id": "chimelis-home-center", "path": "account.account_id"},
+                    ],
+                }
+            ],
+        }
+        result = run_manifest(DummyRuntime(), manifest)
+        self.assertTrue(result["read_only"])
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["cross_assertion_count"], 1)
+        self.assertEqual(result["cross_passed_count"], 1)
+        self.assertEqual(
+            result["cross_assertions"][0]["observed"],
+            ["C-ARECIBO-HOME-CENTER", "C-ARECIBO-HOME-DESIGN", "C-CHIMELIS-HOME-CENTER"],
+        )
+
+    def test_cross_case_rejects_unknown_case_reference(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown case_id"):
+            run_manifest(
+                DummyRuntime(),
+                {
+                    "cases": [
+                        {
+                            "case_id": "known",
+                            "tool": "get_account_state",
+                            "arguments": {"investigation_id": "C-KNOWN"},
+                            "assertions": [{"path": "account.account_id", "op": "truthy"}],
+                        }
+                    ],
+                    "cross_assertions": [
+                        {
+                            "assertion_id": "invalid-reference",
+                            "op": "ne",
+                            "refs": [
+                                {"case_id": "known", "path": "account.account_id"},
+                                {"case_id": "missing", "path": "account.account_id"},
+                            ],
+                        }
+                    ],
+                },
+            )
 
     def test_mutation_and_resume_tools_are_not_allowed(self) -> None:
         forbidden = {
