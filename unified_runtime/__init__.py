@@ -56,6 +56,7 @@ from .commercial_hardening import (
     OPPORTUNITY_LIFT_WEIGHTS,
     V61CommercialOpportunityMixin,
 )
+from .outreach_hardening import V61OutreachHardeningMixin
 from .portfolio_hardening import (
     PORTFOLIO_ENVIRONMENTS,
     PORTFOLIO_LIFECYCLES,
@@ -70,6 +71,7 @@ FRESHNESS_LEVELS = V61_FRESHNESS_LEVELS
 
 class UnifiedRuntime(
     V61PortfolioHardeningMixin,
+    V61OutreachHardeningMixin,
     V61CommercialOpportunityMixin,
     V61CurrentAuthorityMixin,
     V61ProductionHardeningMixin,
