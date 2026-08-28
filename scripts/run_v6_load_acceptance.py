@@ -229,18 +229,35 @@ def run_full(
         append_batches(runtime, investigation_id, rows, prefix="LARGE")
     append_seconds = time.perf_counter() - started
 
+    registry_before = runtime.canonical_registry.log.read()
     account_started = time.perf_counter()
+    created_results = 0
     for index in range(canonical_accounts):
-        runtime.resolve_or_create_account({
+        resolved = runtime.resolve_or_create_account({
             "candidate": {
                 "name": f"Synthetic Canonical Account {index}",
                 "country": "Synthetic",
             },
             "create_if_missing": True,
         })
+        if resolved.get("status") == "CREATED":
+            created_results += 1
     account_seconds = time.perf_counter() - account_started
 
     recreated = UnifiedRuntime(root)
+    registry_after = recreated.canonical_registry.log.read()
+    registry_delta = registry_after[len(registry_before) :]
+    created_events = [
+        event
+        for event in registry_delta
+        if event.get("event_type") == "CANONICAL_ACCOUNT_CREATED"
+    ]
+    persisted_ids = [
+        str((event.get("payload") or {}).get("account_id") or "")
+        for event in created_events
+    ]
+    persisted_ids_unique = len({account_id.casefold() for account_id in persisted_ids if account_id})
+
     load_started = time.perf_counter()
     internal = recreated._v6_state(investigation_id)  # acceptance-only structural count
     load_seconds = time.perf_counter() - load_started
@@ -256,6 +273,9 @@ def run_full(
         "pivots": len(internal["pivots"]),
         "peers": len(internal["peers"]),
         "canonical_accounts_requested": canonical_accounts,
+        "canonical_accounts_created_results": created_results,
+        "canonical_accounts_persisted": len(created_events),
+        "canonical_account_ids_unique": persisted_ids_unique,
     }
     expected = {
         "evidence": total_evidence,
@@ -267,6 +287,9 @@ def run_full(
         counts["evidence"] == total_evidence
         and counts["pivots"] == pivot_count
         and counts["peers"] == peer_count
+        and counts["canonical_accounts_created_results"] == canonical_accounts
+        and counts["canonical_accounts_persisted"] == canonical_accounts
+        and counts["canonical_account_ids_unique"] == canonical_accounts
         and public_state["observation_count"] == total_evidence
         and public_state["peer_count"] == peer_count
         and resumed["durable"] is True
