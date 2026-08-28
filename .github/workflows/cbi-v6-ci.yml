@@ -59,6 +59,9 @@ jobs:
       - name: Run MCP v6 protocol test
         run: python mcp/v6_protocol_test.py
 
+      - name: Run MCP v6.1 production-adapter protocol test
+        run: python mcp/v61_hardening_protocol_test.py
+
       - name: Run privacy scan
         run: python tests/privacy_scan.py
 
