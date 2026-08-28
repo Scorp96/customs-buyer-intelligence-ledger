@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -46,6 +47,17 @@ def file_manifest(root: Path) -> dict[str, str]:
             path.read_bytes()
         ).hexdigest()
     return rows
+
+
+def same_filesystem_path(left: Path, right: Path) -> bool:
+    """Compare path identity instead of Windows long/8.3 path spelling."""
+
+    try:
+        if left.exists() and right.exists():
+            return os.path.samefile(left, right)
+    except OSError:
+        pass
+    return os.path.normcase(str(left.resolve())) == os.path.normcase(str(right.resolve()))
 
 
 class V61BackupRecoveryTests(unittest.TestCase):
@@ -188,18 +200,56 @@ class V61BackupRecoveryTests(unittest.TestCase):
                 self.assertEqual(file_manifest(canonical), live_before["canonical"])
                 self.assertEqual(file_manifest(pending), live_before["pending"])
                 self.assertEqual(file_manifest(host), live_before["host"])
-                self.assertEqual(
-                    Path(result["activation_environment"]["CBI_CANONICAL_ROOT"]),
-                    target / ".runtime" / "canonical",
+                self.assertTrue(
+                    same_filesystem_path(
+                        Path(result["activation_environment"]["CBI_CANONICAL_ROOT"]),
+                        target / ".runtime" / "canonical",
+                    )
                 )
-                self.assertEqual(
-                    Path(result["activation_environment"]["CBI_PENDING_ROOT"]),
-                    target / ".runtime" / "pending",
+                self.assertTrue(
+                    same_filesystem_path(
+                        Path(result["activation_environment"]["CBI_PENDING_ROOT"]),
+                        target / ".runtime" / "pending",
+                    )
                 )
-                self.assertEqual(
-                    Path(result["activation_environment"]["CBI_HOST_PENDING_ROOT"]),
-                    target / ".runtime" / "host-pending-v6",
+                self.assertTrue(
+                    same_filesystem_path(
+                        Path(result["activation_environment"]["CBI_HOST_PENDING_ROOT"]),
+                        target / ".runtime" / "host-pending-v6",
+                    )
                 )
+
+    @unittest.skipUnless(os.name == "nt", "Windows-only 8.3 alias overlap regression")
+    def test_windows_short_path_alias_cannot_bypass_protected_root_overlap(self) -> None:
+        import ctypes
+
+        with tempfile.TemporaryDirectory(prefix="cbi-v61-restore-shortpath-") as temp:
+            base = Path(temp)
+            runtime = UnifiedRuntime(base / "live" / "sessions")
+            start(runtime, "C-BACKUP-SHORTPATH")
+            manager = ProductionBackupRecoveryManager.from_runtime(runtime, base / "backups")
+            manager.create_snapshot("SHORT_PATH_GUARD")
+
+            source = runtime.store.root.resolve()
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            get_short_path = kernel32.GetShortPathNameW
+            get_short_path.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32]
+            get_short_path.restype = ctypes.c_uint32
+            required = get_short_path(str(source), None, 0)
+            if required == 0:
+                self.skipTest("GetShortPathNameW unavailable for the CI filesystem")
+            buffer = ctypes.create_unicode_buffer(required + 1)
+            written = get_short_path(str(source), buffer, len(buffer))
+            if written == 0:
+                self.skipTest("short path alias unavailable for the CI filesystem")
+            short_source = Path(buffer.value)
+            if "~" not in str(short_source):
+                self.skipTest("8.3 short-name generation disabled on the CI volume")
+
+            non_existing_child = short_source / "restore-child-must-be-rejected"
+            self.assertFalse(non_existing_child.exists())
+            with self.assertRaisesRegex(ValidationError, "overlaps protected root"):
+                manager.restore_latest_valid_snapshot(non_existing_child)
 
     def test_divergent_live_chain_keeps_snapshot_and_blocks_activation(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cbi-v61-restore-diverge-") as temp:
@@ -351,20 +401,52 @@ class V61BackupRecoveryEntryTests(unittest.TestCase):
             result = self.run_entry_script(
                 r'''
 import json
+import time
 from mcp import server_v61_backup_recovery as entry
 handlers = entry._v61._server.TOOL_HANDLERS
+started = time.perf_counter()
 mutation = handlers["resolve_or_create_account"]({
     "idempotency_key": "backup-entry-resolve-0001",
     "candidate": {"name": "Backup Entry Buyer", "country": "Synthetic"},
 })
+first_mutation_seconds = time.perf_counter() - started
+started = time.perf_counter()
+second_mutation = handlers["resolve_or_create_account"]({
+    "idempotency_key": "backup-entry-resolve-0002",
+    "candidate": {"name": "Backup Entry Buyer 2", "country": "Synthetic"},
+})
+second_mutation_seconds = time.perf_counter() - started
 contract = handlers["get_runtime_contract"]({})
 status = entry._BACKUP.status(validate_latest=True)
-print(json.dumps({"mutation": mutation, "contract": contract["backup_recovery_v6_1"], "status": status}))
+snapshot_count = sum(1 for p in entry._BACKUP.backup_root.iterdir() if p.is_dir() and p.name.startswith("SNAP-"))
+print(json.dumps({
+    "mutation": mutation,
+    "second_mutation": second_mutation,
+    "first_mutation_seconds": first_mutation_seconds,
+    "second_mutation_seconds": second_mutation_seconds,
+    "snapshot_count": snapshot_count,
+    "contract": contract["backup_recovery_v6_1"],
+    "status": status,
+}))
 ''',
                 base / "sessions",
                 base / "backups",
             )
             self.assertEqual(result["status"]["latest"]["reasons"], ["DAILY"])
+            self.assertEqual(result["snapshot_count"], 1)
+            self.assertGreaterEqual(result["first_mutation_seconds"], 0.0)
+            self.assertGreaterEqual(result["second_mutation_seconds"], 0.0)
+            print(
+                "BACKUP_DAILY_MUTATION_LATENCY "
+                + json.dumps(
+                    {
+                        "first_mutation_seconds": result["first_mutation_seconds"],
+                        "second_mutation_seconds": result["second_mutation_seconds"],
+                        "snapshot_count": result["snapshot_count"],
+                    },
+                    sort_keys=True,
+                )
+            )
             self.assertIn(
                 "DAILY_BEFORE_FIRST_PRODUCTION_MUTATION",
                 result["contract"]["automatic_triggers"],
