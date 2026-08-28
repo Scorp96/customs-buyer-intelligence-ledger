@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""Strict correlated fallback for Sync child information-record recovery.
+"""Strict correlated fallback and final WAL inventory proof for Sync recovery.
 
 The full batch implementation remains byte-identical in
-``server_v61_sync_recovery_base``. This wrapper adds exactly one missing proof
-path discovered by cold CI: a pending-sync child can crash after
-``append_information_record`` has durably appended its event but before the
-pending sidecar/child-WAL terminal receipt is written.
+``server_v61_sync_recovery_base``. This wrapper adds the exact correlated proof
+path for a pending-sync child that crashes after ``append_information_record``
+has durably appended its event but before the sidecar/child-WAL terminal receipt
+is written.
 
-Recovery first delegates to the existing mutation-family chain. Only when that
-chain cannot recover does this wrapper accept one exact
-INFORMATION_RECORD_APPENDED event whose sequence is after the child PREPARED
-state version and whose mutation correlation, tool, information identity,
-content hash and stable request fields all match. Timestamp comparison is
-semantic UTC comparison so equivalent ``+00:00`` and ``Z`` encodings do not
-create a false mismatch. Missing or ambiguous proof remains fail-closed; no
-side effect is re-executed.
+It also computes the final production mutation-WAL completeness declaration
+from the live guarded-mutation and automatic-reconciliation sets. The contract
+therefore reports complete only when there is mechanically no guarded mutation
+family left without an automatic reconciliation implementation; a future new
+mutation automatically makes the declaration false until recovery is added.
 """
 
 from __future__ import annotations
@@ -35,6 +32,8 @@ from mcp import server_v61_sync_recovery_base as _base  # noqa: E402
 _v61 = _base._v61
 _RUNTIME = _base._RUNTIME
 _BASE_RECOVER_TARGET_RESULT = _base._recover_target_result
+_BASE_CONTRACT_HANDLER = _v61._server.TOOL_HANDLERS["get_runtime_contract"]
+_BASE_HEALTH_HANDLER = _v61._server.TOOL_HANDLERS["get_runtime_health"]
 _INFORMATION_CHILD_PROOF = "CORRELATED_INFORMATION_EVENT_AFTER_CHILD_PREPARED"
 _STABLE_INFORMATION_FIELDS = (
     "information_id",
@@ -176,10 +175,42 @@ def _recover_target_result(
     return None
 
 
+def _reconciliation_inventory() -> tuple[list[str], list[str], list[str]]:
+    guarded = sorted(set(_v61._MUTATING_TOOLS))
+    automatic = sorted(set(_v61._AUTOMATIC_RECONCILIATION_TOOLS))
+    remaining = sorted(set(guarded) - set(automatic))
+    return guarded, automatic, remaining
+
+
+def _contract_with_complete_inventory(arguments: dict[str, Any]) -> dict[str, Any]:
+    contract = copy.deepcopy(_BASE_CONTRACT_HANDLER(arguments))
+    wal = contract.setdefault("production_adapter_mutation_wal", {})
+    guarded, automatic, remaining = _reconciliation_inventory()
+    wal["guarded_mutation_tools"] = guarded
+    wal["automatic_reconciliation_tools"] = automatic
+    wal["unreconciled_mutation_tools"] = remaining
+    wal["exact_automatic_reconciliation_complete"] = not remaining
+    wal["completeness_is_computed_from_live_inventory"] = True
+    return contract
+
+
+def _health_with_complete_inventory(arguments: dict[str, Any]) -> dict[str, Any]:
+    health = copy.deepcopy(_BASE_HEALTH_HANDLER(arguments))
+    guarded, automatic, remaining = _reconciliation_inventory()
+    wal = health.setdefault("mutation_wal", {})
+    wal["guarded_mutation_tools"] = guarded
+    wal["automatic_reconciliation_tools"] = automatic
+    wal["unreconciled_mutation_tools"] = remaining
+    wal["exact_automatic_reconciliation_complete"] = not remaining
+    return health
+
+
 # The base module's batch functions resolve this global at call time. Replace
 # only the proof resolver; selection, child WAL, sidecar persistence, locking,
 # fail-closed behavior and public handlers remain unchanged.
 _base._recover_target_result = _recover_target_result
+_v61._server.TOOL_HANDLERS["get_runtime_contract"] = _contract_with_complete_inventory
+_v61._server.TOOL_HANDLERS["get_runtime_health"] = _health_with_complete_inventory
 
 
 def main() -> int:
