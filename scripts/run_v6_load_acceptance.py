@@ -2,9 +2,10 @@
 """Synthetic, isolated v6.1 performance and scalability acceptance runner.
 
 Smoke profile exercises the specification's normal 100-Evidence timing gates.
-Full profile builds the large-state target in a temporary directory: 10k
-Evidence, 1k Pivots, 500 Peers and optionally 5k canonical accounts. No live
-customer data, CRM workbook, or outreach state is touched.
+Full profile defaults to the specified large-state target: 10k Evidence, 1k
+Pivots, 500 Peers and 5k canonical accounts. Explicit smaller counts exist only
+for structural regression of the full code path. No live customer data, CRM
+workbook, or outreach state is touched.
 """
 
 from __future__ import annotations
@@ -23,6 +24,13 @@ TARGETS = {
     "bundle_100_seconds": 5.0,
     "state_query_seconds": 0.5,
     "resume_seconds": 3.0,
+}
+
+FULL_TARGETS = {
+    "evidence": 10000,
+    "pivots": 1000,
+    "peers": 500,
+    "canonical_accounts": 5000,
 }
 
 
@@ -171,14 +179,28 @@ def run_smoke(root: Path, enforce_targets: bool) -> dict[str, Any]:
     }
 
 
-def run_full(root: Path, canonical_accounts: int) -> dict[str, Any]:
-    runtime, investigation_id = start_runtime(root)
-    peer_count = 500
-    pivot_count = 1000
-    total_evidence = 10000
+def run_full(
+    root: Path,
+    canonical_accounts: int = FULL_TARGETS["canonical_accounts"],
+    *,
+    total_evidence: int = FULL_TARGETS["evidence"],
+    pivot_count: int = FULL_TARGETS["pivots"],
+    peer_count: int = FULL_TARGETS["peers"],
+) -> dict[str, Any]:
+    if canonical_accounts < 0:
+        raise ValueError("canonical_accounts must be non-negative")
+    if total_evidence < 1:
+        raise ValueError("total_evidence must be positive")
+    if peer_count < 0 or peer_count > total_evidence:
+        raise ValueError("peer_count must be between 0 and total_evidence")
+    remaining = total_evidence - peer_count
+    if pivot_count < 0 or pivot_count > remaining:
+        raise ValueError("pivot_count must be between 0 and total_evidence - peer_count")
 
+    runtime, investigation_id = start_runtime(root)
     peer_rows = [peer_discovery_observation(index) for index in range(peer_count)]
-    append_batches(runtime, investigation_id, peer_rows, prefix="PEER-DISCOVERY")
+    if peer_rows:
+        append_batches(runtime, investigation_id, peer_rows, prefix="PEER-DISCOVERY")
     for index, row in enumerate(peer_rows):
         runtime.append_peer_discovery({
             "investigation_id": investigation_id,
@@ -193,13 +215,13 @@ def run_full(root: Path, canonical_accounts: int) -> dict[str, Any]:
             },
         })
 
-    remaining = total_evidence - peer_count
     rows = [
         observation(peer_count + index, pivot=index < pivot_count)
         for index in range(remaining)
     ]
     started = time.perf_counter()
-    append_batches(runtime, investigation_id, rows, prefix="LARGE")
+    if rows:
+        append_batches(runtime, investigation_id, rows, prefix="LARGE")
     append_seconds = time.perf_counter() - started
 
     account_started = time.perf_counter()
@@ -230,6 +252,12 @@ def run_full(root: Path, canonical_accounts: int) -> dict[str, Any]:
         "peers": len(internal["peers"]),
         "canonical_accounts_requested": canonical_accounts,
     }
+    expected = {
+        "evidence": total_evidence,
+        "pivots": pivot_count,
+        "peers": peer_count,
+        "canonical_accounts": canonical_accounts,
+    }
     passed = (
         counts["evidence"] == total_evidence
         and counts["pivots"] == pivot_count
@@ -239,22 +267,18 @@ def run_full(root: Path, canonical_accounts: int) -> dict[str, Any]:
         and resumed["durable"] is True
     )
     return {
-        "profile": "full",
+        "profile": "full" if expected == FULL_TARGETS else "full-reduced-structural",
         "passed": passed,
         "counts": counts,
+        "expected_counts": expected,
         "metrics": {
-            "append_remaining_9500_seconds": round(append_seconds, 6),
+            "append_non_peer_evidence_seconds": round(append_seconds, 6),
             "canonical_account_creation_seconds": round(account_seconds, 6),
             "large_state_load_seconds": round(load_seconds, 6),
             "large_public_state_query_seconds": round(query_seconds, 6),
             "large_resume_seconds": round(resume_seconds, 6),
         },
-        "targets": {
-            "evidence": 10000,
-            "pivots": 1000,
-            "peers": 500,
-            "canonical_accounts": 5000,
-        },
+        "spec_full_targets": FULL_TARGETS,
     }
 
 
@@ -265,7 +289,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--canonical-accounts",
         type=int,
-        default=5000,
+        default=FULL_TARGETS["canonical_accounts"],
         help="Full-profile canonical-account count; default matches v6 target.",
     )
     return parser.parse_args()
