@@ -67,6 +67,17 @@ _PIVOT_TERMINAL_STATES = [
     "EXHAUSTED",
 ]
 
+_PRODUCTION_FRESHNESS = [
+    "CURRENT_CONFIRMED",
+    "CURRENT_LIKELY",
+    "LIVE",
+    "CURRENT",
+    "RECENT",
+    "HISTORICAL",
+    "STALE",
+    "UNKNOWN",
+]
+
 _KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,160}$")
 _ORIGINAL_TOOL_DESCRIPTORS = _server.tool_descriptors
 _ORIGINAL_HANDLERS = dict(_server.TOOL_HANDLERS)
@@ -245,6 +256,47 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
                             ),
                         }
                     )
+
+        if name == "compile_and_append_research_bundle":
+            bundle = properties.get("bundle")
+            observations = (
+                bundle.get("properties", {}).get("observations")
+                if isinstance(bundle, dict)
+                else None
+            )
+            source = (
+                observations.get("items", {}).get("properties", {}).get("source")
+                if isinstance(observations, dict)
+                else None
+            )
+            freshness = (
+                source.get("properties", {}).get("freshness")
+                if isinstance(source, dict)
+                else None
+            )
+            if isinstance(freshness, dict):
+                freshness["enum"] = list(_PRODUCTION_FRESHNESS)
+
+        if name == "get_portfolio_queue":
+            properties["include_non_active"] = {
+                "type": "boolean",
+                "description": "Include SUPERSEDED/ARCHIVED/QUARANTINED lifecycle rows for diagnostics; false by default.",
+            }
+            properties["include_non_production"] = {
+                "type": "boolean",
+                "description": "Include TEST/MIGRATION/PLACEHOLDER sessions for diagnostics; false by default.",
+            }
+            tool["description"] = (
+                "Rank only one ACTIVE production investigation per canonical account and scope by default; "
+                "historical duplicates are retained as SUPERSEDED and test/placeholder sessions are excluded."
+            )
+
+        if name == "prepare_outreach":
+            tool["description"] = (
+                "Consume one valid Closure ID and bind the exact Account-owned current verified Route from the "
+                "Canonical Route View (compiled Evidence or safe append-only Information), plus history, authority, "
+                "Subject, Body, Stage and expiry. It never sends."
+            )
 
         if name == "close_pivot":
             status = properties.get("status")
