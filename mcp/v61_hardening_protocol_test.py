@@ -68,10 +68,31 @@ def main() -> int:
             start_schema = tools["start_investigation"]["inputSchema"]
             closure = start_schema["properties"]["network_policy"]["properties"]["closure_strategy"]
             assert closure["const"] == "DECISION_SATURATION"
-            objective_props = tools["submit_research_objective"]["inputSchema"]["properties"]
+            objective_schema = tools["submit_research_objective"]["inputSchema"]
+            objective_props = objective_schema["properties"]
             assert "idempotency_key" in objective_props
+            assert "idempotency_key" in objective_schema["required"]
             assert "expected_state_version" in objective_props
-            passed.extend(["initialize_v61_adapter", "decision_saturation_public_contract", "mutation_guards_discoverable"])
+            close_schema = tools["close_pivot"]["inputSchema"]
+            assert "idempotency_key" in close_schema["required"]
+            assert set(close_schema["properties"]["status"]["enum"]) == {
+                "CONSUMED", "DUPLICATE", "LOW_VALUE", "BLOCKED", "EXHAUSTED",
+            }
+            passed.extend([
+                "initialize_v61_adapter",
+                "decision_saturation_public_contract",
+                "mutation_guards_discoverable",
+                "required_idempotency_in_public_schema",
+                "canonical_pivot_transition_schema",
+            ])
+
+            missing_key_args = {
+                "account": {"account_id": "C-ADAPTER-NOKEY", "country": "Synthetic", "name": "Synthetic Missing Key Buyer"},
+                "mode": "EXHAUSTIVE",
+                "history": {"events": []},
+            }
+            expect_error(process, 3, "start_investigation", missing_key_args, "idempotency_key is required")
+            passed.append("missing_mutation_idempotency_rejected")
 
             start_args = {
                 "account": {"account_id": "C-ADAPTER-SYNTH", "country": "Synthetic", "name": "Synthetic Adapter Buyer"},
@@ -80,16 +101,16 @@ def main() -> int:
                 "network_policy": {"closure_strategy": "DECISION_SATURATION"},
                 "idempotency_key": "start-adapter-0001",
             }
-            started = tool(process, 3, "start_investigation", start_args)
+            started = tool(process, 4, "start_investigation", start_args)
             investigation_id = started["investigation_id"]
             assert started["completion_policy"] == "DECISION_SATURATION"
             assert started["mutation_meta"]["replayed"] is False
-            replayed = tool(process, 4, "start_investigation", start_args)
+            replayed = tool(process, 5, "start_investigation", start_args)
             assert replayed["investigation_id"] == investigation_id
             assert replayed["mutation_meta"]["replayed"] is True
             passed.extend(["start_decision_saturation", "durable_idempotent_start_replay"])
 
-            resumed = tool(process, 5, "resume_investigation", {"investigation_id": investigation_id})
+            resumed = tool(process, 6, "resume_investigation", {"investigation_id": investigation_id})
             current_version = int(resumed["last_safe_seq"])
             objective_args = {
                 "investigation_id": investigation_id,
@@ -101,10 +122,10 @@ def main() -> int:
                     "source_family": "synthetic_official",
                 },
             }
-            objective = tool(process, 6, "submit_research_objective", objective_args)
+            objective = tool(process, 7, "submit_research_objective", objective_args)
             assert objective["mutation_meta"]["state_version_before"] == current_version
             assert objective["mutation_meta"]["state_version_after"] > current_version
-            objective_replay = tool(process, 7, "submit_research_objective", objective_args)
+            objective_replay = tool(process, 8, "submit_research_objective", objective_args)
             assert objective_replay["mutation_meta"]["replayed"] is True
             passed.extend(["optimistic_state_version_success", "idempotent_replay_precedes_stale_retry_check"])
 
@@ -118,18 +139,18 @@ def main() -> int:
                     "source_family": "synthetic_official",
                 },
             }
-            expect_error(process, 8, "submit_research_objective", stale_args, "STATE_VERSION_CONFLICT")
+            expect_error(process, 9, "submit_research_objective", stale_args, "STATE_VERSION_CONFLICT")
             passed.append("stale_writer_rejected")
 
             conflicting_replay = dict(start_args)
             conflicting_replay["account"] = {"account_id": "C-ADAPTER-OTHER", "country": "Synthetic", "name": "Other Synthetic Buyer"}
-            expect_error(process, 9, "start_investigation", conflicting_replay, "IDEMPOTENCY_KEY_CONFLICT")
+            expect_error(process, 10, "start_investigation", conflicting_replay, "IDEMPOTENCY_KEY_CONFLICT")
             passed.append("idempotency_key_request_conflict_rejected")
 
             legacy_start = dict(start_args)
             legacy_start["idempotency_key"] = "start-adapter-legacy"
             legacy_start["network_policy"] = {"closure_strategy": "QUEUE_PIVOT_SATURATION"}
-            expect_error(process, 10, "start_investigation", legacy_start, "must be DECISION_SATURATION")
+            expect_error(process, 11, "start_investigation", legacy_start, "must be DECISION_SATURATION")
             passed.append("legacy_queue_closure_rejected_on_production_adapter")
         finally:
             if process.stdin is not None:
