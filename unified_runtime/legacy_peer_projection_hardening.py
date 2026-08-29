@@ -114,9 +114,20 @@ class V61LegacyPeerProjectionMixin:
         return str(receipt.get("peer_id") or "").strip()
 
     def _legacy_peer_projections(self, investigation_id: str) -> list[dict[str, Any]]:
+        # One verified compatibility-state replay already contains the complete
+        # append-only event stream.  Derive native v6 Peer IDs from that same
+        # stream instead of replaying the hash chain again through _v6_state().
         legacy = self._state(investigation_id)
-        v6_state = self._v6_state(investigation_id)
-        v6_peer_ids = set(v6_state.get("peers", {}))
+        v6_peer_ids = {
+            str(event.get("payload", {}).get("peer_id") or "")
+            for event in legacy.get("events", [])
+            if event.get("event_type") in {
+                "V6_PEER_DISCOVERED",
+                "V6_PEER_EVALUATED",
+                "V6_ANCHOR_PROMOTED",
+            }
+            and str(event.get("payload", {}).get("peer_id") or "").strip()
+        }
         rows: list[dict[str, Any]] = []
         for peer_id, receipt in legacy.get("peers", {}).items():
             if peer_id in v6_peer_ids or not isinstance(receipt, dict):
@@ -179,6 +190,7 @@ class V61LegacyPeerProjectionMixin:
             "grants_v6_anchor_promotion_authority": False,
             "decision_saturation_requires_v6_reconciliation": True,
             "execution_receipt_candidate_auto_promotes_to_peer": False,
+            "projection_reuses_verified_legacy_event_stream": True,
         }
         return contract
 
