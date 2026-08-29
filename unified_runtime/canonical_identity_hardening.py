@@ -13,7 +13,9 @@ identity semantics:
 * address similarity is supporting evidence only;
 * a requested Canonical Account ID is exact, never a fuzzy hint;
 * contradictory Tax IDs block matching, even when names or requested IDs agree;
-* ambiguous identity signals cannot silently create a second Account.
+* ambiguous identity signals cannot silently create a second Account;
+* an explicitly requested *new* ID remains creatable when no competing
+  identity signal exists, preserving the supported low-information start path.
 """
 
 from __future__ import annotations
@@ -58,6 +60,10 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         }
 
     @staticmethod
+    def _has_primary_identity(keys: dict[str, set[str]]) -> bool:
+        return any(keys[key] for key in ("names", "tax_ids", "addresses", "external_ids"))
+
+    @staticmethod
     def _same_country(candidate: dict[str, set[str]], row: dict[str, set[str]]) -> bool:
         return (
             not candidate["countries"]
@@ -84,7 +90,6 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         same_country = EvidenceBoundCanonicalRegistry._same_country(candidate, row)
         if same_country and candidate["names"] & row["names"]:
             score, reasons = max(score, 85), reasons + ["PRIMARY_LEGAL_NAME_COUNTRY"]
-
         if score and same_country and candidate["addresses"] & row["addresses"]:
             reasons.append("ADDRESS_SUPPORT")
         return score, sorted(set(reasons))
@@ -118,14 +123,13 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             conflict_types: list[str] = []
             if self._tax_id_conflict(candidate_keys, row_keys):
                 conflict_types.append("TAX_ID_CONFLICT")
-            if not conflict_types:
-                continue
-            conflicts.append({
-                "account_id": entry["account_id"],
-                "score": 0,
-                "reasons": [_STRONG_ID_CONFLICT_REASON, *conflict_types],
-                "origin": entry["origin"],
-            })
+            if conflict_types:
+                conflicts.append({
+                    "account_id": entry["account_id"],
+                    "score": 0,
+                    "reasons": [_STRONG_ID_CONFLICT_REASON, *conflict_types],
+                    "origin": entry["origin"],
+                })
         return sorted(conflicts, key=lambda item: item["account_id"].casefold())
 
     def _alias_collisions(self, candidate: dict[str, Any]) -> list[dict[str, Any]]:
@@ -134,7 +138,6 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         candidate_aliases = candidate_keys["aliases"] | candidate_keys["legal_aliases"]
         if not candidate_primary and not candidate_aliases:
             return []
-
         collisions: list[dict[str, Any]] = []
         for row in self.entries():
             row_keys = self._keys(row["account"])
@@ -147,23 +150,18 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 | (candidate_aliases & row_primary)
                 | (candidate_aliases & row_aliases)
             )
-            if not overlap:
-                continue
-            collisions.append({
-                "account_id": row["account_id"],
-                "score": 0,
-                "reasons": [_ALIAS_REVIEW_REASON],
-                "origin": row["origin"],
-                "alias_overlap": overlap,
-            })
+            if overlap:
+                collisions.append({
+                    "account_id": row["account_id"],
+                    "score": 0,
+                    "reasons": [_ALIAS_REVIEW_REASON],
+                    "origin": row["origin"],
+                    "alias_overlap": overlap,
+                })
         return sorted(collisions, key=lambda item: item["account_id"].casefold())
 
     @staticmethod
-    def _ambiguous(
-        reason: str,
-        candidates: list[dict[str, Any]],
-        **extra: Any,
-    ) -> dict[str, Any]:
+    def _ambiguous(reason: str, candidates: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
         return {
             "status": "AMBIGUOUS_MATCH",
             "match": None,
@@ -175,6 +173,17 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         }
 
     def _resolve_unrequested(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        candidate_keys = self._keys(candidate)
+        if not self._has_primary_identity(candidate_keys):
+            collisions = self._alias_collisions(candidate)
+            if collisions:
+                return self._ambiguous(
+                    _ALIAS_REVIEW_REASON,
+                    collisions,
+                    resolution_requirement="SUPPLY_EXACT_CANONICAL_ACCOUNT_ID_AFTER_EVIDENCE_REVIEW",
+                )
+            raise ValidationError("candidate requires a primary legal name, tax ID, address, or external ID")
+
         strong_conflicts = self._strong_identity_conflicts(candidate)
         if strong_conflicts:
             return self._ambiguous(
@@ -182,11 +191,9 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 strong_conflicts,
                 resolution_requirement="RECONCILE_STRONG_IDENTITY_CONFLICT_BEFORE_CANONICAL_BIND",
             )
-
         resolved = super().resolve(candidate, requested_account_id="")
         if resolved["status"] != "NOT_FOUND":
             return resolved
-
         collisions = self._alias_collisions(candidate)
         if collisions:
             return self._ambiguous(
@@ -211,15 +218,12 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         if len(exact_rows) > 1:
             return self._ambiguous(
                 "DUPLICATE_CANONICAL_ACCOUNT_ID",
-                [
-                    {
-                        "account_id": row["account_id"],
-                        "score": 0,
-                        "reasons": ["DUPLICATE_CANONICAL_ACCOUNT_ID"],
-                        "origin": row["origin"],
-                    }
-                    for row in exact_rows
-                ],
+                [{
+                    "account_id": row["account_id"],
+                    "score": 0,
+                    "reasons": ["DUPLICATE_CANONICAL_ACCOUNT_ID"],
+                    "origin": row["origin"],
+                } for row in exact_rows],
             )
         if exact_rows:
             conflicts = self._strong_identity_conflicts(
@@ -234,11 +238,9 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                     resolution_requirement="RECONCILE_STRONG_IDENTITY_CONFLICT_BEFORE_CANONICAL_BIND",
                 )
             row = exact_rows[0]
-            candidate_keys = self._keys(candidate)
-            row_keys = self._keys(row["account"])
             score, reasons = self._match_score(
-                candidate_keys,
-                row_keys,
+                self._keys(candidate),
+                self._keys(row["account"]),
                 requested_account_id,
                 row["account_id"],
             )
@@ -254,6 +256,22 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 "requested_account_id_exact": True,
             }
 
+        # Explicit allocation with no fuzzy identity material is safe: there is
+        # nothing to substitute against. This keeps the established MCP path for
+        # creating a caller-chosen synthetic/known ID with only metadata such as
+        # country, while still forbidding fuzzy replacement of that ID.
+        candidate_keys = self._keys(candidate)
+        if not self._has_primary_identity(candidate_keys) and not (
+            candidate_keys["aliases"] or candidate_keys["legal_aliases"]
+        ):
+            return {
+                "status": "NOT_FOUND",
+                "match": None,
+                "candidates": [],
+                "requested_account_id": requested_account_id,
+                "exact_id_allocation_without_fuzzy_identity": True,
+            }
+
         other_identity = self._resolve_unrequested(candidate)
         if other_identity["status"] != "NOT_FOUND":
             candidates = list(other_identity.get("candidates") or [])
@@ -266,10 +284,6 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 discovered_identity_status=other_identity["status"],
                 resolution_requirement="REVIEW_REQUESTED_ACCOUNT_ID_VS_EXISTING_CANONICAL_IDENTITY",
             )
-
-        # Exact requested ID is genuinely absent and no competing identity signal
-        # exists. Returning NOT_FOUND lets resolve_or_create allocate that exact ID
-        # only when the caller explicitly permits creation.
         return {
             "status": "NOT_FOUND",
             "match": None,
@@ -285,10 +299,7 @@ class V61CanonicalIdentityHardeningMixin:
         super().__init__(*args, **kwargs)
         current = self.canonical_registry
         if not isinstance(current, EvidenceBoundCanonicalRegistry):
-            self.canonical_registry = EvidenceBoundCanonicalRegistry(
-                current.root,
-                current.session_root,
-            )
+            self.canonical_registry = EvidenceBoundCanonicalRegistry(current.root, current.session_root)
 
     def get_runtime_contract(self, arguments: dict[str, Any]) -> dict[str, Any]:
         contract = super().get_runtime_contract(arguments)
@@ -302,6 +313,7 @@ class V61CanonicalIdentityHardeningMixin:
             "address_is_supporting_evidence_only": True,
             "requested_account_id_is_exact_constraint": True,
             "requested_id_fuzzy_substitution_allowed": False,
+            "explicit_new_id_without_fuzzy_identity_can_be_allocated": True,
             "contradictory_tax_ids_fail_closed": True,
             "automatic_match_authorities": [
                 "EXACT_ACCOUNT_ID",

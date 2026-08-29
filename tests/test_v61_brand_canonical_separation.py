@@ -33,7 +33,23 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
         self.assertFalse(canonical["address_only_match_allowed"])
         self.assertTrue(canonical["requested_account_id_is_exact_constraint"])
         self.assertFalse(canonical["requested_id_fuzzy_substitution_allowed"])
+        self.assertTrue(canonical["explicit_new_id_without_fuzzy_identity_can_be_allocated"])
         self.assertTrue(canonical["contradictory_tax_ids_fail_closed"])
+
+    def test_explicit_new_account_id_allows_low_information_allocation_without_fuzzy_substitution(self) -> None:
+        created = self.runtime.resolve_or_create_account({
+            "candidate": {"country": "Canada"},
+            "requested_account_id": "MCP-PROVIDER-SYNTH",
+        })
+        self.assertEqual(created["status"], "CREATED")
+        self.assertEqual(created["match"]["account_id"], "MCP-PROVIDER-SYNTH")
+        replay = self.runtime.resolve_or_create_account({
+            "candidate": {"country": "Canada"},
+            "requested_account_id": "MCP-PROVIDER-SYNTH",
+            "create_if_missing": False,
+        })
+        self.assertEqual(replay["status"], "MATCHED")
+        self.assertIn("EXACT_ACCOUNT_ID", replay["match"]["reasons"])
 
     def test_untyped_brand_alias_never_auto_merges_or_auto_creates(self) -> None:
         created = self.runtime.resolve_or_create_account({
@@ -155,10 +171,7 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
         })
         self.assertEqual(collision["status"], "AMBIGUOUS_MATCH")
         self.assertIsNone(collision["match"])
-        self.assertEqual(
-            collision["ambiguity_reason"],
-            "REQUESTED_ACCOUNT_ID_NOT_FOUND_IDENTITY_COLLISION",
-        )
+        self.assertEqual(collision["ambiguity_reason"], "REQUESTED_ACCOUNT_ID_NOT_FOUND_IDENTITY_COLLISION")
         self.assertEqual(len(self.runtime.canonical_registry.entries()), 1)
 
     def test_tax_id_conflict_blocks_name_match_and_exact_id_override(self) -> None:
@@ -171,7 +184,6 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
             "requested_account_id": "C-TAX-001",
         })
         self.assertEqual(created["status"], "CREATED")
-
         same_name_conflict = self.runtime.resolve_or_create_account({
             "candidate": {
                 "name": "Tax Conflict Synthetic LLC",
@@ -180,11 +192,7 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
             },
         })
         self.assertEqual(same_name_conflict["status"], "AMBIGUOUS_MATCH")
-        self.assertEqual(
-            same_name_conflict["ambiguity_reason"],
-            "STRONG_IDENTITY_CONFLICT_REQUIRES_REVIEW",
-        )
-
+        self.assertEqual(same_name_conflict["ambiguity_reason"], "STRONG_IDENTITY_CONFLICT_REQUIRES_REVIEW")
         exact_id_conflict = self.runtime.resolve_or_create_account({
             "candidate": {
                 "name": "Tax Conflict Synthetic LLC",
@@ -242,10 +250,7 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
                 "relationship_to_account": "OPERATING_BRAND",
                 "information_type": "FACT",
                 "claim_key": "identity.brand_relationship",
-                "value": {
-                    "brand_name": "HOME iD Synthetic",
-                    "relationship": "OPERATING_BRAND",
-                },
+                "value": {"brand_name": "HOME iD Synthetic", "relationship": "OPERATING_BRAND"},
                 "source_type": "USER_INPUT",
                 "source_reference_type": "USER_INPUT",
                 "source_url": "",
