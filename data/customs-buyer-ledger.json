@@ -318,6 +318,283 @@
       },
       "updated_at": "2026-08-29T07:38:24+00:00"
     },
+    "buyer_145ec4d54cbb25b8ee30": {
+      "buyer_key": "buyer_145ec4d54cbb25b8ee30",
+      "contacts": {
+        "info@jainamericas.com": {
+          "email": "info@jainamericas.com",
+          "employment_status": "not_applicable",
+          "entity": "Jain Americas Inc.",
+          "first_seen": "2026-08-29T07:54:14+00:00",
+          "last_checked": "2026-08-29T08:15:00+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "not_procurement",
+          "recommended_use": "Do not send standard XingHuai PVC foam board prospecting email. Retain only as an official company contact record.",
+          "risk_note": "Current official general/company contact for Jain Americas' own EX-CEL PVC sheet business. Buyer is an affiliated competitor/brand operator rather than a qualified external XingHuai target.",
+          "route_class": "DO_NOT_USE",
+          "source_ids": [
+            "ja_e4_official_info_email"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "official_current"
+        },
+        "inquiries@jainamericas.com": {
+          "email": "inquiries@jainamericas.com",
+          "employment_status": "not_applicable",
+          "entity": "Jain Americas Inc. / Jain Building Products",
+          "first_seen": "2026-08-29T07:54:14+00:00",
+          "last_checked": "2026-08-29T08:15:00+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "not_procurement",
+          "recommended_use": "Do not use for XingHuai standard prospecting; retain as official contact only.",
+          "risk_note": "Official current inquiry address for Jain's own building-products business. No evidence it is an external procurement route for competing PVC foam board.",
+          "route_class": "DO_NOT_USE",
+          "source_ids": [
+            "ja_e3_official_contact"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "official_current"
+        }
+      },
+      "created_at": "2026-08-29T07:54:14+00:00",
+      "evidence": {
+        "ja_e10_no_outreach": {
+          "boundary": "This does not rule out all possible OEM/private-label or strategic sourcing opportunities, but there is no current evidence supporting such an opportunity for XingHuai.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "Jain Americas is not recommended as an external sales prospect for XingHuai rigid PVC foam board because it is the wholly owned U.S. subsidiary and brand operator of the same Jain/EX-CEL PVC sheet supply chain visible in the customs record.",
+          "claim_class": "RECOMMENDATION",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ja_e10_no_outreach",
+          "source_date": null,
+          "source_reference": "Recommendation based on Jain Americas official corporate relationship and product portfolio",
+          "source_type": "official_domain",
+          "source_url": "https://www.jainamericas.com/home/about"
+        },
+        "ja_e1_official_about": {
+          "boundary": "This establishes corporate relationship and operating identity but not the exact state incorporation number or full legal ownership chain beyond Jain Americas' own statement.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "Jain Americas states on its official website that it is a wholly owned subsidiary of Jain Irrigation Systems Ltd., formerly known as EX-Cel Manufacturing, and operates EX-CEL PVC sheet product lines in the United States.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ja_e1_official_about",
+          "source_date": null,
+          "source_reference": "Jain Americas About page",
+          "source_type": "official_domain",
+          "source_url": "https://www.jainamericas.com/home/about"
+        },
+        "ja_e2_official_products": {
+          "boundary": "Product pages describe Jain's own product range and should not be generalized to XingHuai product performance or certifications.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "Jain Americas' official product overview lists EX-CEL FF Classic free-foam PVC sheets, FF Lite free-foam PVC sheets, EX-CEL IF Celuka-processed integral foam PVC sheets, and EX-CEL Edge co-extruded PVC sheets.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ja_e2_official_products",
+          "source_date": null,
+          "source_reference": "Jain Americas product overview",
+          "source_type": "official_domain",
+          "source_url": "https://www.jainamericas.com/products/overview"
+        },
+        "ja_e3_official_contact": {
+          "boundary": "These are current official company contact routes, but they are sales/general routes for Jain's own business, not evidence of willingness to source competing PVC foam board externally.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "Jain Building Products' current official contact page lists Jain Americas' head office at 1000 Sheridan St, Chicopee, MA 01022, phone 866-393-8883 / 413-593-8883 and inquiries@jainamericas.com.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ja_e3_official_contact",
+          "source_date": null,
+          "source_reference": "Jain Building Products contact page",
+          "source_type": "official_domain",
+          "source_url": "https://jainbuildingproducts.com/contact/"
+        },
+        "ja_e4_official_info_email": {
+          "boundary": "General official contact only; not a procurement mailbox.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "Jain Americas' official site currently publishes info@jainamericas.com and phone 888-473-7539.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ja_e4_official_info_email",
+          "source_date": null,
+          "source_reference": "Jain Americas home/about pages",
+          "source_type": "official_domain",
+          "source_url": "https://www.jainamericas.com/"
+        },
+        "ja_e5_user_trade": {
+          "boundary": "This proves only the supplied manifest fields; it does not show purchase price, transfer pricing, sheet count, dimensions, density or whether the movement was an arm's-length external purchase versus intercompany inventory transfer.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "User supplied a 2026-06-25 House Bill record, master HLCUBO1260565515 / house AMJALLPAOL023391, Jain Irrigation Systems Ltd to Jain Americas Inc, 144 PKG, 57,392 kg, commodity 'HS CODE-39211200 EX-CEL PVC FREE FOAM SHEETS', with three listed containers and Notify Jain Americas Inc.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "ja_e5_user_trade",
+          "source_date": "2026-06-25",
+          "source_reference": "Current-run user customs record dated 2026-06-25",
+          "source_type": "user_input",
+          "source_url": null
+        },
+        "ja_e6_trade_continuity": {
+          "boundary": "The provider's total shipment count is not used as a target-product purchase count. Visible individual records demonstrate continuity of affiliated-company EX-CEL flows, not independent market sourcing.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "ImportGenius shows repeated 2026 shipments from Jain Irrigation Systems Ltd to Jain Americas Inc containing EX-CEL PVC FREE FOAM SHEETS, including Jan. 31, Feb. 8, Feb. 15, Apr. 4, Apr. 26, Apr. 27, May 2 and May 9, 2026.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "ja_e6_trade_continuity",
+          "source_date": null,
+          "source_reference": "ImportGenius Jain Americas importer history",
+          "source_type": "trade_database",
+          "source_url": "https://www.importgenius.com/importers/jain-americas-inc-chicopee"
+        },
+        "ja_e7_aug_trade": {
+          "boundary": "This shows the two Massachusetts address roles persist in current manifest data; it does not establish that 10 Conte Dr remains Jain's primary operating office.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "ImportInfo shows another Jain Irrigation Systems Ltd -> Jain Americas Inc shipment arriving Aug. 9, 2026, 17 PKG / 19,880 kg, EX-CEL PVC FREE FOAM SHEETS, with consignee 10 Conte Dr Pittsfield and notify address 1000 Sheridan St Chicopee.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "ja_e7_aug_trade",
+          "source_date": "2026-08-09",
+          "source_reference": "ImportInfo Jain Americas profile sample bill",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/jain-americas-inc"
+        },
+        "ja_e8_address_interpretation": {
+          "boundary": "The exact legal/warehouse function of 10 Conte Dr Pittsfield is not established by the sources reviewed; it should not be silently replaced or labeled obsolete.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "Current official Jain Building Products contact/legal pages identify 1000 Sheridan St, Chicopee as Jain Americas' head office, while customs records continue to show 10 Conte Dr, Pittsfield as consignee address on some imports.",
+          "claim_class": "INFERENCE",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ja_e8_address_interpretation",
+          "source_date": null,
+          "source_reference": "Current official Jain contact page compared with ImportInfo customs records",
+          "source_type": "official_domain",
+          "source_url": "https://jainbuildingproducts.com/contact/"
+        },
+        "ja_e9_brand_ip": {
+          "boundary": "Trademark ownership supports that EX-Cel is Jain Americas' own brand ecosystem; it does not alone prove where each sheet SKU is manufactured.",
+          "checked_at": "2026-08-29T08:15:00+00:00",
+          "claim": "Jain Building Products' legal notice states that Jain Building Products, EX-Cel and NuCedar are trademarks of Jain Americas Inc.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ja_e9_brand_ip",
+          "source_date": null,
+          "source_reference": "Jain Building Products legal notice",
+          "source_type": "official_domain",
+          "source_url": "https://jainbuildingproducts.com/legal-notice"
+        }
+      },
+      "history_events": [],
+      "identity": {
+        "address": "1000 Sheridan St, Chicopee, MA 01022",
+        "aliases": [
+          "Jain Americas",
+          "Jain (Americas) Inc.",
+          "EX-Cel Manufacturing",
+          "Jain Americas Inc.",
+          "Jain Americas Inc"
+        ],
+        "business_type": "Wholly owned U.S. subsidiary of Jain Irrigation Systems Ltd operating the EX-CEL PVC sheet business and U.S. stocking/manufacturing/warehouse operations; not an independent external buyer for XingHuai's competing PVC foam board offering.",
+        "country": "United States",
+        "customs_name": "Jain Americas Inc",
+        "legal_name": "Jain Americas Inc.",
+        "source_ids": [
+          "ja_e1_official_about",
+          "ja_e2_official_products",
+          "ja_e3_official_contact"
+        ]
+      },
+      "runs": [
+        {
+          "declared_previous_email_count": 0,
+          "declared_previous_trade_count": 0,
+          "input_hash": "c4d62e5195d15d3aaf20f2ac",
+          "investigated_at": "2026-08-29T08:15:00+00:00",
+          "prior_ledger_date": null,
+          "prior_ledger_name": null,
+          "run_id": "jainamericas-20260829-081500z"
+        }
+      ],
+      "trade_records": {
+        "record:jaamjallpaol023391": {
+          "buyer": "Jain Americas Inc",
+          "data_level": "bill",
+          "date": "2026-06-25",
+          "date_semantics": "User record date 2026-06-25; estimated arrival 2026-06-20 and run date 2026-06-26. Do not treat as purchase-order, invoice, production or arm's-length sale date.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:54:14+00:00",
+          "house_bill": "AMJALLPAOL023391",
+          "item_number": null,
+          "last_seen": "2026-08-29T07:54:14+00:00",
+          "master_bill": "HLCUBO1260565515",
+          "normalized_product": "EX-CEL rigid PVC free-foam sheets; affiliated Jain-group product flow",
+          "product_raw": "HS CODE-39211200EX-CEL PVC FREE FOAM SHEETS",
+          "provider": "User-supplied customs record",
+          "quantity": 144.0,
+          "record_id": "ja-AMJALLPAOL023391",
+          "source_ids": [
+            "ja_e5_user_trade"
+          ],
+          "supplier_or_exporter": "Jain Irrigation Systems Ltd",
+          "uom": "PKG",
+          "weight_kg": 57392.0
+        },
+        "record:jaig2026050938660": {
+          "buyer": "Jain Americas Inc.",
+          "data_level": "bill",
+          "date": "2026-05-09",
+          "date_semantics": "Arrival date as displayed by ImportGenius; used to establish continuity, not arm's-length purchase frequency.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:54:14+00:00",
+          "house_bill": "AMJALLPAOL022645",
+          "item_number": null,
+          "last_seen": "2026-08-29T07:54:14+00:00",
+          "master_bill": null,
+          "normalized_product": "EX-CEL rigid PVC free-foam sheets; affiliated Jain-group product flow",
+          "product_raw": "HS CODE-39211200 EX-CEL PVC FREE FOAM SHEETS",
+          "provider": "ImportGenius",
+          "quantity": 35.0,
+          "record_id": "ja-IG-2026-05-09-38660",
+          "source_ids": [
+            "ja_e6_trade_continuity"
+          ],
+          "supplier_or_exporter": "Jain Irrigation Systems Ltd.",
+          "uom": "PKG",
+          "weight_kg": 38660.0
+        },
+        "record:jaii2026080919880": {
+          "buyer": "Jain Americas Inc.",
+          "data_level": "bill",
+          "date": "2026-08-09",
+          "date_semantics": "Actual arrival date shown by ImportInfo; used to establish current continuity and address-role persistence.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:54:14+00:00",
+          "house_bill": "AMJALLPAOL024111",
+          "item_number": null,
+          "last_seen": "2026-08-29T07:54:14+00:00",
+          "master_bill": "HLCUBO12606BIII2",
+          "normalized_product": "EX-CEL rigid PVC free-foam sheets; affiliated Jain-group product flow",
+          "product_raw": "HS CODE-39211200EX-CEL PVC FREE FOAM SHEETS",
+          "provider": "ImportInfo",
+          "quantity": 17.0,
+          "record_id": "ja-II-2026-08-09-19880",
+          "source_ids": [
+            "ja_e7_aug_trade"
+          ],
+          "supplier_or_exporter": "Jain Irrigation Systems Ltd.",
+          "uom": "PKG",
+          "weight_kg": 19880.0
+        }
+      },
+      "updated_at": "2026-08-29T07:54:14+00:00"
+    },
     "buyer_15dcb9eaa64d2fc72676": {
       "buyer_key": "buyer_15dcb9eaa64d2fc72676",
       "contacts": {
@@ -1233,5 +1510,5 @@
     }
   },
   "schema_version": "2.1",
-  "updated_at": "2026-08-29T07:49:56+00:00"
+  "updated_at": "2026-08-29T07:54:14+00:00"
 }
