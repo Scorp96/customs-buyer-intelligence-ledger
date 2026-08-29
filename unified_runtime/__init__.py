@@ -63,6 +63,11 @@ from .portfolio_hardening import (
     PORTFOLIO_LIFECYCLES,
     V61PortfolioHardeningMixin,
 )
+from .brand_hardening import BRAND_RELATIONSHIPS, V61BrandHardeningMixin
+from .canonical_identity_hardening import (
+    EvidenceBoundCanonicalRegistry,
+    V61CanonicalIdentityHardeningMixin,
+)
 
 RUNTIME_VERSION = V6_RUNTIME_VERSION
 BUILD_ID = V6_BUILD_ID
@@ -71,6 +76,8 @@ FRESHNESS_LEVELS = V61_FRESHNESS_LEVELS
 
 
 class UnifiedRuntime(
+    V61CanonicalIdentityHardeningMixin,
+    V61BrandHardeningMixin,
     V61PortfolioHardeningMixin,
     V61OutreachHardeningMixin,
     V61CommercialOpportunityMixin,
@@ -127,4 +134,8 @@ __all__ = [
     "OPPORTUNITY_LIFT_WEIGHTS",
     "PORTFOLIO_ENVIRONMENTS",
     "PORTFOLIO_LIFECYCLES",
+    "BRAND_RELATIONSHIPS",
+    "V61BrandHardeningMixin",
+    "EvidenceBoundCanonicalRegistry",
+    "V61CanonicalIdentityHardeningMixin",
 ]
