@@ -1,7 +1,7 @@
 {
   "name": "customs-buyer-intelligence",
-  "version": "6.1.0+codex.20260829232500",
-  "description": "Answer-first public buyer research plus a v6.1 claim-driven Runtime with evidence-bound monotonic Peers, exactly-once batch compilation, EIV Decision Saturation, crash-safe durability, verified migration, guarded legacy-Evidence reconciliation, Git-controlled customs audit bootstrap, safe CRM writeback and guarded draft-only actions.",
+  "version": "6.1.0+codex.20260829234000",
+  "description": "Answer-first public buyer research plus a v6.1 claim-driven Runtime with evidence-bound monotonic Peers, exactly-once batch compilation, EIV Decision Saturation, crash-safe durability, verified migration, guarded legacy-Evidence reconciliation, Git-controlled customs audit bootstrap, byte-read-only Canonical preflight, safe CRM writeback and guarded draft-only actions.",
   "author": {
     "name": "Xinghuai Sales Intelligence"
   },
@@ -27,7 +27,7 @@
   "interface": {
     "displayName": "Customs Buyer Intelligence",
     "shortDescription": "先查先答；Git受控CLI可安全接入真实海关行",
-    "longDescription": "普通买家、联系人、邮箱和电话查询默认只搜索并立即回答最新可验证内容，附具体来源与边界，同时生成一封定制开发邮件和一条定制即时聊天草稿；不创建 Runtime 历史、审计文档、Closure、Excel 写回或可执行发送入口。累计多家也不会自动入库；只有用户明确要求新增到表格、批量写回、正式审核或一键发送时，才进入相应的去重、历史保留、审计或安全发送流程。Git-controlled CLI 可对本地海关 JSON 做只读预览，完整保留原始 JSON 并同时生成 canonical normalized view；对于缺少独立国家列的美国进口行，仅在美国进口数据源与5位邮编地址信号同时存在时推导 United States，并显式返回 buyer_country_resolution，推导国家仅是 identity-routing hint 而不是法律实体证明。显式 --commit 后通过 v6.1 production MCP/WAL 安全创建/复用 Account 与 FULL_AUDIT Investigation、写入仅为 D1 的用户海关证据并输出 EIV 研究目标。未知或尚未分类的原始字段不会在规范化时被丢弃，但原始保留和国家推导都不提高证据等级。CLI 本身不伪装成网页研究代理，真实 web/browser/registry/maps 调查仍由有相应工具的 Host 执行。原有十二模块、六方向网络、Evidence/Pivot、10 项商业结果、恢复与草稿外联能力继续保留给显式全量审计流程。",
+    "longDescription": "普通买家、联系人、邮箱和电话查询默认只搜索并立即回答最新可验证内容，附具体来源与边界，同时生成一封定制开发邮件和一条定制即时聊天草稿；不创建 Runtime 历史、审计文档、Closure、Excel 写回或可执行发送入口。累计多家也不会自动入库；只有用户明确要求新增到表格、批量写回、正式审核或一键发送时，才进入相应的去重、历史保留、审计或安全发送流程。Git-controlled CLI 可对本地海关 JSON 做只读预览，完整保留原始 JSON 并同时生成 canonical normalized view；对于缺少独立国家列的美国进口行，仅在美国进口数据源与5位邮编地址信号同时存在时推导 United States，并显式返回 buyer_country_resolution，推导国家仅是 identity-routing hint 而不是法律实体证明。正式写入前可使用独立 byte-read-only Canonical preflight：不构造 UnifiedRuntime、不调用 mutation MCP、不创建 lock/WAL，并复用 CountryAware Canonical resolve 语义检查已有 Account；Runtime NOT_FOUND 不等于外部 CRM 没有客户。显式 --commit 后才通过 v6.1 production MCP/WAL 安全创建/复用 Account 与 FULL_AUDIT Investigation、写入仅为 D1 的用户海关证据并输出 EIV 研究目标。未知或尚未分类的原始字段不会在规范化时被丢弃，但原始保留和国家推导都不提高证据等级。CLI 本身不伪装成网页研究代理，真实 web/browser/registry/maps 调查仍由有相应工具的 Host 执行。原有十二模块、六方向网络、Evidence/Pivot、10 项商业结果、恢复与草稿外联能力继续保留给显式全量审计流程。",
     "developerName": "Xinghuai Sales Intelligence",
     "category": "Business",
     "capabilities": [
