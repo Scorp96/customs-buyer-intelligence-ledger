@@ -702,8 +702,248 @@
         }
       },
       "updated_at": "2026-08-29T07:17:36+00:00"
+    },
+    "buyer_e20c9d244038b59ed690": {
+      "buyer_key": "buyer_e20c9d244038b59ed690",
+      "contacts": {
+        "ayer@hooddistribution.com": {
+          "email": "ayer@hooddistribution.com",
+          "employment_status": "not_applicable",
+          "entity": "Hood Industries, Inc. dba Hood Distribution - Ayer branch",
+          "first_seen": "2017",
+          "last_checked": "2026-08-29T07:55:00+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "unverified",
+          "recommended_use": "Verify via the current Ayer branch phone (978-862-0700) or current website email form before use. Ask specifically for the person responsible for PVC/EX-Cel sheet purchasing, vendor management or category purchasing.",
+          "risk_note": "Published in an older official Hood Distribution catalog for the same Ayer branch. Current official Ayer page provides an email-branch function but does not expose the address in readable text; therefore current deliverability and route ownership are not verified.",
+          "route_class": "VERIFY_ONLY",
+          "source_ids": [
+            "hood_e10_ayer_email_history"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "historical"
+        }
+      },
+      "created_at": "2026-08-29T07:44:36+00:00",
+      "evidence": {
+        "hood_e10_ayer_email_history": {
+          "boundary": "The address is historical. The current Ayer webpage still offers an 'Email Ayer Branch' function but does not expose the full address in readable text, so ayer@hooddistribution.com is not upgraded to official_current without direct current verification.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "An older Hood Distribution McQuesten Group product catalog publicly listed ayer@hooddistribution.com for 91 Fitchburg Rd, Ayer, MA 01432.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "C2",
+          "evidence_id": "hood_e10_ayer_email_history",
+          "source_date": "2017",
+          "source_reference": "Hood Distribution McQuesten Group 2017 product catalog",
+          "source_type": "official_domain",
+          "source_url": "https://hooddistribution.com/wp-content/uploads/Product-Catalog-McQ-7-7-1017.pdf"
+        },
+        "hood_e11_purchase_lead": {
+          "boundary": "Third-party/currentness signals are not sufficient to confirm present procurement authority for EX-Cel/PVC sheet or a usable email address.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "Current professional-directory/search evidence identifies Bob McCubbins with purchasing-related titles at Hood Distribution/Hood Industries, including Purchasing Manager / Regional Corporate Purchasing Manager, while LinkedIn shows an association with Hood Distribution. No complete current business email is publicly exposed in the sources reviewed.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B2",
+          "evidence_id": "hood_e11_purchase_lead",
+          "source_date": null,
+          "source_reference": "D&B contact directory / LinkedIn / SignalHire search results for Bob McCubbins",
+          "source_type": "professional_source",
+          "source_url": "https://www.dnb.com/contact-directory/contact-profile.bob_mccubbins.583bb8c01bc1291957a26d135560030d.html"
+        },
+        "hood_e12_official_social": {
+          "boundary": "Official social links provide human-verification routes but do not identify a PVC procurement decision-maker.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "Hood Distribution's current official Ayer webpage links its Facebook, LinkedIn, Instagram and Hood Industries YouTube social channels.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "hood_e12_official_social",
+          "source_date": null,
+          "source_reference": "Hood Distribution Ayer page social links",
+          "source_type": "official_domain",
+          "source_url": "https://hooddistribution.com/locations/ayer/"
+        },
+        "hood_e1_fmcsa_identity": {
+          "boundary": "FMCSA verifies carrier identity/DBA and address, not Massachusetts branch procurement authority or exact corporate ownership chain beyond the listed legal/DBA relationship.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "FMCSA currently identifies legal name HOOD INDUSTRIES INC, DBA HOOD DISTRIBUTION, USDOT 108547, with active carrier status and principal address 1978 Hood Blvd Ste 100, Hattiesburg, MS 39401.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A1",
+          "evidence_id": "hood_e1_fmcsa_identity",
+          "source_date": "2026-08",
+          "source_reference": "FMCSA SAFER Company Snapshot, USDOT 108547",
+          "source_type": "government_registry",
+          "source_url": "https://safer.fmcsa.dot.gov/query.asp?query_param=USDOT&query_string=108547&query_type=queryCarrierSnapshot&searchtype=ANY"
+        },
+        "hood_e2_official_ayer": {
+          "boundary": "The page establishes current branch identity and manager, but does not state that Aaron Cormier is the PVC purchasing decision-maker or expose a complete current email address in readable page text.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "Hood Distribution's current official Ayer page identifies the Ayer branch at 91 Fitchburg Road, Ayer, MA 01432, phone 978-862-0700, toll-free 800-752-0129, and Aaron Cormier as Branch Manager; it states Hood Industries acquired Geo. McQuesten in 1998 and the operation has since run as Hood Distribution-McQuesten Group.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "hood_e2_official_ayer",
+          "source_date": null,
+          "source_reference": "Hood Distribution Ayer location page",
+          "source_type": "official_domain",
+          "source_url": "https://hooddistribution.com/locations/ayer/"
+        },
+        "hood_e3_official_business": {
+          "boundary": "This describes business model and network; it does not by itself prove purchase frequency for any specific PVC product.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "Hood Distribution's official site and LinkedIn describe it as a distributor of lumber, plywood, millwork and specialty building products, with 23 U.S. locations; the Ayer branch serves independent local retail lumberyards.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "hood_e3_official_business",
+          "source_date": null,
+          "source_reference": "Hood Distribution official site / Ayer page",
+          "source_type": "official_domain",
+          "source_url": "https://hooddistribution.com/"
+        },
+        "hood_e4_official_pvc": {
+          "boundary": "The official product listing proves Hood markets EX-Cel/Jain PVC products, but does not specify which branch owns inventory, current sales volume, purchase price, or exact overlap between the listed trim/sheet SKUs and the current imported free-foam sheets.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "Hood Distribution's official product pages list PVC & Trimboard, Celtec Expanded PVC Sheets, and EX-Cel Exterior PVC Trim by Jain Building Products; the EX-Cel listing includes sheet, trim, corner board and moulding forms.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "hood_e4_official_pvc",
+          "source_date": null,
+          "source_reference": "Hood Distribution PVC/siding product pages",
+          "source_type": "official_domain",
+          "source_url": "https://hooddistribution.com/product-overview/siding/"
+        },
+        "hood_e5_celtec": {
+          "boundary": "This is a separate expanded-PVC product line and cannot be assumed to be the same material, supplier, density or manufacturing process as EX-Cel.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "Hood Distribution currently lists Celtec Expanded PVC Sheets in 6 mm, 12 mm and 19 mm 48.25 x 96.25 inch sheet sizes, with other thicknesses/colors/sizes by special order.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "hood_e5_celtec",
+          "source_date": null,
+          "source_reference": "Hood Distribution Celtec Expanded PVC Sheets product page",
+          "source_type": "official_domain",
+          "source_url": "https://hooddistribution.com/product/celtec-expanded-pvc/"
+        },
+        "hood_e6_user_trade": {
+          "boundary": "This proves what the supplied record states. It does not provide sheet count, dimensions, thickness, density, unit price, invoice value, inventory ownership after receipt, or procurement authority.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "User supplied a 2026-08-19 House Bill record, master CMDUAMC2562475A / house AMJALLPAOL024447, Jain Irrigation Systems Ltd to Hood Distribution at 91 Fitchburg Rd, Ayer MA, 16 PKG, 19,467 kg, cargo 'HS CODE-39211200 EX-CEL PVC FREE FOAM SHEETS', container TIIU6185400, Nhava Sheva to New York, with Jain Americas Inc as notify party.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "hood_e6_user_trade",
+          "source_date": "2026-08-19",
+          "source_reference": "Current-run user customs record dated 2026-08-19",
+          "source_type": "user_input",
+          "source_url": null
+        },
+        "hood_e7_public_trade": {
+          "boundary": "The provider page aggregates multiple Hood-named entities and warns about name/address permutations. This exact bill is used as transaction evidence only and not as proof that unrelated Hood Container records belong to Hood Distribution.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "ImportInfo independently corroborates the Aug. 19, 2026 bill CMDUAMC2562475A / AMJALLPAOL024447: Jain Irrigation Systems Ltd -> Hood Distribution, 91 Fitchburg Rd Ayer MA, 16 PKG, 19,467 kg, EX-CEL PVC FREE FOAM SHEETS, container TIIU6185400, with Jain Americas Inc as notify party.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "hood_e7_public_trade",
+          "source_date": "2026-08-19",
+          "source_reference": "ImportInfo sample bill visible on Hood Container aggregation page",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/hood-container"
+        },
+        "hood_e8_jain_ecosystem": {
+          "boundary": "This supports an active Jain/Jain Americas EX-Cel supply ecosystem but is not a Hood purchase and is not counted as a Hood trade record.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "ImportInfo's Jalgaon recent-bill table shows a separate same-day Aug. 19, 2026 Jain Irrigation Systems Ltd shipment of EX-CEL PVC FREE FOAM SHEETS to Jain Americas Inc, 75 PKG / 98,927 kg, while the Hood shipment lists Jain Americas as notify party.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "hood_e8_jain_ecosystem",
+          "source_date": "2026-08-19",
+          "source_reference": "ImportInfo Jalgaon, India import summary",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/india/maharashtra/jalgaon"
+        },
+        "hood_e9_importkey_summary": {
+          "boundary": "Provider summary counts are not treated as a count of Hood's EX-Cel purchases because the visible Hood buyer summary mixes suppliers and does not expose all underlying Jain-to-Hood bills.",
+          "checked_at": "2026-08-29T07:55:00+00:00",
+          "claim": "ImportKey currently lists Hood Distribution among buyers associated with Jain Irrigation Systems Ltd and shows Jain's leading product descriptions include EX-CEL PVC FREE FOAM SHEETS; however its buyer-level count is provider-specific and includes multiple suppliers under Hood Distribution.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "hood_e9_importkey_summary",
+          "source_date": null,
+          "source_reference": "ImportKey Jain Irrigation Systems Ltd profile",
+          "source_type": "trade_database",
+          "source_url": "https://importkey.com/i/jain-irrigation-systems-ltd"
+        }
+      },
+      "history_events": [],
+      "identity": {
+        "address": "91 Fitchburg Road, Ayer, MA 01432",
+        "aliases": [
+          "Hood Distribution",
+          "Hood Distribution-McQuesten Group",
+          "Hood Industries Inc dba Hood Distribution",
+          "Hood Industries, Inc."
+        ],
+        "business_type": "Wholesale distributor of lumber, plywood, millwork, specialty/composite building products, with the Ayer branch serving independent retail lumberyards and offering PVC/trimboard products. Hood Distribution is a DBA/division of Hood Industries, Inc.",
+        "country": "United States",
+        "customs_name": "Hood Distribution",
+        "legal_name": "Hood Industries, Inc.",
+        "source_ids": [
+          "hood_e1_fmcsa_identity",
+          "hood_e2_official_ayer",
+          "hood_e3_official_business",
+          "hood_e4_official_pvc"
+        ]
+      },
+      "runs": [
+        {
+          "declared_previous_email_count": 0,
+          "declared_previous_trade_count": 0,
+          "input_hash": "b3cf0a92f8ae1d5c7f49a68e",
+          "investigated_at": "2026-08-29T07:55:00+00:00",
+          "prior_ledger_date": null,
+          "prior_ledger_name": null,
+          "run_id": "hood-20260829-075500z"
+        }
+      ],
+      "trade_records": {
+        "record:hoodamjallpaol024447": {
+          "buyer": "Hood Distribution",
+          "data_level": "bill",
+          "date": "2026-08-19",
+          "date_semantics": "Actual arrival date is shown by ImportInfo as 2026-08-19; user record also uses 2026-08-19, while estimated arrival was 2026-08-12 and run date 2026-08-20. Do not treat arrival date as purchase order, invoice or manufacturing date.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:44:36+00:00",
+          "house_bill": "AMJALLPAOL024447",
+          "item_number": null,
+          "last_seen": "2026-08-29T07:44:36+00:00",
+          "master_bill": "CMDUAMC2562475A",
+          "normalized_product": "EX-Cel rigid PVC free-foam sheets / cellular PVC sheet product; exact dimensions, thickness and density unknown",
+          "product_raw": "HS CODE-39211200EX-CEL PVC FREE FOAM SHEETS",
+          "provider": "User-supplied customs record corroborated by ImportInfo",
+          "quantity": 16.0,
+          "record_id": "hood-AMJALLPAOL024447",
+          "source_ids": [
+            "hood_e6_user_trade",
+            "hood_e7_public_trade"
+          ],
+          "supplier_or_exporter": "Jain Irrigation Systems Ltd",
+          "uom": "PKG",
+          "weight_kg": 19467.0
+        }
+      },
+      "updated_at": "2026-08-29T07:44:36+00:00"
     }
   },
   "schema_version": "2.1",
-  "updated_at": "2026-08-29T07:38:24+00:00"
+  "updated_at": "2026-08-29T07:44:36+00:00"
 }
