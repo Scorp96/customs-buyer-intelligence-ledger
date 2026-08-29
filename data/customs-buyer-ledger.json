@@ -1268,6 +1268,304 @@
       },
       "updated_at": "2026-08-29T07:17:36+00:00"
     },
+    "buyer_bbe8944a3be5cf04e46d": {
+      "buyer_key": "buyer_bbe8944a3be5cf04e46d",
+      "contacts": {
+        "hardik@ksbshipping.com": {
+          "email": "hardik@ksbshipping.com",
+          "employment_status": "unknown",
+          "entity": "KSB Shipping & Logistics LLC",
+          "first_seen": "2026-08-05",
+          "last_checked": "2026-08-29T08:25:00+00:00",
+          "person_name": "Hardik",
+          "privacy_class": "public_business",
+          "procurement_authority_status": "not_procurement",
+          "recommended_use": "Do not send. Verify independently through KSB's official office if the identity is operationally relevant.",
+          "risk_note": "Complete email appears only inside a polluted customs address field. No current official or independent source verified the person, role or address.",
+          "route_class": "VERIFY_ONLY",
+          "source_ids": [
+            "ksb_e9_email_hardik"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "inferred"
+        },
+        "info@echonbuildingproducts.com": {
+          "email": "info@echonbuildingproducts.com",
+          "employment_status": "not_applicable",
+          "entity": "Echon Building Products / Kumar Arch Tech commercial operation",
+          "first_seen": "2026-08-29T08:00:14+00:00",
+          "last_checked": "2026-08-29T08:25:00+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "not_procurement",
+          "recommended_use": "Retain for entity verification only; do not use for standard XingHuai PVC foam board prospecting.",
+          "risk_note": "Official contact for a PVC-building-products manufacturer/brand that appears connected to the Emporia cargo destination. This is a competing/manufacturer-side entity, not a qualified standard XingHuai buyer.",
+          "route_class": "DO_NOT_USE",
+          "source_ids": [
+            "ksb_e5_echon_addr",
+            "ksb_e6_kumar_role"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "official_current"
+        },
+        "info@ksbshipping.com": {
+          "email": "info@ksbshipping.com",
+          "employment_status": "not_applicable",
+          "entity": "KSB Shipping & Logistics LLC",
+          "first_seen": "2026-08-29T08:00:14+00:00",
+          "last_checked": "2026-08-29T08:25:00+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "not_procurement",
+          "recommended_use": "Use only to verify the actual cargo owner/ultimate consignee or request referral to the commercial customer behind the PVC-sheet bill; do not send a standard XingHuai product pitch.",
+          "risk_note": "Official current KSB general logistics mailbox. KSB is a freight intermediary, not a qualified PVC-sheet procurement target.",
+          "route_class": "ALTERNATIVE_REFERRAL",
+          "source_ids": [
+            "ksb_e1_official"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "official_current"
+        }
+      },
+      "created_at": "2026-08-29T08:00:14+00:00",
+      "evidence": {
+        "ksb_e10_legal_history": {
+          "boundary": "Historical regulatory evidence supports the long-standing logistics role; it is not evidence about current cargo ownership or current litigation risk.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "A 2016 Federal Maritime Commission proceeding described KSB Shipping & Logistics LLC as an NVOCC and freight forwarder licensed by the Commission.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A1",
+          "evidence_id": "ksb_e10_legal_history",
+          "source_date": "2016-02-12",
+          "source_reference": "FMC Docket 16-03 Notice of Filing",
+          "source_type": "court_or_regulator",
+          "source_url": "https://www2.fmc.gov/readingroom/docs/16-03/16-03_not_of_filing.pdf"
+        },
+        "ksb_e1_official": {
+          "boundary": "This establishes KSB's logistics role and current contact details, not ownership of the PVC cargo in the current bill.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "KSB Shipping & Logistics LLC's official website describes the company as a U.S.-based international freight forwarding company offering ocean, air, customs clearance, warehousing and distribution services; current U.S. office is 50 Cragwood Rd, Suite 123, South Plainfield, NJ 07080, phone 908-834-2438, email info@ksbshipping.com.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ksb_e1_official",
+          "source_date": null,
+          "source_reference": "KSB Shipping official contact page",
+          "source_type": "official_domain",
+          "source_url": "https://www.ksbshipping.com/contact/"
+        },
+        "ksb_e2_fmc": {
+          "boundary": "OTI status confirms maritime intermediary licensing; it does not identify the commercial cargo owner on a given bill.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "The U.S. Federal Maritime Commission current Ocean Transportation Intermediary list includes KSB SHIPPING & LOGISTICS LLC under license 022499.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A1",
+          "evidence_id": "ksb_e2_fmc",
+          "source_date": null,
+          "source_reference": "Federal Maritime Commission OTI list",
+          "source_type": "court_or_regulator",
+          "source_url": "https://www2.fmc.gov/FMC1Users/scripts/ExtReports.asp?tariffClass=oti"
+        },
+        "ksb_e3_user": {
+          "boundary": "This proves only the user-supplied manifest fields. The supplier address is internally inconsistent with Max Shipping's India identity and contains a KSB-domain email; it therefore appears polluted and cannot be treated as Max Shipping's physical address or as proof that KSB owns the goods.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "User supplied a 2026-08-05 House Bill record, master MAEU272667786 / house MAEU274017282, Max Shipping Forwarding Pvt Ltd -> KSB Shipping Logistics LLC, 34 PKG, 18,402 kg, cargo 'RIGID FOAM PVC SHEET', container DFSU6314954, Mundra to New York/Newark, with Kumar Arch Tech Limited as notify party; the supplier-address field also contains 180 Pleasant Shade Drive, Emporia, VA and Hardik@ksbshipping.com.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "ksb_e3_user",
+          "source_date": "2026-08-05",
+          "source_reference": "Current-run user customs record dated 2026-08-05",
+          "source_type": "user_input",
+          "source_url": null
+        },
+        "ksb_e4_trade": {
+          "boundary": "These records demonstrate repeated logistics-document appearances of KSB with PVC cargo, not repeated KSB procurement. KSB's role must be interpreted with its official freight-forwarder status and the downstream commercial-party evidence.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "ImportKey independently lists the Aug. 5, 2026 record MAEU272667786 from Max Shipping Forwarding Pvt Ltd to KSB Shipping Logistics LLC, 34 packages, RIGID FOAM PVC SHEET, HS 39211200, Mundra to New York/Newark; it also shows multiple June 2026 Max Shipping -> KSB records with rigid foam PVC sheet and/or PVC decorative sheet.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "ksb_e4_trade",
+          "source_date": "2026-08-05",
+          "source_reference": "ImportKey Max Shipping Forwarding PVT Ltd profile",
+          "source_type": "trade_database",
+          "source_url": "https://importkey.com/i/max-shipping-forwarding-pvt-ltd"
+        },
+        "ksb_e5_echon_addr": {
+          "boundary": "This establishes that the Emporia address belongs to the Echon PVC-building-products operation; it does not by itself prove legal ownership of every cargo routed through that address.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "Echon Building Products' current official site publicly uses 180 Pleasant Shade Drive, Emporia, VA 23847 and info@EchonBuildingProducts.com, and markets PVC building/signage products including PVC graphic foam sheet, free-foam and Celuka sheet technologies.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ksb_e5_echon_addr",
+          "source_date": null,
+          "source_reference": "Echon Building Products official site",
+          "source_type": "official_domain",
+          "source_url": "https://echonbuildingproducts.com/"
+        },
+        "ksb_e6_kumar_role": {
+          "boundary": "The official site proves manufacturer/brand identity; the trade example supports the Emporia site's commercial connection. It does not conclusively identify the ultimate owner on the current KSB house bill.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "Kumar Arch Tech Limited's official Echon site identifies Kumar Arch Tech Limited as the manufacturer behind the ECHON brand and as a manufacturer/exporter of PVC blend-based building materials, including sheets/boards; public 2026 trade data also shows Kumar Arch Tech Limited shipping RIGID FOAM PVC SHEET directly to ASIFIC BUILDCON INC at 180 Pleasant Shade Drive, Emporia, VA.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ksb_e6_kumar_role",
+          "source_date": null,
+          "source_reference": "Kumar Arch Tech / Echon official site plus ImportInfo sample bill",
+          "source_type": "official_domain",
+          "source_url": "https://www.echon.co/"
+        },
+        "ksb_e7_role_inference": {
+          "boundary": "The exact ultimate buyer/owner on house bill MAEU274017282 remains unconfirmed. KSB could have contractual responsibilities beyond forwarding, but current evidence does not support classifying it as a PVC-sheet procurement target.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "KSB is more likely acting as freight-forwarder/NVOCC consignee or logistics intermediary on the current PVC-sheet bill than as the actual material buyer.",
+          "claim_class": "INFERENCE",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "ksb_e7_role_inference",
+          "source_date": null,
+          "source_reference": "Inference from KSB official logistics business, FMC OTI license, manifest-role repetition, and Emporia/Echon cargo-owner clues",
+          "source_type": "official_domain",
+          "source_url": "https://www.ksbshipping.com/contact/"
+        },
+        "ksb_e8_asific": {
+          "boundary": "This strongly suggests ASIFIC/Echon is a material-side commercial entity at the Emporia address, but it does not prove ASIFIC is the ultimate buyer of the specific Aug. 5 KSB bill.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "ImportInfo shows ASIFIC BUILDCON INC as consignee at 180 Pleasant Shade Drive, Emporia, VA on an Aug. 26, 2026 Kumar Arch Tech Limited shipment of RIGID FOAM PVC SHEET, and ImportKey shows extensive ASIFIC import activity at the same address.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "ksb_e8_asific",
+          "source_date": "2026-08-26",
+          "source_reference": "ImportInfo ASIFIC Buildcon Inc sample bill",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/asific-buildcon-inc"
+        },
+        "ksb_e9_email_hardik": {
+          "boundary": "The address/email text is manifest-field pollution and does not independently establish current employment, role, deliverability, or procurement authority for Hardik.",
+          "checked_at": "2026-08-29T08:25:00+00:00",
+          "claim": "The user-supplied supplier-address field contains Hardik@ksbshipping.com, a complete KSB-domain email embedded in otherwise polluted address text.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "C2",
+          "evidence_id": "ksb_e9_email_hardik",
+          "source_date": "2026-08-05",
+          "source_reference": "Current-run user customs record supplier-address field",
+          "source_type": "user_input",
+          "source_url": null
+        }
+      },
+      "history_events": [],
+      "identity": {
+        "address": "50 Cragwood Rd, Suite 123, South Plainfield, NJ 07080",
+        "aliases": [
+          "KSB Shipping Logistics LLC",
+          "KSB Shipping & Logistics LLC",
+          "KSB Shipping Logistics"
+        ],
+        "business_type": "U.S.-based freight forwarder/NVOCC and logistics provider. Current evidence indicates the PVC-sheet bills where KSB appears as consignee are logistics/intermediary records rather than evidence that KSB is the material inventory owner or end buyer.",
+        "country": "United States",
+        "customs_name": "Ksb Shipping Logistics Llc",
+        "legal_name": "KSB Shipping & Logistics LLC",
+        "source_ids": [
+          "ksb_e1_official",
+          "ksb_e2_fmc",
+          "ksb_e3_user",
+          "ksb_e4_trade",
+          "ksb_e5_echon_addr",
+          "ksb_e6_kumar_role"
+        ]
+      },
+      "runs": [
+        {
+          "declared_previous_email_count": 0,
+          "declared_previous_trade_count": 0,
+          "input_hash": "8f3d4742d4c1e7a5b9f2c341",
+          "investigated_at": "2026-08-29T08:25:00+00:00",
+          "prior_ledger_date": null,
+          "prior_ledger_name": null,
+          "run_id": "ksb-20260829-082500z"
+        }
+      ],
+      "trade_records": {
+        "record:ksbcmdueid0948586": {
+          "buyer": "KSB SHIPPING LOGISTICS LLC",
+          "data_level": "bill",
+          "date": "2026-06-22",
+          "date_semantics": "Arrival/trade date around 2026-06-22 as displayed by provider; used only to establish repeated KSB logistics appearance.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T08:00:14+00:00",
+          "house_bill": null,
+          "item_number": null,
+          "last_seen": "2026-08-29T08:00:14+00:00",
+          "master_bill": "CMDUEID0948586",
+          "normalized_product": "Rigid PVC foam sheet; logistics-intermediary record",
+          "product_raw": "1 40 HC 27 ... RIGID FOAM PVC SHEET ... HS CODE 39211200",
+          "provider": "ImportInfo/ImportKey",
+          "quantity": 27.0,
+          "record_id": "ksb-CMDUEID0948586",
+          "source_ids": [
+            "ksb_e4_trade"
+          ],
+          "supplier_or_exporter": "MAX SHIPPING FORWARDING PVT LTD",
+          "uom": "PKG",
+          "weight_kg": 22753.0
+        },
+        "record:ksbcmdueid0948589": {
+          "buyer": "KSB SHIPPING LOGISTICS LLC",
+          "data_level": "bill",
+          "date": "2026-06-22",
+          "date_semantics": "Trade date as displayed by ImportKey; used only to show recurring logistics-document association, not KSB purchase continuity.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T08:00:14+00:00",
+          "house_bill": null,
+          "item_number": null,
+          "last_seen": "2026-08-29T08:00:14+00:00",
+          "master_bill": "CMDUEID0948589",
+          "normalized_product": "Rigid PVC foam sheet + PVC decorative sheet; logistics-intermediary record",
+          "product_raw": "1 40 HC 28 ... RIGID FOAM PVC SHEET PVC DECORATIVE SHEET ... HS CODE 39211200, 39204300",
+          "provider": "ImportKey",
+          "quantity": 28.0,
+          "record_id": "ksb-CMDUEID0948589",
+          "source_ids": [
+            "ksb_e4_trade"
+          ],
+          "supplier_or_exporter": "MAX SHIPPING FORWARDING PVT LTD",
+          "uom": "PKG",
+          "weight_kg": null
+        },
+        "record:ksbmaeu272667786maeu274017282": {
+          "buyer": "Ksb Shipping Logistics Llc",
+          "data_level": "bill",
+          "date": "2026-08-05",
+          "date_semantics": "User record date and ImportKey visible date are 2026-08-05; estimated arrival was 2026-08-11 and run date 2026-08-06. Date is not treated as purchase-order, invoice or manufacturing date.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T08:00:14+00:00",
+          "house_bill": "MAEU274017282",
+          "item_number": null,
+          "last_seen": "2026-08-29T08:00:14+00:00",
+          "master_bill": "MAEU272667786",
+          "normalized_product": "Rigid PVC foam sheet; exact commercial owner and end buyer unknown",
+          "product_raw": "1 40 HC 34 PKGS THIRTY FOUR PKGS CONTAINING RIGID FOAM PVC SHEET ... HS CODE 39211200 ... BUYER PO ...",
+          "provider": "User-supplied customs record corroborated by ImportKey",
+          "quantity": 34.0,
+          "record_id": "ksb-MAEU272667786-MAEU274017282",
+          "source_ids": [
+            "ksb_e3_user",
+            "ksb_e4_trade"
+          ],
+          "supplier_or_exporter": "Max Shipping Forwarding Pvt Ltd",
+          "uom": "PKG",
+          "weight_kg": 18402.0
+        }
+      },
+      "updated_at": "2026-08-29T08:00:14+00:00"
+    },
     "buyer_e20c9d244038b59ed690": {
       "buyer_key": "buyer_e20c9d244038b59ed690",
       "contacts": {
@@ -1510,5 +1808,5 @@
     }
   },
   "schema_version": "2.1",
-  "updated_at": "2026-08-29T07:54:14+00:00"
+  "updated_at": "2026-08-29T08:00:14+00:00"
 }
