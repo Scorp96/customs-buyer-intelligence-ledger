@@ -15,10 +15,10 @@ The runtime and production MCP adapter satisfy the implemented architecture, dur
 
 ## Current validated head and MCP entry
 
-Validated branch head immediately before this documentation-only refresh:
+Validated code/runner head immediately before this documentation-only refresh:
 
 ```text
-09d64fac82d7b2bfad789c116837beaa092ecf51
+203a54f61ddc1e1582ee4af98b73d675f40725e6
 ```
 
 `.mcp.json` launches the hardened production entry:
@@ -27,22 +27,29 @@ Validated branch head immediately before this documentation-only refresh:
 mcp/server_v61_backup_recovery.py
 ```
 
-The Windows launcher now selects a usable Python >= 3.10 runtime rather than assuming one fixed installation path, and its installed-layout cold-start behavior is covered by a real Windows regression.
+The Windows launcher selects a usable Python >= 3.10 runtime rather than assuming one fixed installation path, and its installed-layout cold-start behavior is covered by a real Windows regression.
+
+The Private Golden runner now also preserves production Runtime root semantics: when `--session-root` is omitted it constructs `UnifiedRuntime()` exactly as the production MCP entry does, so default/environment-driven session, canonical and pending-root derivation is not changed merely for acceptance execution. An explicit `--session-root` remains available only for intentionally explicit/custom Runtime layouts.
 
 ## Independent production-branch CI
 
 Standard workflow run:
 
 ```text
-GitHub Actions run 33222590445
+GitHub Actions run 33225553252
 ```
 
 | Environment | Result | unittest | MCP compatibility | MCP v6 protocol | MCP v6.1 adapter | Privacy |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| Ubuntu 24.04 / Python 3.11 | PASS | 249 tests, 4 Windows-only skips | 58/58 | 30/30 | 16/16 | PASS |
-| Windows Server 2025 / Python 3.11 | PASS | 249/249 | 58/58 | 30/30 | 16/16 | PASS |
+| Ubuntu 24.04 / Python 3.11 | PASS | 251 tests, 4 Windows-only skips | 58/58 | 30/30 | 16/16 | PASS |
+| Windows Server 2025 / Python 3.11 | PASS | 251/251 | 58/58 | 30/30 | 16/16 | PASS |
 
-The Windows job actually executes and passes the platform-specific regressions for:
+The new Private Golden production-root regressions execute successfully on both platforms:
+
+- `test_cli_session_root_is_optional_for_production_default`;
+- `test_default_runtime_builder_matches_production_root_semantics`.
+
+The Windows job also actually executes and passes the platform-specific regressions for:
 
 - Windows 8.3 short-path alias protection in backup/recovery roots;
 - live/dead process liveness probing;
@@ -61,18 +68,18 @@ simple state query < 0.5 s
 Resume < 3 s
 ```
 
-Measurements from run `33222590445`:
+Measurements from run `33225553252`:
 
 | Environment | 100-Evidence Bundle | State query | Resume | Result |
 | --- | ---: | ---: | ---: | --- |
-| Ubuntu | 0.025870 s | 0.065631 s | 0.197782 s | PASS |
-| Windows | 0.080931 s | 0.194125 s | 0.429738 s | PASS |
+| Ubuntu | 0.023413 s | 0.062406 s | 0.192737 s | PASS |
+| Windows | 0.139005 s | 0.207893 s | 0.510455 s | PASS |
 
 Daily-backup mutation latency is recorded as a diagnostic only; it is **not** defined as a production SLO and is not substituted for the normal performance gates above.
 
 ## Exact v6.1 large-state acceptance — PASS with durable Canonical Account proof
 
-The full-load acceptance was independently audited and hardened. Merely requesting 5,000 Canonical Accounts is no longer sufficient for a pass. The acceptance runner now requires all three of the following to equal the requested count:
+The full-load acceptance was independently audited and hardened. Merely requesting 5,000 Canonical Accounts is not sufficient for a pass. The acceptance runner requires all three of the following to equal the requested count:
 
 1. resolver results whose status is `CREATED`;
 2. durable `CANONICAL_ACCOUNT_CREATED` events persisted in the canonical registry;
@@ -114,7 +121,7 @@ large public-state query            1.291995 s
 large Resume                       21.345263 s
 ```
 
-The specification treats the large envelope as a loadability/scalability target and does not apply the normal 100-Evidence timing thresholds to these full-load measurements. The current branch retains the strict persisted-count runner and its fail-closed regressions. Commits after `0e3836fd...` changed launcher configuration/tests and removed the temporary full-load workflow; they did not weaken the full-load runner or Runtime large-state semantics.
+The specification treats the large envelope as a loadability/scalability target and does not apply the normal 100-Evidence timing thresholds to these full-load measurements. The current branch retains the strict persisted-count runner and its fail-closed regressions. Commits after `0e3836fd...` changed launcher configuration/tests, removed the temporary full-load workflow, hardened the Private Golden acceptance runner's production-root fidelity, and refreshed acceptance documentation; they did not weaken the full-load runner or Runtime large-state semantics.
 
 ### Supplemental broader stress evidence
 
@@ -242,6 +249,8 @@ scripts/run_private_golden_acceptance.py
 
 It accepts only an allow-list of read-only Runtime calls and rejects mutation, Resume/initialization, CRM writeback, outreach preparation, migration and account creation. Selector resolution is limited to a unique `PRODUCTION + ACTIVE` Investigation. Zero matches, multiple matches, or a truncated active portfolio fail closed rather than guessing. The runner's real-runtime regression verifies byte-for-byte read-only behavior.
 
+By default the runner must be executed **without** `--session-root`. That makes it instantiate `UnifiedRuntime()` exactly like the production MCP entry and therefore preserves any production `CBI_SESSION_ROOT`, `CBI_CANONICAL_ROOT`, `CBI_PENDING_ROOT`, or platform-default root semantics. Supply `--session-root` only when intentionally validating an explicitly custom Runtime layout rather than the production-default process environment.
+
 Private manifests/results are protected by `.gitignore` patterns:
 
 ```text
@@ -269,16 +278,17 @@ Do not invent a validator command in this document; use the currently installed 
 
 ## Private Golden command contract
 
-From the repository root, after syncing the exact production branch, the read-only runner contract is:
+From the repository root, after syncing the exact production branch, the production-default read-only runner contract is:
 
 ```text
 python scripts/run_private_golden_acceptance.py \
-  --session-root "<REAL_SESSION_ROOT>" \
   --manifest ".cbi-private-golden.json" \
   --output "private-acceptance/private-golden-result.json"
 ```
 
-On PowerShell the same arguments can be supplied on one line. The manifest root is `{"cases": [...]}`. Each case requires a unique `case_id`, a read-only `tool`, an `arguments` object and one or more assertions. Supported assertion operators are `eq`, `ne`, `truthy`, `falsy`, `contains`, `not_contains`, `in`, `not_in`, `grade_at_least`, `number_at_least`, and `length_at_least`.
+On PowerShell the same arguments can be supplied on one line. If the production process intentionally uses `CBI_SESSION_ROOT` or related root environment variables, run the command from the same environment and still omit `--session-root`; `UnifiedRuntime()` will honor those production environment variables. Use the explicit `--session-root "<EXPLICIT_SESSION_ROOT>"` override only for an intentionally explicit/custom acceptance layout.
+
+The manifest root is `{"cases": [...]}`. Each case requires a unique `case_id`, a read-only `tool`, an `arguments` object and one or more assertions. Supported assertion operators are `eq`, `ne`, `truthy`, `falsy`, `contains`, `not_contains`, `in`, `not_in`, `grade_at_least`, `number_at_least`, and `length_at_least`.
 
 The runner exits `0` only when every private case passes.
 
