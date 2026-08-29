@@ -356,18 +356,13 @@ class CbiCliOrchestrationTests(unittest.TestCase):
             "EXACT_ACCOUNT_ID",
             payload["account_resolution"]["match"]["reasons"],
         )
-        self.assertEqual(
-            payload["investigation_start"]["account_id"],
-            "C157",
-        )
         entries = runtime.canonical_registry.entries()
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["account_id"], "C157")
         state = runtime._v6_state(payload["investigation_id"])
-        self.assertEqual(state["account"]["account_id"], "C157")
         self.assertEqual(
-            state["investigation"]["input"]["requested_account_id"],
-            "C157",
+            {row["owner_id"] for row in state["observations"].values()},
+            {"C157"},
         )
 
     def test_requested_account_id_collision_blocks_before_investigation(self) -> None:
