@@ -13,113 +13,143 @@ The operator CLI is:
 scripts/cbi.py
 ```
 
-It now supports customs-input orchestration in addition to the existing Runtime
+It supports customs-input orchestration in addition to the existing Runtime
 operator commands.
 
 ## Security and persistence boundary
 
-The new commands are intentionally fail-closed:
+The customs commands are intentionally fail-closed:
 
 - `lookup` is read-only and never creates Runtime state.
 - `audit-file` / `audit` is read-only unless `--commit` is supplied.
 - `batch-audit` is read-only unless `--commit` is supplied.
-- a committed audit does not call `UnifiedRuntime` directly for mutations;
-  mutations go through `mcp/server_v61_backup_recovery.py --stdio`, so v6.1
-  mutation WAL/idempotency and automatic backup guards remain in force.
-- a committed audit initially persists only the user-provided customs record as
-  `D1_USER_SUPPLIED_UNVERIFIED` Evidence.
-- the complete raw input object is retained alongside the canonical normalized
-  view; unknown or currently unclassified source fields are not discarded.
-- the initial customs row never proves Ultimate Buyer, repeat demand, annual
-  volume, product specifications, warehouse/channel capability, decision
-  authority or final Commercial Value.
+- committed mutations go through `mcp/server_v61_backup_recovery.py --stdio`,
+  so v6.1 mutation WAL/idempotency and automatic backup guards remain in force.
+- committed customs input starts only as `D1_USER_SUPPLIED_UNVERIFIED` Evidence.
+- the complete raw input is retained alongside a canonical normalized view.
+- unknown/unclassified raw fields are not discarded.
+- a customs row never proves Ultimate Buyer, legal entity, repeat demand,
+  annual volume, product specifications, channel capability, decision authority
+  or final Commercial Value by itself.
 - no CRM writeback or outreach send is performed by these commands.
 
-On Windows, the CLI uses the same production V6 sessions root as the MCP when
+On Windows, the CLI uses the production V6 sessions root when
 `CBI_SESSION_ROOT` is not explicitly set:
 
 ```text
 %LOCALAPPDATA%\XingHuai\CustomsBuyerIntelligenceV6\sessions
 ```
 
-On hosts where this root cannot be discovered, a mutating audit requires
-`--session-root` or `CBI_SESSION_ROOT` explicitly. Read-only preview/lookup does
-not require a Runtime root.
+On hosts where that root cannot be discovered, a mutating audit requires
+`--session-root` or `CBI_SESSION_ROOT`. Read-only preview/lookup does not require
+a Runtime root.
 
-## Why the CLI does not perform the whole Internet investigation
+## Host boundary
 
 The v6.1 Runtime is a governance/evidence engine. It intentionally performs no
-web search and has no authority to invent browser/registry/maps/provider
+public-web research and has no authority to invent browser/registry/maps/provider
 results. Public research is executed by a Host with real web/search/browser,
 registry, maps or separately authorized provider tools.
 
-Therefore a committed CLI audit performs the durable bootstrap:
+A committed CLI audit therefore performs only the durable bootstrap:
 
 ```text
 customs JSON
+  -> preserve exact raw JSON
+  -> normalize known fields
+  -> resolve buyer-country routing signal conservatively
   -> canonical account resolution
   -> start/reuse EXHAUSTIVE Investigation
-  -> preserve raw JSON + normalize known fields
   -> compile D1 user customs Evidence
   -> calculate initial state
   -> emit EIV-ranked next objectives
   -> emit Host resume instruction
 ```
 
-The Host then resumes the returned Investigation and executes those objectives
-using real public sources until Decision Saturation or a truthful
+The Host resumes the returned Investigation and executes those objectives using
+real public sources until Decision Saturation or a truthful
 `PAUSED_RESOURCE_LIMIT`.
 
 ## Input format
 
-One record is a JSON object. English and common Chinese customs labels are
+One record is one JSON object. English and common Chinese customs labels are
 accepted, including nested sections such as `基本信息`, `产品信息`, `货运信息` and
 `其它信息`.
 
-Minimal example (synthetic):
+Synthetic example:
 
 ```json
 {
-  "date": "2026-08-17",
-  "master_bill": "SYNTH-MBL-001",
-  "house_bill": "SYNTH-HBL-001",
-  "supplier": "Synthetic Export Supplier Ltd",
-  "buyer": "Synthetic Import Buyer LLC",
-  "buyer_address": "100 Synthetic Buyer Avenue",
-  "buyer_country": "United States",
-  "product": "Synthetic PVC Foam Sheet",
-  "quantity": "16 PKG",
-  "weight_kg": 23820,
-  "teu": 2,
-  "destination": "United States",
+  "数据源": "美国(进口)",
+  "日期": "2026-08-17",
+  "主单号": "SYNTH-MBL-001",
+  "分单号": "SYNTH-HBL-001",
+  "供应商": "Synthetic Export Supplier Ltd",
+  "采购商": "Synthetic Import Buyer LLC",
+  "采购商地址": "1111 Example Dr San Bruno, CA 94066",
+  "数量": "16 PKG",
+  "重量（kg）": 23820,
+  "TEU": 2,
+  "产品": "Synthetic PVC Foam Sheet",
   "Bill Type": "House Bill",
   "opaque_source_field": "Synthetic Marker"
 }
 ```
 
-The CLI requires a Buyer name and a Buyer country. If Buyer country is absent,
-`United States` may be inferred only when the supplied destination explicitly
-matches a supported United States spelling.
-
 Do not store real customer/customs input files in this public repository. Keep
 production inputs outside the repository or in a local ignored/private path.
 
+## Buyer-country resolution
+
+Canonical identity needs a country routing value, but many raw customs exports
+do not contain a dedicated `buyer_country` field. Country resolution is therefore
+explicit and inspectable instead of silently guessed.
+
+Resolution order:
+
+1. explicit `buyer_country` / `country` / `采购商国家`;
+2. explicit United States destination (`destination` / `目的地`);
+3. conservative US-import inference only when **both** conditions hold:
+   - the normalized data source is a recognized US-import source such as
+     `美国(进口)` / `美国进口数据` / `US import`;
+   - `buyer_address` contains a 5-digit postal signal (optionally ZIP+4).
+
+The third path returns:
+
+```json
+{
+  "country": "United States",
+  "basis": "US_IMPORT_SOURCE_PLUS_POSTAL_SIGNAL",
+  "inferred": true
+}
+```
+
+If neither explicit country/destination nor the paired US-import + postal signal
+is available, normalization fails closed. A US-import label alone is not enough.
+
+The preview/lookup/bootstrap output includes `buyer_country_resolution` so an
+operator can see whether country was explicit or inferred. An inferred country
+is an identity-routing hint only; it is not independent legal-entity proof and
+must be verified by later public research.
+
+This rule is designed for real US customs rows that include an import-data label
+and US buyer address but omit a dedicated country column, without weakening the
+canonical identity boundary.
+
 ## Raw-input retention and canonical normalization
 
-Information retention comes before classification. The CLI therefore maintains
-two simultaneous views of every accepted customs object:
+Information retention comes before classification. The CLI maintains two views:
 
 ```text
 raw_customs_record
 normalized_customs_record
 ```
 
-The raw view preserves the complete decoded JSON object, including fields that
-the current normalizer does not yet understand. The normalized view maps known
-labels to stable canonical keys for identity resolution, Evidence claims and
-later automation.
+The raw view preserves the complete decoded JSON object, including fields the
+current normalizer does not understand. The normalized view maps known labels to
+stable keys used for identity resolution, Evidence claims and automation.
 
-Examples of normalized metadata include, where present:
+Examples of normalized metadata include:
 
 ```text
 data_source
@@ -135,19 +165,26 @@ place_of_receipt
 notify_address
 ```
 
-Unknown fields remain in `raw_customs_record` even when they have no canonical
-mapping. The original input SHA-256 is computed from the complete raw object.
+Unknown fields remain in `raw_customs_record`. The input SHA-256 is computed from
+the complete raw object, not the normalized subset.
 
-For committed audits, both views are preserved in the Investigation start input
-and in the durable `trade.import_activity` Evidence value. The Evidence source
-accepts the raw proof at compile time, but the v6.1 Evidence Compiler deliberately
-canonicalizes that source proof into `content_sha256`, `raw_excerpt` and
-`raw_content_retained=false` instead of duplicating the full raw payload inside
-`source`. This prevents normalization from silently deleting future-useful data
-while preserving the Runtime's bounded source representation.
+For committed audits, raw + normalized views and `buyer_country_resolution` are
+preserved in the Investigation start input and the durable
+`trade.import_activity.value.customs_record`.
 
-Raw preservation does **not** increase authority. Both views remain
-user-supplied, unverified input until independently verified.
+The Evidence source accepts the full proof at compile time, but the v6.1
+Evidence Compiler deliberately canonicalizes source proof into bounded fields:
+
+```text
+content_sha256
+raw_excerpt
+raw_content_retained=false
+```
+
+It does not duplicate full `source.raw_content` indefinitely. Full raw customs
+content remains durable in the Evidence value and Investigation start input.
+
+Raw preservation and country derivation do **not** increase Evidence authority.
 
 ## `lookup`: ANSWER_FIRST Host handoff
 
@@ -158,17 +195,15 @@ python scripts/cbi.py lookup C:\PrivateInputs\buyer.json
 This command:
 
 - validates and normalizes the customs record;
-- preserves the complete raw JSON object;
-- computes a stable input SHA-256 from that raw object;
-- emits a `cbi.cli-host-handoff.v1` JSON request containing both raw and
-  normalized customs views;
+- preserves the exact raw JSON object;
+- resolves/discloses the buyer-country routing basis;
+- computes the stable raw-input SHA-256;
+- emits a `cbi.cli-host-handoff.v1` request;
 - tells the Host to run `$investigate-customs-buyers` in `ANSWER_FIRST` mode;
 - performs no Runtime mutation.
 
-The Host should verify company/entity, Ultimate Buyer, product/trade context,
-contacts and routes with concrete public sources and produce the standard email
-and instant-chat drafts. It must not silently convert the lookup into Runtime,
-CRM, Closure or send state.
+The Host must independently verify company/entity, Ultimate Buyer, country,
+product/trade context, current contacts and routes with concrete public sources.
 
 ## `audit-file`: FULL_AUDIT preview
 
@@ -184,20 +219,34 @@ or:
 python scripts/cbi.py audit C:\PrivateInputs\buyer.json
 ```
 
-The preview validates/normalizes the record, preserves and shows the raw object,
-and shows the initial claims that would be compiled. It writes nothing.
+Preview shows at least:
+
+```text
+candidate
+buyer_country_resolution
+customs_input_sha256
+raw_input_preserved
+raw_flattened_field_count
+normalized_field_count
+raw_customs_record
+normalized_customs_record
+proposed_initial_claims
+runtime_mutation_performed=false
+```
+
+No canonical account, Investigation, Evidence, Pivot, Peer, CRM or outreach
+state is written.
 
 ## `audit-file --commit`: durable FULL_AUDIT bootstrap
 
-Only an explicit `--commit` may persist state:
+Only explicit `--commit` may persist state:
 
 ```powershell
 python scripts/cbi.py audit-file C:\PrivateInputs\buyer.json --priority-grade A --commit
 ```
 
-`--priority-grade` is a research-budget priority, not a buyer Commercial Value
-grade. A new audit defaults to `A` research priority. The Runtime independently
-calculates Commercial Value from verified Evidence.
+`--priority-grade` is a research-budget priority, not the buyer's Commercial
+Value grade. Commercial Value remains Evidence-derived.
 
 Optional controls:
 
@@ -215,10 +264,9 @@ account_id
 investigation_id
 account_resolution
 investigation_start
+buyer_country_resolution
 customs_input_sha256
 raw_input_preserved
-raw_flattened_field_count
-normalized_field_count
 customs_evidence_compilation
 initial_commercial_value
 initial_research_confidence
@@ -228,56 +276,45 @@ next_research_objectives
 host_instruction
 ```
 
-The Host instruction is the next execution boundary. It tells an authorized
-Host to resume the exact Investigation in `FULL_AUDIT`, execute the EIV-ranked
-research objectives with real public sources, compile Evidence, run all six
-network branches for every Anchor, preserve conflicts and continue until
-Decision Saturation or a truthful resource pause.
+If `buyer_country_resolution.inferred=true`, the Host instruction explicitly
+requires independent verification before treating legal country as confirmed.
 
 ## Initial customs Evidence semantics
 
-The bootstrap may initially create these observations when applicable:
+The bootstrap may initially create only these observations when applicable:
 
 ```text
 trade.import_activity
 relationship.supply_chain
 ```
 
-Both are sourced as:
+Both use:
 
 ```text
 reference_type = USER_INPUT
 authority_level = D1_USER_SUPPLIED_UNVERIFIED
 ```
 
-At compile time, the source proof contains the complete raw/normalized customs
-material. The Evidence Compiler verifies and hashes that proof, then persists a
-bounded canonical source descriptor rather than the full `source.raw_content`.
-The complete raw object and normalized view remain durable in
-`trade.import_activity.value.customs_record` and in the Investigation start
-input. This retention is provenance, not verification.
-
-The product description remains part of the customs record, but the bootstrap
-does not mark `product.fit` as proven. Likewise it does not mark
+The product description remains inside the customs record, but the bootstrap
+does not mark `product.fit` as proven. It also does not mark
 `identity.ultimate_buyer` or `identity.legal_entity` as proven merely because a
-name appeared in a customs row.
+name/address appeared in a customs row.
 
-This is deliberate. Verification belongs to later public-source objectives.
+Verification belongs to later public-source objectives.
 
 ## Idempotency
 
-Stable request material is derived from the normalized candidate and original
-raw-input hash. Re-running the same committed input should therefore reconcile
-or replay the same canonical account/start/bundle through the production WAL
-rather than duplicating Evidence or spawning parallel Investigations.
+Stable request material is derived from the canonical candidate and original raw
+input hash. Re-running the same committed input should reconcile/replay the same
+account/start/bundle through production WAL rather than duplicate Evidence or
+spawn parallel Investigations.
 
-A materially different customs input receives a different input hash and can be
-appended to the same canonical account under normal Runtime identity/reuse
-rules.
+A materially different raw input receives a different input hash and can be
+appended under normal Runtime identity/reuse rules.
 
 ## `batch-audit`
 
-Input is a non-empty JSON array of customs records.
+Input is a non-empty JSON array.
 
 Read-only preview:
 
@@ -291,13 +328,11 @@ Explicit durable bootstrap:
 python scripts/cbi.py batch-audit C:\PrivateInputs\buyers.json --priority-grade A --commit
 ```
 
-Batch mode bootstraps each record using the same safe single-record contract. It
-preserves each record's complete raw input, does not perform CRM writeback and
-does not mean research is complete.
+Each record independently applies the same country-resolution and raw-retention
+contract. Batch mode does not perform CRM writeback and does not mean research
+is complete.
 
 ## Existing operator commands
-
-The existing commands remain available:
 
 ```text
 status <investigation_id>
@@ -319,20 +354,21 @@ restore ...
 Do not paste private customs/customer records into public workflow inputs or
 commit them as repository fixtures.
 
-CI should validate the orchestration with synthetic data only. GitHub Actions
-can test normalization, raw-field retention, preview behavior, WAL-backed
-bootstrap, idempotency and privacy boundaries. It is not the production
-public-web research agent unless a separate, explicitly authorized online
-research infrastructure is designed and reviewed.
+CI validates orchestration with synthetic data only. It can test normalization,
+country-resolution boundaries, raw retention, preview behavior, WAL-backed
+bootstrap, idempotency and privacy. GitHub Actions is not the production
+public-web research agent.
 
 ## Recommended real-customer procedure
 
-1. keep the customs JSON in a private local path outside the public repo;
+1. keep customs JSON in a private local path outside the public repo;
 2. sync the reviewed CLI code locally;
-3. run `audit-file` without `--commit` first;
-4. inspect the canonical candidate, raw/normalized preservation and boundary;
-5. explicitly run `audit-file ... --commit` only after that review;
-6. retain the returned `investigation_id`;
-7. give the returned Host instruction to a Host with `$investigate-customs-buyers`
-   and real public web tools;
-8. do not claim exhaustive completion until Runtime Decision Saturation passes.
+3. run `audit-file` without `--commit`;
+4. inspect the exact raw object, normalized view, candidate and
+   `buyer_country_resolution`;
+5. if country is inferred, confirm the inference is reasonable before commit;
+6. explicitly run `audit-file ... --commit` only after preview review;
+7. retain the returned `investigation_id`;
+8. give the Host instruction to a Host with `$investigate-customs-buyers` and
+   real public web tools;
+9. do not claim exhaustive completion until Runtime Decision Saturation passes.
