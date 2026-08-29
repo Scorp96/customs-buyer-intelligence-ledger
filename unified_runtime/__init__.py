@@ -64,6 +64,7 @@ from .portfolio_hardening import (
     V61PortfolioHardeningMixin,
 )
 from .portfolio_state_hardening import V61PortfolioStateHardeningMixin
+from .legacy_peer_projection_hardening import V61LegacyPeerProjectionMixin
 from .brand_hardening import BRAND_RELATIONSHIPS, V61BrandHardeningMixin
 from .canonical_identity_hardening import (
     EvidenceBoundCanonicalRegistry,
@@ -87,6 +88,7 @@ FRESHNESS_LEVELS = V61_FRESHNESS_LEVELS
 class UnifiedRuntime(
     V61CountryIdentityHardeningMixin,
     V61BrandHardeningMixin,
+    V61LegacyPeerProjectionMixin,
     V61PortfolioStateHardeningMixin,
     V61PortfolioHardeningMixin,
     V61OutreachHardeningMixin,
@@ -145,6 +147,7 @@ __all__ = [
     "PORTFOLIO_ENVIRONMENTS",
     "PORTFOLIO_LIFECYCLES",
     "V61PortfolioStateHardeningMixin",
+    "V61LegacyPeerProjectionMixin",
     "BRAND_RELATIONSHIPS",
     "V61BrandHardeningMixin",
     "EvidenceBoundCanonicalRegistry",
