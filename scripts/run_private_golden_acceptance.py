@@ -94,6 +94,27 @@ def _contains(observed: Any, expected: Any) -> bool:
     return False
 
 
+def _is_subset(expected: Any, observed: Any) -> bool:
+    """Return True when ``expected`` is recursively contained in ``observed``.
+
+    This is intentionally value-only and read-only. It lets Private Golden
+    manifests assert semantic facts in unordered public Runtime arrays (for
+    example a named Peer with ``stage=ANCHOR_ELIGIBLE``) without depending on
+    brittle list indexes or exposing private Investigation identifiers.
+    """
+    if isinstance(expected, dict):
+        return isinstance(observed, dict) and all(
+            key in observed and _is_subset(value, observed[key])
+            for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return isinstance(observed, list) and all(
+            any(_is_subset(item, candidate) for candidate in observed)
+            for item in expected
+        )
+    return expected == observed
+
+
 def assert_rule(
     response: dict[str, Any], assertion: dict[str, Any]
 ) -> dict[str, Any]:
@@ -117,6 +138,14 @@ def assert_rule(
         passed = isinstance(expected, (list, tuple, set)) and observed in expected
     elif op == "not_in":
         passed = isinstance(expected, (list, tuple, set)) and observed not in expected
+    elif op == "list_item_subset":
+        passed = isinstance(observed, list) and any(
+            _is_subset(expected, candidate) for candidate in observed
+        )
+    elif op == "no_list_item_subset":
+        passed = isinstance(observed, list) and not any(
+            _is_subset(expected, candidate) for candidate in observed
+        )
     elif op == "grade_at_least":
         passed = (
             str(observed) in GRADE_RANK
