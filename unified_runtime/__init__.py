@@ -65,6 +65,10 @@ from .portfolio_hardening import (
 )
 from .portfolio_state_hardening import V61PortfolioStateHardeningMixin
 from .legacy_peer_projection_hardening import V61LegacyPeerProjectionMixin
+from .legacy_evidence_reconciliation import (
+    OBSERVED_COMMERCIAL_NUMERIC_METRICS,
+    V61LegacyEvidenceReconciliationMixin,
+)
 from .migration_lineage_hardening import V61MigrationLineageHardeningMixin
 from .brand_hardening import BRAND_RELATIONSHIPS, V61BrandHardeningMixin
 from .canonical_identity_hardening import (
@@ -90,6 +94,7 @@ class UnifiedRuntime(
     V61CountryIdentityHardeningMixin,
     V61BrandHardeningMixin,
     V61LegacyPeerProjectionMixin,
+    V61LegacyEvidenceReconciliationMixin,
     V61MigrationLineageHardeningMixin,
     V61PortfolioStateHardeningMixin,
     V61PortfolioHardeningMixin,
@@ -146,6 +151,8 @@ __all__ = [
     "DECISION_RELEVANT_ROLES",
     "COMMERCIAL_OPPORTUNITY_FACTORS",
     "OPPORTUNITY_LIFT_WEIGHTS",
+    "OBSERVED_COMMERCIAL_NUMERIC_METRICS",
+    "V61LegacyEvidenceReconciliationMixin",
     "PORTFOLIO_ENVIRONMENTS",
     "PORTFOLIO_LIFECYCLES",
     "V61PortfolioStateHardeningMixin",
