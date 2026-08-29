@@ -754,6 +754,58 @@
       "contacts": {},
       "created_at": "2026-08-29T08:13:56+00:00",
       "evidence": {
+        "sz_e10_importinfo_current": {
+          "boundary": "Provider summary counts are not target-product purchase counts and may include many unrelated commodities; used only to measure current import activity.",
+          "checked_at": "2026-08-29T08:28:00+00:00",
+          "claim": "ImportInfo's current Salzach Solutions LLC profile reports 134 bills of lading between June 18 and Aug. 21, 2026, with 69 in the last 30 days, all tied to the San Bruno consignee identity/address permutations.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "sz_e10_importinfo_current",
+          "source_date": "2026-08-21",
+          "source_reference": "ImportInfo Salzach Solutions LLC profile",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/salzach-solutions-llc"
+        },
+        "sz_e11_multicategory": {
+          "boundary": "Product diversity supports a general-import/trading interpretation but does not by itself prove importer-of-record agency or identify downstream customers.",
+          "checked_at": "2026-08-29T08:28:00+00:00",
+          "claim": "Current public shipment sources show Salzach importing categories beyond PVC/fencing, including transformers, electric water heaters, motorcycle plastic parts, plastic tableware and bamboo mats.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "sz_e11_multicategory",
+          "source_date": null,
+          "source_reference": "ImportGenius / TradeDataPro / Seair / ImportKey current Salzach-related records",
+          "source_type": "trade_database",
+          "source_url": "https://www.importgenius.com/suppliers/jzpe-power-transformer-jiangsu"
+        },
+        "sz_e12_public_footprint": {
+          "boundary": "This does not prove such information is unavailable in California Statement of Information filings, paid databases, private registrations or unindexed sources.",
+          "checked_at": "2026-08-29T08:28:00+00:00",
+          "claim": "Current public profiles for Salzach exist on California registry mirrors, ImportInfo, ImportYeti and ABRAMS, but no reviewed source exposes a verified manager/member name, public company phone, complete business email or official company website.",
+          "claim_class": "UNKNOWN",
+          "conflict": null,
+          "evidence_grade": "C2",
+          "evidence_id": "sz_e12_public_footprint",
+          "source_date": null,
+          "source_reference": "Cross-source public-footprint review",
+          "source_type": "professional_source",
+          "source_url": "https://corporate.ai/entity/ca/b20250443547/salzach-solutions-llc"
+        },
+        "sz_e13_address_context": {
+          "boundary": "Historical occupancy by another company does not establish current tenancy structure, virtual-office status, or warehouse arrangements.",
+          "checked_at": "2026-08-29T08:28:00+00:00",
+          "claim": "The principal address 1111 Bayhill Dr Ste 260 is a multi-tenant office address with historical use by unrelated companies such as Aditazz, so it should not be interpreted as a PVC warehouse or distribution center without separate evidence.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "C2",
+          "evidence_id": "sz_e13_address_context",
+          "source_date": "2012-02-24",
+          "source_reference": "Historical MIT archive / public address records",
+          "source_type": "professional_source",
+          "source_url": "https://star.mit.edu/cluster/mlarchives/1079.html"
+        },
         "sz_e1_registry": {
           "boundary": "Registry-derived third-party reproduction, not a directly opened California Secretary of State business-detail page. It does not disclose beneficial owners, managers, business purpose, phone, website, or procurement authority.",
           "checked_at": "2026-08-29T08:35:00+00:00",
@@ -879,7 +931,7 @@
           "Salzach Solutions LLC",
           "Salzach Solutions"
         ],
-        "business_type": "Newly formed California LLC with very high recent import activity. Trade records show repeated PVC foam sheet and PVC fence imports, but no current official website, product catalog, phone, or procurement staff were verified; exact commercial role remains uncertain between direct importer/distributor, trading company, and importer-of-record/operational vehicle.",
+        "business_type": "Newly formed California LLC with very high recent multi-category import activity. Repeated PVC foam sheet and PVC fence imports are verified, but the company also imports transformers, electric water heaters, motorcycle plastic parts, plastic tableware, bamboo mats and other unrelated goods. Current evidence more strongly supports a general importing/trading or importer-of-record operating vehicle than a specialized PVC distributor, though the exact commercial model remains unconfirmed.",
         "country": "United States",
         "customs_name": "Salzach Solutions Llc",
         "legal_name": "Salzach Solutions LLC",
@@ -887,7 +939,9 @@
           "sz_e1_registry",
           "sz_e2_user",
           "sz_e3_trade_pvc",
-          "sz_e4_trade_fence"
+          "sz_e4_trade_fence",
+          "sz_e10_importinfo_current",
+          "sz_e11_multicategory"
         ]
       },
       "runs": [
@@ -899,6 +953,15 @@
           "prior_ledger_date": null,
           "prior_ledger_name": null,
           "run_id": "salzach-20260829-083500z"
+        },
+        {
+          "declared_previous_email_count": 0,
+          "declared_previous_trade_count": 5,
+          "input_hash": "a742bc181ac4df6c9b70a426",
+          "investigated_at": "2026-08-29T08:28:00+00:00",
+          "prior_ledger_date": "2026-08-29T08:13:56+00:00",
+          "prior_ledger_name": "Salzach Solutions LLC",
+          "run_id": "salzach-reinvestigation-20260829-082800z"
         }
       ],
       "trade_records": {
@@ -1018,7 +1081,7 @@
           "weight_kg": 14800.0
         }
       },
-      "updated_at": "2026-08-29T08:13:56+00:00"
+      "updated_at": "2026-08-29T08:26:21+00:00"
     },
     "buyer_9b5f8075565a3b6812eb": {
       "buyer_key": "buyer_9b5f8075565a3b6812eb",
@@ -2079,5 +2142,5 @@
     }
   },
   "schema_version": "2.1",
-  "updated_at": "2026-08-29T08:13:56+00:00"
+  "updated_at": "2026-08-29T08:26:21+00:00"
 }
