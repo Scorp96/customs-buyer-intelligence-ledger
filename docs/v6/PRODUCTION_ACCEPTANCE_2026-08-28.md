@@ -7,44 +7,49 @@ Draft PR: `#1` — **do not merge yet**
 
 ## Current status
 
-**V6.1 ARCHITECTURE / CRASH RECOVERY / BACKUP / SCALE GATES ARE STRUCTURALLY VALIDATED — PRODUCTION ACCEPTANCE REMAINS OPEN FOR PRIVATE GOLDEN AND LOCAL PACKAGING VALIDATION.**
+**V6.1 ARCHITECTURE / CRASH RECOVERY / BACKUP / NORMAL PERFORMANCE / EXACT LARGE-STATE GATES ARE STRUCTURALLY VALIDATED — PRODUCTION ACCEPTANCE REMAINS OPEN FOR PRIVATE GOLDEN AND LOCAL PACKAGING VALIDATION.**
 
-The runtime and production MCP adapter now satisfy the implemented architecture, durability, idempotency, Decision Saturation, commercial-opportunity, portfolio, backup/recovery and load regressions in independent GitHub CI. This document deliberately does **not** declare Production Ready because the specification requires real Golden-case regression, including the named Arecibo case, and those private production records are not stored in GitHub.
+The runtime and production MCP adapter satisfy the implemented architecture, durability, idempotency, Decision Saturation, commercial-opportunity, portfolio, backup/recovery, Windows launcher, normal-performance and exact large-state regressions in independent GitHub CI. This document deliberately does **not** declare Production Ready because the specification requires real Golden-case regression, including the named Arecibo case, and the final installed plugin/skill package must also pass its local product validation. Those private/local artifacts are not stored in GitHub.
 
 `main` remains unchanged. PR #1 remains Draft.
 
-## Current production head and MCP entry
+## Current validated head and MCP entry
 
-Runtime/acceptance head validated before this documentation-only refresh:
+Validated branch head immediately before this documentation-only refresh:
 
 ```text
-08e5f079c741d1aefc4f67735c465a4d2760acfe
+09d64fac82d7b2bfad789c116837beaa092ecf51
 ```
 
-`.mcp.json` launches:
+`.mcp.json` launches the hardened production entry:
 
 ```text
 mcp/server_v61_backup_recovery.py
 ```
 
-This entry layers validated backup/recovery guards over the existing v6.1 production mutation/WAL/reconciliation stack.
+The Windows launcher now selects a usable Python >= 3.10 runtime rather than assuming one fixed installation path, and its installed-layout cold-start behavior is covered by a real Windows regression.
 
 ## Independent production-branch CI
 
 Standard workflow run:
 
 ```text
-GitHub Actions run 33220250679
+GitHub Actions run 33222590445
 ```
 
 | Environment | Result | unittest | MCP compatibility | MCP v6 protocol | MCP v6.1 adapter | Privacy |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| Ubuntu 24.04 / Python 3.11 | PASS | 241 tests, 3 Windows-only skips | 58/58 | 30/30 | 16/16 | PASS |
-| Windows Server 2025 / Python 3.11 | PASS | 241/241 | 58/58 | 30/30 | 16/16 | PASS |
+| Ubuntu 24.04 / Python 3.11 | PASS | 249 tests, 4 Windows-only skips | 58/58 | 30/30 | 16/16 | PASS |
+| Windows Server 2025 / Python 3.11 | PASS | 249/249 | 58/58 | 30/30 | 16/16 | PASS |
 
-Both jobs also validate JSON manifests, agent YAML, compatibility parser, intelligence, outreach, strategic and v3 self-tests.
+The Windows job actually executes and passes the platform-specific regressions for:
 
-The intelligence self-test intentionally contains an internal negative scenario named `empty_input_deep_dive_never_blank` whose case status is `failed`; the self-test's top-level status is `passed`. That negative fixture is not a CI failure.
+- Windows 8.3 short-path alias protection in backup/recovery roots;
+- live/dead process liveness probing;
+- MCP launcher cold-start from an installed `%USERPROFILE%\plugins\customs-buyer-intelligence` layout;
+- dynamic selection of a Python >= 3.10 runtime.
+
+Both jobs also validate JSON manifests, agent YAML, compatibility parser, intelligence, outreach, strategic and v3 self-tests. The intelligence self-test intentionally contains an internal negative scenario named `empty_input_deep_dive_never_blank` whose case status is `failed`; the self-test's top-level status is `passed`. That negative fixture is not a CI failure.
 
 ## Normal 100-Evidence performance gate
 
@@ -56,49 +61,81 @@ simple state query < 0.5 s
 Resume < 3 s
 ```
 
-Production-head measurements from run `33220250679`:
+Measurements from run `33222590445`:
 
 | Environment | 100-Evidence Bundle | State query | Resume | Result |
 | --- | ---: | ---: | ---: | --- |
-| Ubuntu | 0.023923 s | 0.065816 s | 0.186384 s | PASS |
-| Windows | 0.340653 s | 0.168886 s | 0.437428 s | PASS |
+| Ubuntu | 0.025870 s | 0.065631 s | 0.197782 s | PASS |
+| Windows | 0.080931 s | 0.194125 s | 0.429738 s | PASS |
 
-Daily-backup first-mutation latency was observed separately and is **not** defined as a production SLO. On this small CI fixture it measured 0.014678 s on Ubuntu and 0.178598 s on Windows; the second same-day mutation reused the daily snapshot rather than creating another copy.
+Daily-backup mutation latency is recorded as a diagnostic only; it is **not** defined as a production SLO and is not substituted for the normal performance gates above.
 
-## Exact scalability acceptance
+## Exact v6.1 large-state acceptance — PASS with durable Canonical Account proof
 
-Dedicated exact-scale workflow run `33191266068` completed successfully on scale-validation commit `9657dbede12b69c2838a5a282912d01644b303ea`.
+The full-load acceptance was independently audited and hardened. Merely requesting 5,000 Canonical Accounts is no longer sufficient for a pass. The acceptance runner now requires all three of the following to equal the requested count:
 
-Validated counts:
+1. resolver results whose status is `CREATED`;
+2. durable `CANONICAL_ACCOUNT_CREATED` events persisted in the canonical registry;
+3. unique persisted Canonical Account IDs.
+
+A negative regression deliberately patches the resolver to claim `CREATED` without persistence and verifies that the full profile fails closed.
+
+Strict-count implementation commit:
+
+```text
+0e3836fd68ffd181c0bc469bb70eba64becd9baa
+```
+
+Exact full-load workflow:
+
+```text
+GitHub Actions run 33221892250
+```
+
+Observed counts:
 
 | Dimension | Required | Observed |
 | --- | ---: | ---: |
-| Canonical Accounts | 5,000 | 5,000 |
-| simultaneous Investigations | 1,000 | 1,000 |
-| Evidence | 100,000 | 100,000 |
-| Source Attempts | 100,000 | 100,000 |
-| Peers | 20,000 | 20,000 |
-| active portfolio investigations | 1,000 | 1,000 |
-| superseded in acceptance portfolio | 0 expected | 0 |
-| quarantined in acceptance portfolio | 0 expected | 0 |
+| Evidence | 10,000 | 10,000 |
+| Pivots | 1,000 | 1,000 |
+| Peers | 500 | 500 |
+| Canonical Accounts requested | 5,000 | 5,000 |
+| resolver `CREATED` results | 5,000 | 5,000 |
+| persisted `CANONICAL_ACCOUNT_CREATED` events | 5,000 | 5,000 |
+| unique persisted Canonical Account IDs | 5,000 | 5,000 |
 
-Additional provenance:
+Measured large-state timings:
 
 ```text
-Evidence Compiler investigation samples : 1,000
-SourceAttempt API samples                : 1,000
-Peer discovery API samples               : 1,000
-cold hash-chain aggregate                : 6.818774 s
-canonical registry query                 : 0.122093 s
-portfolio query                          : 119.102838 s
-sample state reconstruction              : 0.046186 s
+append 9,500 non-peer Evidence     10.854092 s
+create/persist 5,000 accounts     655.014034 s
+large-state load                    0.425034 s
+large public-state query            1.291995 s
+large Resume                       21.345263 s
 ```
 
-This run proves the required durable-state scale envelope. It does not claim a single-record mutation-throughput SLO that the specification does not define.
+The specification treats the large envelope as a loadability/scalability target and does not apply the normal 100-Evidence timing thresholds to these full-load measurements. The current branch retains the strict persisted-count runner and its fail-closed regressions. Commits after `0e3836fd...` changed launcher configuration/tests and removed the temporary full-load workflow; they did not weaken the full-load runner or Runtime large-state semantics.
+
+### Supplemental broader stress evidence
+
+Dedicated stress run `33191266068` previously passed a larger synthetic envelope on scale-validation commit `9657dbede12b69c2838a5a282912d01644b303ea`:
+
+| Dimension | Observed |
+| --- | ---: |
+| Canonical Accounts | 5,000 |
+| simultaneous Investigations | 1,000 |
+| Evidence | 100,000 |
+| Source Attempts | 100,000 |
+| Peers | 20,000 |
+| active portfolio investigations | 1,000 |
+| superseded in acceptance portfolio | 0 |
+| quarantined in acceptance portfolio | 0 |
+
+This broader stress run is supplemental evidence only; it is **not** used as a substitute for the strict 10k Evidence / 1k Pivot / 500 Peer / 5k durably persisted Canonical Account acceptance above.
 
 ## Backup and recovery — PASS on production branch
 
-The production entry now automatically creates validated logical snapshots:
+The production entry automatically creates validated logical snapshots:
 
 ```text
 daily before the first production mutation
@@ -145,7 +182,7 @@ Additional verified behavior:
 
 ## v6 semantic gates — PASS structurally
 
-The prior architecture blockers in this document are no longer open code gaps:
+The prior architecture blockers are no longer open code gaps:
 
 - canonical seven-state Pivot view is exposed and only `OPEN_MATERIAL` blocks Decision Saturation;
 - `BLOCKED` Pivot is terminal and does not masquerade as an open material research path;
@@ -203,7 +240,9 @@ The local runner is:
 scripts/run_private_golden_acceptance.py
 ```
 
-It accepts only an allow-list of read-only runtime calls and rejects mutation, Resume/initialization, CRM writeback, outreach preparation, migration and account creation. Private manifests/results are protected by `.gitignore` patterns:
+It accepts only an allow-list of read-only Runtime calls and rejects mutation, Resume/initialization, CRM writeback, outreach preparation, migration and account creation. Selector resolution is limited to a unique `PRODUCTION + ACTIVE` Investigation. Zero matches, multiple matches, or a truncated active portfolio fail closed rather than guessing. The runner's real-runtime regression verifies byte-for-byte read-only behavior.
+
+Private manifests/results are protected by `.gitignore` patterns:
 
 ```text
 .cbi-private-golden*.json
@@ -224,7 +263,7 @@ Minimum semantic assertions include:
 
 ### BLOCKER 2 — Local plugin/skill packaging validation evidence
 
-GitHub CI validates repository JSON/YAML, runtime protocols, privacy and self-tests. The final locally installed plugin/skill package still needs the official local product validator/installation validation to be executed against the exact checked-out head and its result recorded. This is intentionally separate from GitHub runtime tests because it depends on the local product installation environment.
+GitHub CI validates repository JSON/YAML, runtime protocols, privacy, Windows installed-layout cold-start, and self-tests. The final locally installed plugin/skill package still needs the official local product validator/installation validation to be executed against the exact checked-out head and its result recorded. This is intentionally separate from GitHub runtime tests because it depends on the local product installation environment.
 
 Do not invent a validator command in this document; use the currently installed product's documented validator interface when executing this gate.
 
@@ -250,4 +289,4 @@ PR #1 must remain Draft and **must not be merged into `main`** until both remain
 1. the real private Golden suite passes against the user's durable production state on the current hardened runtime;
 2. the exact locally installed plugin/skill package passes the official local product validator/installation validation.
 
-After those two local gates, rerun the standard Windows + Linux CI on the final documentation/acceptance head, record the local Golden/validator evidence without committing private customer data, and only then consider changing the PR out of Draft or declaring Production Ready.
+After those two local gates, if acceptance evidence/documentation changes the branch head, rerun the standard Windows + Linux CI on that final acceptance head, record the local Golden/validator evidence without committing private customer data, and only then consider changing the PR out of Draft or declaring Production Ready.
