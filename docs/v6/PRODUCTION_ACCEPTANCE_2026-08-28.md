@@ -9,36 +9,19 @@ Draft PR: `#1` — **do not merge yet**
 
 **V6.1 ARCHITECTURE / CRASH RECOVERY / BACKUP / NORMAL PERFORMANCE / EXACT LARGE-STATE GATES ARE STRUCTURALLY VALIDATED — PRODUCTION ACCEPTANCE REMAINS OPEN FOR PRIVATE GOLDEN AND LOCAL PACKAGING VALIDATION.**
 
-The production branch has independently passing Ubuntu and Windows CI for the implemented architecture, mutation/WAL recovery, host-offline durability, Decision Saturation, commercial-opportunity factors, portfolio hardening, backup/recovery, Windows installed-layout launcher behavior, normal performance, strict large-state acceptance, and the read-only Private Golden runner boundary.
+The production branch has independently passing Ubuntu and Windows CI for the implemented architecture, mutation/WAL recovery, host-offline durability, Decision Saturation, commercial-opportunity factors, portfolio hardening, backup/recovery, Windows installed-layout launcher behavior, normal performance and strict large-state acceptance.
+
+The Private Golden runner has now been hardened so the real named Golden cases can be expressed against unordered public Runtime state without brittle list indexes, without private Investigation IDs when a unique production selector is available, and without incorrectly failing a Peer that has advanced beyond `ANCHOR_ELIGIBLE` to a later valid stage.
 
 This document deliberately does **not** declare Production Ready. The specification requires real regression against the user's durable production Golden cases, including the named Arecibo case, and the final locally installed plugin/skill package must also pass the official local product validation. Those private/local artifacts are not stored in GitHub.
 
 `main` remains unchanged. PR #1 remains Draft.
 
-## Current validated code head before this documentation refresh
+## Exact final-head validation rule
 
-The latest code/test head immediately before this documentation-only refresh is:
+The exact branch head, final standard CI run and local acceptance status are recorded in PR #1. This document is itself part of the acceptance branch; therefore any commit that updates this document must be followed by the standard Windows + Linux CI on that exact resulting head before the head is treated as final.
 
-```text
-b9de780608d1d9f4f716dd291c75fcce825dd145
-```
-
-Standard GitHub Actions run:
-
-```text
-33226557138
-```
-
-Result:
-
-```text
-Ubuntu 24.04 / Python 3.11   PASS
-Windows Server 2025 / Python 3.11   PASS
-```
-
-Both jobs passed the unittest regression suite, 100-Evidence structural smoke acceptance, MCP compatibility self-test, MCP v6 protocol test, MCP v6.1 production-adapter protocol test, privacy scan, compatibility parser self-test, intelligence self-test, outreach self-test, strategic self-test and v3 compatibility self-test.
-
-The code changes immediately preceding that run are limited to the read-only Private Golden assertion surface and its tests:
+The latest code/test commits immediately before this documentation refresh are:
 
 ```text
 556591a5acd3118202efa768e5b814108c2b7b5c
@@ -46,11 +29,17 @@ The code changes immediately preceding that run are limited to the read-only Pri
 
 b9de780608d1d9f4f716dd291c75fcce825dd145
   Test semantic Private Golden list assertions
+
+1d035cd798a345850dea3bc9792c2505a6ec175d
+  Harden Private Golden semantic assertions
+
+1040234a86672188c10d4f62271f0b60df148fd4
+  Test Golden claim and peer-stage semantics
 ```
 
-No Runtime mutation semantics, production durable state, CRM data or `main` branch were changed by those commits.
+The first semantic-assertion layer (`b9de780...`) passed standard run `33226557138` on Ubuntu and Windows. The exact documentation head produced by this refresh must receive its own final run; that later exact-head run is authoritative.
 
-Because this file update is itself a new documentation-only commit, the exact final branch head must receive standard Windows + Linux CI before it is treated as the final acceptance head.
+No Runtime mutation semantics, production durable state, CRM data or `main` branch are modified by these Private Golden runner/test/documentation changes.
 
 ## Production MCP entry
 
@@ -83,9 +72,9 @@ Selector resolution may identify an Investigation by account name, account ID an
 
 The runner's real-Runtime regression verifies that selector-based read-only execution does not mutate the Investigation session bytes.
 
-### Semantic assertion support
+## Private Golden assertion semantics
 
-The runner supports scalar/path assertions:
+Supported scalar/path operators:
 
 ```text
 eq
@@ -101,20 +90,33 @@ number_at_least
 length_at_least
 ```
 
-It also supports unordered semantic list assertions:
+Supported recursive semantic operators:
 
 ```text
+subset
+not_subset
 list_item_subset
 no_list_item_subset
+peer_stage_at_least
 ```
 
-These recursively compare value-only subsets and allow private Golden manifests to express facts such as:
+`subset` / `not_subset` recursively compare value-only mappings and therefore can safely assert mapping keys that themselves contain dots, for example `buying_group.decision_chain`, without trying to interpret those dots as path separators.
 
-- an unordered public `network.peers` list contains a named Peer with required semantic fields;
-- a forbidden role/fact is absent for a named party;
-- nested public Runtime objects contain the expected durable semantics without hard-coding list indexes or private Investigation IDs.
+`list_item_subset` / `no_list_item_subset` operate on unordered public arrays, such as `network.peers`, and allow a manifest to require or forbid a named semantic fact without hard-coding an array index.
 
-The semantic assertion implementation is read-only and does not inspect repository-private customer files or bypass the Runtime public state boundary.
+`peer_stage_at_least` uses the public v6 Peer lifecycle order:
+
+```text
+DISCOVERED
+QUALIFIED
+ANCHOR_ELIGIBLE
+PROMOTED_ANCHOR
+FULLY_AUDITED
+```
+
+A Golden requirement of at least `ANCHOR_ELIGIBLE` therefore passes when the matching Peer is currently `ANCHOR_ELIGIBLE`, `PROMOTED_ANCHOR` or `FULLY_AUDITED`; it fails for `DISCOVERED` or `QUALIFIED`. This prevents a valid later lifecycle state from being misclassified as a regression.
+
+All of these assertion operators are read-only value comparisons and do not bypass the Runtime public-state boundary.
 
 ## Normal 100-Evidence performance gate
 
@@ -126,7 +128,7 @@ simple state query < 0.5 s
 Resume < 3 s
 ```
 
-The previously recorded production-branch measurements remain passing on both Ubuntu and Windows. Later Private Golden assertion-only commits do not modify Runtime performance code.
+Previously recorded production-branch measurements pass these gates on both Ubuntu and Windows. The Private Golden assertion-only changes do not modify Runtime performance code.
 
 Daily-backup mutation latency is diagnostic only and is not substituted for the normal performance SLO gates.
 
@@ -193,7 +195,7 @@ The validated mutation families include account/start/objective/information/bund
 The source-level architecture now covers the principal historical bug classes:
 
 - only canonical `OPEN_MATERIAL` Pivots block Decision Saturation;
-- `BLOCKED` / terminal Pivots do not masquerade as open material work;
+- terminal Pivots do not masquerade as open material work;
 - Decision Chain authority requires evidence-bound current association, sufficiently current role and role/procurement relevance rather than bare company association;
 - Commercial Value is independent of CRM/contact readiness;
 - Commercial Opportunity factors retain Evidence lineage and unknown factors remain unknown instead of fabricated negatives;
@@ -240,8 +242,8 @@ Minimum specification-level expectations include:
 
 - Western Woods Commercial Value >= A;
 - Arecibo Home Center, Arecibo Home Design and Chimelis Home Center do not become an unsupported direct legal merge;
-- the real Arecibo Peer can reach Anchor Eligible when trade/entity/product/relationship evidence is sufficient, without Zalo/Instagram/source-checklist completion being a prerequisite;
-- Tesoro en Maderas II reaches A+ and Anchor-Eligible semantics when its durable Evidence supports those facts, even before Full Audit;
+- the real Arecibo Peer can reach at least Anchor Eligible when trade/entity/product/relationship evidence is sufficient, without Zalo/Instagram/source-checklist completion being a prerequisite;
+- Tesoro en Maderas II reaches A+ and at least Anchor-Eligible semantics when its durable Evidence supports those facts, even before Full Audit;
 - Edwin Seda is not promoted into Buyer Decision Chain without current decision-authority proof and remains classified as intermediary/broker when that is what the Evidence supports;
 - the remaining named cases preserve evidence-bound identity, product, trade, supplier and network semantics without fabricated certainty.
 
