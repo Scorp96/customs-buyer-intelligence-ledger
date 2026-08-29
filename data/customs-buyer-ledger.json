@@ -153,8 +153,239 @@
         }
       },
       "updated_at": "2026-08-04T06:15:38+00:00"
+    },
+    "buyer_a88f249cc1e4616a1084": {
+      "buyer_key": "buyer_a88f249cc1e4616a1084",
+      "contacts": {
+        "connectiongeneralconstruction@gmail.com": {
+          "email": "connectiongeneralconstruction@gmail.com",
+          "employment_status": "not_applicable",
+          "entity": "Connection General Construction Inc",
+          "first_seen": "2026-08-29T07:17:36+00:00",
+          "last_checked": "2026-08-29T07:17:10+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "unverified",
+          "recommended_use": "Use as a general-company route only after direct verification; preferred next step is to call the company and ask for the person responsible for PVC/Celuka purchasing or supplier evaluation.",
+          "risk_note": "Published by a current third-party carrier directory, but not independently confirmed on an official company domain or by user confirmation; do not label as procurement email.",
+          "route_class": "FORMAL_GENERAL",
+          "source_ids": [
+            "e7_email_directory"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "directory_current"
+        }
+      },
+      "created_at": "2026-08-29T07:17:36+00:00",
+      "evidence": {
+        "e1_identity_address": {
+          "boundary": "Third-party directory reflecting FMCSA-derived data; not an independently opened Massachusetts corporate-registry record and does not by itself prove ownership or procurement authority.",
+          "checked_at": "2026-08-29T07:17:10+00:00",
+          "claim": "Current carrier-registration directories identify CONNECTION GENERAL CONSTRUCTION INC at 2 Draper St Ste 2, Woburn, MA 01801-4851, phone 781-606-2505, USDOT 4570644.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "C1",
+          "evidence_id": "e1_identity_address",
+          "source_date": null,
+          "source_reference": "RateTrans carrier profile for USDOT 4570644",
+          "source_type": "third_party_directory",
+          "source_url": "https://ratetrans.com/company/4570644"
+        },
+        "e2_contractor_business": {
+          "boundary": "BuildZoom is not the issuing government registry; owner/employment details are directory-sourced and require direct current verification for outreach or authority.",
+          "checked_at": "2026-08-29T07:17:10+00:00",
+          "claim": "BuildZoom lists Connection General Construction Inc as a Massachusetts home-improvement contractor, with active license #211065 as of March 2026, and describes residential remodeling, roofing, siding, decking and related work; Michel Viana is listed as Owner.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "C1",
+          "evidence_id": "e2_contractor_business",
+          "source_date": null,
+          "source_reference": "BuildZoom contractor profile",
+          "source_type": "third_party_directory",
+          "source_url": "https://www.buildzoom.com/contractor/connection-general-construction-inc"
+        },
+        "e3_phone_brand_link": {
+          "boundary": "Shared address/phone is evidence of operational association only; it does not prove that Connection Glass and Mirrors and Connection General Construction Inc are the same legal entity or share procurement authority.",
+          "checked_at": "2026-08-29T07:17:10+00:00",
+          "claim": "Connection Glass and Mirrors publicly lists 2 Draper St Unit 2, Woburn and phone 781-922-6498, which matches the phone in the customs buyer address supplied by the user.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "e3_phone_brand_link",
+          "source_date": null,
+          "source_reference": "Connection Glass and Mirrors contact page",
+          "source_type": "official_domain",
+          "source_url": "https://connectionglass.com/contact/"
+        },
+        "e4_trade_mar": {
+          "boundary": "The page repeats apparently duplicate rows for the same date/weight; this run treats the visible identical rows as one underlying trade event and does not infer exact board specifications.",
+          "checked_at": "2026-08-29T07:17:10+00:00",
+          "claim": "Trademo shows a Mar. 20, 2026 shipment from Bodo Industrial Inc to Connection General Construction Inc at Boston, 24,500 kg, product keywords PVC foam sheet / PVC fence / PVC moulding, HS 392112.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "e4_trade_mar",
+          "source_date": null,
+          "source_reference": "Trademo Bodo Industrial Inc supplier profile",
+          "source_type": "trade_database",
+          "source_url": "https://www.trademo.com/companies/bodo-industrial-incorporated/16784258"
+        },
+        "e5_trade_jul": {
+          "boundary": "Third-party trade database; HS code presentation on this page may be inconsistent and does not establish resin formulation, thickness, density, Celuka/free-foam/co-extruded process, or end use.",
+          "checked_at": "2026-08-29T07:17:10+00:00",
+          "claim": "52wmb shows a Jul. 20, 2026 shipment from Bodo Industrial Inc to Connection General Construction Inc, B/L GBWQ6041331579, Qingdao to Boston, 26,500 kg, product description PVC FOAM SHEET.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "e5_trade_jul",
+          "source_date": null,
+          "source_reference": "52wmb Bodo Industrial Inc export data",
+          "source_type": "trade_database",
+          "source_url": "https://en.52wmb.com/supplier/2300294"
+        },
+        "e6_trade_summary": {
+          "boundary": "Association totals are provider-specific summary counts and are not used as a substitute for individually deduplicated shipment records.",
+          "checked_at": "2026-08-29T07:17:10+00:00",
+          "claim": "ImportInfo lists Connection General Construction among companies associated with Bodo Industrial Inc, with a recent shipment in Jul. 2026.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "e6_trade_summary",
+          "source_date": null,
+          "source_reference": "ImportInfo Bodo Industrial Inc activity page",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/bodo-industrial-inc"
+        },
+        "e7_email_directory": {
+          "boundary": "Directory-published general business email; not verified on an official company domain or by user confirmation, so it is not eligible to be treated as an official-current procurement address.",
+          "checked_at": "2026-08-29T07:17:10+00:00",
+          "claim": "RateTrans publishes CONNECTIONGENERALCONSTRUCTION@GMAIL.COM for Connection General Construction Inc at 2 Draper St Ste 2, Woburn, MA.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "C1",
+          "evidence_id": "e7_email_directory",
+          "source_date": null,
+          "source_reference": "RateTrans carrier profile for USDOT 4570644",
+          "source_type": "third_party_directory",
+          "source_url": "https://ratetrans.com/company/4570644"
+        },
+        "e8_user_trade": {
+          "boundary": "This proves only what the user-supplied record states. Package count cannot be converted to sheet count; no thickness, dimensions, density, invoice value, manufacturing process, or end-use specification is provided.",
+          "checked_at": "2026-08-29T07:17:10+00:00",
+          "claim": "User supplied a House Bill record dated 2026-08-02: master COSU6503496790, house GBWQ6041331597, Bodo Industrial Inc -> Connection General Construction, 110 PKG, 26,980 kg, product 'Pvc Foam Sheet Pvc Fence', Qingdao to Boston, container TEMU7858614.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "e8_user_trade",
+          "source_date": "2026-08-02",
+          "source_reference": "Current-run user customs record",
+          "source_type": "user_input",
+          "source_url": null
+        }
+      },
+      "history_events": [],
+      "identity": {
+        "address": "2 Draper St Ste 2, Woburn, MA 01801-4851",
+        "aliases": [
+          "Connection General Construction",
+          "Connection Construction, Inc",
+          "Connection General Construction Inc"
+        ],
+        "business_type": "General contractor / residential remodeling and exterior construction operator; also appears in current carrier-registration directories and as importer/consignee of PVC foam sheet/fence products. Exact Massachusetts corporate-registry record was not independently retrieved in this run.",
+        "country": "United States",
+        "customs_name": "Connection General Construction",
+        "legal_name": "Connection General Construction Inc",
+        "source_ids": [
+          "e1_identity_address",
+          "e2_contractor_business",
+          "e3_phone_brand_link"
+        ]
+      },
+      "runs": [
+        {
+          "declared_previous_email_count": 0,
+          "declared_previous_trade_count": 0,
+          "input_hash": "1e55a7470c5fe5d8e7a2c3b4",
+          "investigated_at": "2026-08-29T07:17:10+00:00",
+          "prior_ledger_date": null,
+          "prior_ledger_name": null,
+          "run_id": "cgc-20260829-071710z"
+        }
+      ],
+      "trade_records": {
+        "record:52wmbgbwq6041331579": {
+          "buyer": "connection general construction inc",
+          "data_level": "bill",
+          "date": "2026-07-20",
+          "date_semantics": "Trade date as displayed by 52wmb; not assumed to equal arrival, customs release, invoice, or manufacturing date.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:17:36+00:00",
+          "house_bill": "GBWQ6041331579",
+          "item_number": null,
+          "last_seen": "2026-08-29T07:17:36+00:00",
+          "master_bill": null,
+          "normalized_product": "PVC foam sheet (exact foam-board subtype unknown)",
+          "product_raw": "PVC FOAM SHEET",
+          "provider": "52wmb",
+          "quantity": null,
+          "record_id": "52wmb-GBWQ6041331579",
+          "source_ids": [
+            "e5_trade_jul"
+          ],
+          "supplier_or_exporter": "bodo industrial inc",
+          "uom": null,
+          "weight_kg": 26500.0
+        },
+        "record:trademo2026032024500": {
+          "buyer": "connection general construction inc",
+          "data_level": "shipment",
+          "date": "2026-03-20",
+          "date_semantics": "Shipment date as displayed by Trademo; identical visible rows were deduplicated as one event for this ledger merge.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:17:36+00:00",
+          "house_bill": null,
+          "item_number": null,
+          "last_seen": "2026-08-29T07:17:36+00:00",
+          "master_bill": null,
+          "normalized_product": "PVC foam sheet + fence + moulding (exact foam-board subtype unknown)",
+          "product_raw": "PVC FOAM SHEET PVC FENCE PVC MOULDING",
+          "provider": "Trademo",
+          "quantity": null,
+          "record_id": "trademo-2026-03-20-24500",
+          "source_ids": [
+            "e4_trade_mar"
+          ],
+          "supplier_or_exporter": "bodo industrial inc",
+          "uom": null,
+          "weight_kg": 24500.0
+        },
+        "record:usergbwq6041331597": {
+          "buyer": "Connection General Construction",
+          "data_level": "bill",
+          "date": "2026-08-02",
+          "date_semantics": "User-provided record date; estimated arrival was 2026-08-01 and run date 2026-08-03, so this date should not be assumed to be manufacturing date or invoice date.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:17:36+00:00",
+          "house_bill": "GBWQ6041331597",
+          "item_number": null,
+          "last_seen": "2026-08-29T07:17:36+00:00",
+          "master_bill": "COSU6503496790",
+          "normalized_product": "PVC foam sheet + PVC fence (exact foam-board subtype unknown)",
+          "product_raw": "Pvc Foam Sheet Pvc Fence",
+          "provider": "User-supplied customs record",
+          "quantity": 110.0,
+          "record_id": "user-GBWQ6041331597",
+          "source_ids": [
+            "e8_user_trade"
+          ],
+          "supplier_or_exporter": "Bodo Industrial Inc",
+          "uom": "PKG",
+          "weight_kg": 26980.0
+        }
+      },
+      "updated_at": "2026-08-29T07:17:36+00:00"
     }
   },
   "schema_version": "2.1",
-  "updated_at": "2026-08-04T06:15:38+00:00"
+  "updated_at": "2026-08-29T07:17:36+00:00"
 }
