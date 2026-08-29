@@ -30,8 +30,13 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
         self.assertTrue(contract["brand_legal_entity_separation_v6_1"]["brand_name_never_auto_merges_legal_entity"])
         canonical = contract["canonical_identity_resolution_v6_1"]
         self.assertFalse(canonical["raw_aliases_are_legal_identity_keys"])
+        self.assertFalse(canonical["typed_aliases_are_automatic_match_keys"])
         self.assertFalse(canonical["address_only_match_allowed"])
-        self.assertEqual(canonical["untyped_alias_collision_policy"], "AMBIGUOUS_FAIL_CLOSED")
+        self.assertEqual(canonical["alias_collision_policy"], "AMBIGUOUS_FAIL_CLOSED")
+        self.assertEqual(
+            canonical["alias_resolution_requirement"],
+            "EXACT_CANONICAL_ACCOUNT_ID_AFTER_EVIDENCE_REVIEW",
+        )
 
     def test_untyped_brand_alias_never_auto_merges_or_auto_creates(self) -> None:
         created = self.runtime.resolve_or_create_account({
@@ -57,7 +62,7 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
         self.assertIsNone(collision["match"])
         self.assertFalse(collision["automatic_merge_allowed"])
         self.assertFalse(collision["automatic_create_allowed"])
-        self.assertEqual(collision["ambiguity_reason"], "UNTYPED_ALIAS_REQUIRES_LEGAL_PROOF")
+        self.assertEqual(collision["ambiguity_reason"], "ALIAS_RELATION_REQUIRES_CANONICAL_ID_PROOF")
         self.assertEqual(collision["candidates"][0]["account_id"], account_id)
         self.assertEqual(len(self.runtime.canonical_registry.entries()), 1)
 
@@ -72,25 +77,57 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
                 "history": {"events": []},
             })
 
-    def test_explicit_legal_alias_remains_matchable(self) -> None:
+    def test_typed_legal_alias_is_review_signal_not_merge_authority(self) -> None:
         created = self.runtime.resolve_or_create_account({
             "candidate": {
                 "name": "Western Woods LLC",
                 "country": "Puerto Rico",
-                "aliases": ["HOME iD"],
                 "legal_aliases": ["Western Woods Incorporated"],
             },
         })
-        matched = self.runtime.resolve_or_create_account({
+        account_id = created["match"]["account_id"]
+
+        unresolved = self.runtime.resolve_or_create_account({
             "candidate": {
                 "name": "Western Woods Incorporated",
                 "country": "Puerto Rico",
             },
             "create_if_missing": False,
         })
-        self.assertEqual(matched["status"], "MATCHED")
-        self.assertEqual(matched["match"]["account_id"], created["match"]["account_id"])
-        self.assertIn("LEGAL_NAME_COUNTRY", matched["match"]["reasons"])
+        self.assertEqual(unresolved["status"], "AMBIGUOUS_MATCH")
+        self.assertIsNone(unresolved["match"])
+        self.assertEqual(unresolved["ambiguity_reason"], "ALIAS_RELATION_REQUIRES_CANONICAL_ID_PROOF")
+
+        reviewed = self.runtime.resolve_or_create_account({
+            "candidate": {
+                "name": "Western Woods Incorporated",
+                "country": "Puerto Rico",
+            },
+            "requested_account_id": account_id,
+            "create_if_missing": False,
+        })
+        self.assertEqual(reviewed["status"], "MATCHED")
+        self.assertEqual(reviewed["match"]["account_id"], account_id)
+        self.assertIn("EXACT_ACCOUNT_ID", reviewed["match"]["reasons"])
+
+    def test_candidate_alias_collision_blocks_silent_duplicate_creation(self) -> None:
+        created = self.runtime.resolve_or_create_account({
+            "candidate": {
+                "name": "Arecibo Synthetic Center LLC",
+                "country": "Puerto Rico",
+            },
+        })
+        account_id = created["match"]["account_id"]
+        collision = self.runtime.resolve_or_create_account({
+            "candidate": {
+                "name": "Arecibo Synthetic Design LLC",
+                "country": "Puerto Rico",
+                "aliases": ["Arecibo Synthetic Center LLC"],
+            },
+        })
+        self.assertEqual(collision["status"], "AMBIGUOUS_MATCH")
+        self.assertEqual(collision["candidates"][0]["account_id"], account_id)
+        self.assertEqual(len(self.runtime.canonical_registry.entries()), 1)
 
     def test_address_alone_has_no_canonical_merge_authority(self) -> None:
         created = self.runtime.resolve_or_create_account({
