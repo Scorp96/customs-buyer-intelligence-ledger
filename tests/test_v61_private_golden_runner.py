@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.run_private_golden_acceptance import (
     READ_ONLY_TOOLS,
+    build_runtime,
+    parse_args,
     run_manifest,
     validate_manifest,
 )
@@ -329,6 +333,22 @@ class V61PrivateGoldenRunnerTests(unittest.TestCase):
                 investigation_id,
             )
             self.assertEqual(session_path.read_bytes(), before)
+
+    def test_default_runtime_builder_matches_production_root_semantics(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cbi-v61-golden-default-root-") as temp:
+            with patch.dict(os.environ, {"LOCALAPPDATA": temp}, clear=False):
+                for key in ("CBI_SESSION_ROOT", "CBI_CANONICAL_ROOT", "CBI_PENDING_ROOT"):
+                    os.environ.pop(key, None)
+                runtime = build_runtime()
+                expected_data_root = Path(temp) / "XingHuai" / "CustomsBuyerIntelligence"
+                self.assertEqual(runtime.store.root, expected_data_root / "sessions")
+                self.assertEqual(runtime.canonical_registry.root, expected_data_root / "canonical")
+                self.assertEqual(runtime.pending_journal.root, expected_data_root / "pending")
+
+    def test_cli_session_root_is_optional_for_production_default(self) -> None:
+        args = parse_args(["--manifest", "private-golden.json"])
+        self.assertEqual(args.session_root, "")
+        self.assertEqual(args.manifest, "private-golden.json")
 
     def test_mutation_and_resume_tools_are_not_allowed(self) -> None:
         forbidden = {

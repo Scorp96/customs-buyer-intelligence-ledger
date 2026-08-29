@@ -7,6 +7,12 @@ defines read-only assertions. Cases may either provide an explicit
 public PRODUCTION + ACTIVE portfolio view. No Runtime mutation, CRM writeback,
 outreach preparation, migration, account creation, or resume/initialization
 action is permitted by this runner.
+
+When ``--session-root`` is omitted, the runner constructs ``UnifiedRuntime()``
+exactly as the production MCP entry does. This preserves the production default
+session/canonical/pending root derivation instead of accidentally changing
+sidecar roots merely for acceptance execution. An explicit session root remains
+available for isolated fixtures and intentionally custom layouts.
 """
 
 from __future__ import annotations
@@ -347,11 +353,26 @@ def run_manifest(runtime: UnifiedRuntime, manifest: dict[str, Any]) -> dict[str,
     }
 
 
+def build_runtime(session_root: str = "") -> UnifiedRuntime:
+    """Construct the exact production-default Runtime unless a root is explicit."""
+    cleaned = str(session_root or "").strip()
+    if not cleaned:
+        return UnifiedRuntime()
+    return UnifiedRuntime(Path(cleaned).expanduser().resolve())
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run read-only v6 Golden acceptance."
     )
-    parser.add_argument("--session-root", required=True)
+    parser.add_argument(
+        "--session-root",
+        default="",
+        help=(
+            "Optional explicit session root. Omit for the exact production-default "
+            "UnifiedRuntime() root semantics."
+        ),
+    )
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--output", default="")
     return parser.parse_args(argv)
@@ -365,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
         .resolve()
         .read_text(encoding="utf-8-sig")
     )
-    runtime = UnifiedRuntime(Path(args.session_root).expanduser().resolve())
+    runtime = build_runtime(args.session_root)
     result = run_manifest(runtime, manifest)
     rendered = json.dumps(result, ensure_ascii=False, indent=2, default=str)
     if args.output:
