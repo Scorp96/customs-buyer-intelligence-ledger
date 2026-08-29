@@ -168,6 +168,41 @@ class CbiCanonicalPreflightTests(unittest.TestCase):
         self.assertTrue(payload["read_set_unchanged"])
         self.assertEqual(before, after)
 
+    def test_requested_missing_id_conflicting_with_existing_identity_blocks(self) -> None:
+        runtime = UnifiedRuntime(self.session_root)
+        created = runtime.resolve_or_create_account(
+            {
+                "candidate": {
+                    "name": "Synthetic Existing Buyer LLC",
+                    "country": "United States",
+                    "address": "1111 Example Dr San Bruno, CA 94066",
+                },
+                "requested_account_id": "C001",
+                "create_if_missing": True,
+            }
+        )
+        self.assertEqual(created["status"], "CREATED")
+        before = self.tree_snapshot(self.session_root)
+
+        code, payload = self.run_preflight("--requested-account-id", "C157")
+        after = self.tree_snapshot(self.session_root)
+
+        self.assertEqual(code, 0, payload)
+        self.assertEqual(payload["status"], "AMBIGUOUS_MATCH")
+        self.assertEqual(
+            payload["canonical_resolution"]["ambiguity_reason"],
+            "REQUESTED_ACCOUNT_ID_NOT_FOUND_IDENTITY_COLLISION",
+        )
+        self.assertEqual(
+            payload["recommendation"],
+            "BLOCK_COMMIT_IDENTITY_REVIEW_REQUIRED",
+        )
+        self.assertTrue(payload["read_set_unchanged"])
+        self.assertFalse(payload["runtime_mutation_performed"])
+        self.assertFalse(payload["wal_mutation_performed"])
+        self.assertFalse(payload["persistent_write_performed"])
+        self.assertEqual(before, after)
+
 
 if __name__ == "__main__":
     unittest.main()
