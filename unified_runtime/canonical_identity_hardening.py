@@ -21,15 +21,26 @@ identity semantics:
   exact-ID, Tax-ID and External-ID automatic binding;
 * ambiguous identity signals cannot silently create a second Account;
 * an explicitly requested *new* ID remains creatable when no competing
-  identity signal exists, preserving the supported low-information start path.
+  identity signal exists, preserving the supported low-information start path;
+* one public resolve/create call reuses one fully validated Canonical snapshot
+  for its identity decisions, while the append-only log still performs its own
+  full-chain verification immediately before every persisted append.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .errors import ValidationError
-from .resilience import ACCOUNT_ID_RE, CanonicalRegistry, normalized_values
+from .resilience import (
+    ACCOUNT_ID_RE,
+    CanonicalRegistry,
+    digest,
+    exclusive_file_lock,
+    iso_utc,
+    normalized_values,
+)
 
 
 _ALIAS_REVIEW_REASON = "ALIAS_RELATION_REQUIRES_CANONICAL_ID_PROOF"
@@ -110,7 +121,6 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             score, reasons = max(score, 90), reasons + ["EXTERNAL_ID"]
         if EvidenceBoundCanonicalRegistry._country_overlap(candidate, row) and candidate["names"] & row["names"]:
             score, reasons = max(score, 85), reasons + ["PRIMARY_LEGAL_NAME_COUNTRY"]
-
         if score and EvidenceBoundCanonicalRegistry._country_overlap(candidate, row) and candidate["addresses"] & row["addresses"]:
             reasons.append("ADDRESS_SUPPORT")
         return score, sorted(set(reasons))
@@ -123,15 +133,50 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             and not (candidate["tax_ids"] & row["tax_ids"])
         )
 
+    @staticmethod
+    def _scored_resolution(
+        candidate_keys: dict[str, set[str]],
+        entries: list[dict[str, Any]],
+        *,
+        requested_account_id: str = "",
+    ) -> dict[str, Any]:
+        """Resolve against one caller-owned, already validated Canonical snapshot."""
+        matches: list[dict[str, Any]] = []
+        for row in entries:
+            score, reasons = EvidenceBoundCanonicalRegistry._match_score(
+                candidate_keys,
+                EvidenceBoundCanonicalRegistry._keys(row["account"]),
+                requested_account_id,
+                row["account_id"],
+            )
+            if score:
+                matches.append({
+                    "account_id": row["account_id"],
+                    "score": score,
+                    "reasons": reasons,
+                    "origin": row["origin"],
+                })
+        matches.sort(key=lambda item: (-item["score"], item["account_id"].casefold()))
+        if not matches:
+            return {"status": "NOT_FOUND", "match": None, "candidates": []}
+        top_score = matches[0]["score"]
+        top = [item for item in matches if item["score"] == top_score]
+        unique_ids = {item["account_id"].casefold() for item in top}
+        if len(unique_ids) > 1:
+            return {"status": "AMBIGUOUS_MATCH", "match": None, "candidates": top}
+        return {"status": "MATCHED", "match": top[0], "candidates": matches}
+
     def _strong_identity_conflicts(
         self,
         candidate: dict[str, Any],
         *,
         requested_account_id: str = "",
+        entries: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
+        rows = self.entries() if entries is None else entries
         candidate_keys = self._keys(candidate)
         conflicts: list[dict[str, Any]] = []
-        for entry in self.entries():
+        for entry in rows:
             exact_requested = bool(
                 requested_account_id
                 and entry["account_id"].casefold() == requested_account_id.casefold()
@@ -163,14 +208,20 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 })
         return sorted(conflicts, key=lambda item: item["account_id"].casefold())
 
-    def _alias_collisions(self, candidate: dict[str, Any]) -> list[dict[str, Any]]:
+    def _alias_collisions(
+        self,
+        candidate: dict[str, Any],
+        *,
+        entries: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        rows = self.entries() if entries is None else entries
         candidate_keys = self._keys(candidate)
         candidate_primary = candidate_keys["names"]
         candidate_aliases = candidate_keys["aliases"] | candidate_keys["legal_aliases"]
         if not candidate_primary and not candidate_aliases:
             return []
         collisions: list[dict[str, Any]] = []
-        for row in self.entries():
+        for row in rows:
             row_keys = self._keys(row["account"])
             if not self._country_compatible(candidate_keys, row_keys):
                 continue
@@ -191,20 +242,24 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 })
         return sorted(collisions, key=lambda item: item["account_id"].casefold())
 
-    def _name_country_review_collisions(self, candidate: dict[str, Any]) -> list[dict[str, Any]]:
+    def _name_country_review_collisions(
+        self,
+        candidate: dict[str, Any],
+        *,
+        entries: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         """Same legal name with a missing country is insufficient for auto-merge/create."""
+        rows = self.entries() if entries is None else entries
         candidate_keys = self._keys(candidate)
         if not candidate_keys["names"]:
             return []
         collisions: list[dict[str, Any]] = []
-        for row in self.entries():
+        for row in rows:
             row_keys = self._keys(row["account"])
             if not (candidate_keys["names"] & row_keys["names"]):
                 continue
             if self._country_overlap(candidate_keys, row_keys):
                 continue
-            # Explicitly different countries are a useful disambiguator and do
-            # not block creating a separate legal entity with the same name.
             if candidate_keys["countries"] and row_keys["countries"]:
                 continue
             collisions.append({
@@ -227,10 +282,15 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             **extra,
         }
 
-    def _resolve_unrequested(self, candidate: dict[str, Any]) -> dict[str, Any]:
+    def _resolve_unrequested(
+        self,
+        candidate: dict[str, Any],
+        *,
+        entries: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         candidate_keys = self._keys(candidate)
         if not self._has_primary_identity(candidate_keys):
-            collisions = self._alias_collisions(candidate)
+            collisions = self._alias_collisions(candidate, entries=entries)
             if collisions:
                 return self._ambiguous(
                     _ALIAS_REVIEW_REASON,
@@ -239,24 +299,24 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 )
             raise ValidationError("candidate requires a primary legal name, tax ID, address, or external ID")
 
-        strong_conflicts = self._strong_identity_conflicts(candidate)
+        strong_conflicts = self._strong_identity_conflicts(candidate, entries=entries)
         if strong_conflicts:
             return self._ambiguous(
                 _STRONG_ID_CONFLICT_REASON,
                 strong_conflicts,
                 resolution_requirement="RECONCILE_STRONG_IDENTITY_CONFLICT_BEFORE_CANONICAL_BIND",
             )
-        resolved = super().resolve(candidate, requested_account_id="")
+        resolved = self._scored_resolution(candidate_keys, entries)
         if resolved["status"] != "NOT_FOUND":
             return resolved
-        alias_collisions = self._alias_collisions(candidate)
+        alias_collisions = self._alias_collisions(candidate, entries=entries)
         if alias_collisions:
             return self._ambiguous(
                 _ALIAS_REVIEW_REASON,
                 alias_collisions,
                 resolution_requirement="SUPPLY_EXACT_CANONICAL_ACCOUNT_ID_AFTER_EVIDENCE_REVIEW",
             )
-        name_collisions = self._name_country_review_collisions(candidate)
+        name_collisions = self._name_country_review_collisions(candidate, entries=entries)
         if name_collisions:
             return self._ambiguous(
                 _NAME_COUNTRY_REVIEW_REASON,
@@ -265,16 +325,19 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             )
         return resolved
 
-    def resolve(self, candidate: dict[str, Any], *, requested_account_id: str = "") -> dict[str, Any]:
-        requested_account_id = requested_account_id.strip()
-        if requested_account_id and not ACCOUNT_ID_RE.fullmatch(requested_account_id):
-            raise ValidationError("requested_account_id: invalid")
+    def _resolve_with_entries(
+        self,
+        candidate: dict[str, Any],
+        *,
+        requested_account_id: str,
+        entries: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         if not requested_account_id:
-            return self._resolve_unrequested(candidate)
+            return self._resolve_unrequested(candidate, entries=entries)
 
         exact_rows = [
             row
-            for row in self.entries()
+            for row in entries
             if row["account_id"].casefold() == requested_account_id.casefold()
         ]
         if len(exact_rows) > 1:
@@ -291,6 +354,7 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             conflicts = self._strong_identity_conflicts(
                 candidate,
                 requested_account_id=requested_account_id,
+                entries=entries,
             )
             if conflicts:
                 return self._ambiguous(
@@ -330,7 +394,7 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 "exact_id_allocation_without_fuzzy_identity": True,
             }
 
-        other_identity = self._resolve_unrequested(candidate)
+        other_identity = self._resolve_unrequested(candidate, entries=entries)
         if other_identity["status"] != "NOT_FOUND":
             candidates = list(other_identity.get("candidates") or [])
             if other_identity.get("match"):
@@ -348,6 +412,74 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             "candidates": [],
             "requested_account_id": requested_account_id,
         }
+
+    @staticmethod
+    def _validate_requested_account_id(requested_account_id: str) -> str:
+        normalized = requested_account_id.strip()
+        if normalized and not ACCOUNT_ID_RE.fullmatch(normalized):
+            raise ValidationError("requested_account_id: invalid")
+        return normalized
+
+    def resolve(self, candidate: dict[str, Any], *, requested_account_id: str = "") -> dict[str, Any]:
+        requested_account_id = self._validate_requested_account_id(requested_account_id)
+        entries = self.entries()
+        return self._resolve_with_entries(
+            candidate,
+            requested_account_id=requested_account_id,
+            entries=entries,
+        )
+
+    def resolve_or_create(
+        self,
+        candidate: dict[str, Any],
+        *,
+        requested_account_id: str = "",
+        create_if_missing: bool = True,
+    ) -> dict[str, Any]:
+        requested_account_id = self._validate_requested_account_id(requested_account_id)
+        with exclusive_file_lock(self.root / "registry-write.lock"):
+            entries = self.entries()
+            resolved = self._resolve_with_entries(
+                candidate,
+                requested_account_id=requested_account_id,
+                entries=entries,
+            )
+            if resolved["status"] != "NOT_FOUND":
+                return resolved
+            if not create_if_missing:
+                return resolved
+
+            account_id = requested_account_id
+            if not account_id:
+                numbers = [
+                    int(match.group(1))
+                    for row in entries
+                    if (match := re.fullmatch(r"C(\d+)", row["account_id"], flags=re.I))
+                ]
+                account_id = f"C{max(numbers, default=0) + 1:03d}"
+            if any(row["account_id"].casefold() == account_id.casefold() for row in entries):
+                raise ValidationError("requested_account_id already belongs to another canonical account")
+
+            account = {**candidate, "account_id": account_id}
+            self.log.append("CANONICAL_ACCOUNT_CREATED", {
+                "account_id": account_id,
+                "account": account,
+                "identity_keys_sha256": digest({
+                    key: sorted(value)
+                    for key, value in self._keys(account).items()
+                }),
+                "created_at": iso_utc(),
+            })
+            return {
+                "status": "CREATED",
+                "match": {
+                    "account_id": account_id,
+                    "score": 100,
+                    "reasons": ["ATOMIC_ALLOCATION"],
+                    "origin": "CANONICAL_REGISTRY",
+                },
+                "candidates": [],
+            }
 
 
 class V61CanonicalIdentityHardeningMixin:
@@ -378,6 +510,8 @@ class V61CanonicalIdentityHardeningMixin:
             "tax_conflict_applies_to_external_id_candidates": True,
             "strong_id_country_conflict_policy": "AMBIGUOUS_FAIL_CLOSED",
             "country_conflict_applies_to": ["EXACT_ACCOUNT_ID", "TAX_ID", "EXTERNAL_ID"],
+            "one_verified_registry_snapshot_per_resolve_call": True,
+            "append_full_chain_verification_preserved": True,
             "automatic_match_authorities": [
                 "EXACT_ACCOUNT_ID",
                 "TAX_ID",
