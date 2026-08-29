@@ -9,54 +9,112 @@ Draft PR: `#1` — **do not merge yet**
 
 **V6.1 ARCHITECTURE / CRASH RECOVERY / BACKUP / NORMAL PERFORMANCE / EXACT LARGE-STATE GATES ARE STRUCTURALLY VALIDATED — PRODUCTION ACCEPTANCE REMAINS OPEN FOR PRIVATE GOLDEN AND LOCAL PACKAGING VALIDATION.**
 
-The runtime and production MCP adapter satisfy the implemented architecture, durability, idempotency, Decision Saturation, commercial-opportunity, portfolio, backup/recovery, Windows launcher, normal-performance and exact large-state regressions in independent GitHub CI. This document deliberately does **not** declare Production Ready because the specification requires real Golden-case regression, including the named Arecibo case, and the final installed plugin/skill package must also pass its local product validation. Those private/local artifacts are not stored in GitHub.
+The production branch has independently passing Ubuntu and Windows CI for the implemented architecture, mutation/WAL recovery, host-offline durability, Decision Saturation, commercial-opportunity factors, portfolio hardening, backup/recovery, Windows installed-layout launcher behavior, normal performance, strict large-state acceptance, and the read-only Private Golden runner boundary.
+
+This document deliberately does **not** declare Production Ready. The specification requires real regression against the user's durable production Golden cases, including the named Arecibo case, and the final locally installed plugin/skill package must also pass the official local product validation. Those private/local artifacts are not stored in GitHub.
 
 `main` remains unchanged. PR #1 remains Draft.
 
-## Current validated head and MCP entry
+## Current validated code head before this documentation refresh
 
-Validated code/runner head immediately before this documentation-only refresh:
+The latest code/test head immediately before this documentation-only refresh is:
 
 ```text
-203a54f61ddc1e1582ee4af98b73d675f40725e6
+b9de780608d1d9f4f716dd291c75fcce825dd145
 ```
 
-`.mcp.json` launches the hardened production entry:
+Standard GitHub Actions run:
+
+```text
+33226557138
+```
+
+Result:
+
+```text
+Ubuntu 24.04 / Python 3.11   PASS
+Windows Server 2025 / Python 3.11   PASS
+```
+
+Both jobs passed the unittest regression suite, 100-Evidence structural smoke acceptance, MCP compatibility self-test, MCP v6 protocol test, MCP v6.1 production-adapter protocol test, privacy scan, compatibility parser self-test, intelligence self-test, outreach self-test, strategic self-test and v3 compatibility self-test.
+
+The code changes immediately preceding that run are limited to the read-only Private Golden assertion surface and its tests:
+
+```text
+556591a5acd3118202efa768e5b814108c2b7b5c
+  Add semantic list assertions to Private Golden runner
+
+b9de780608d1d9f4f716dd291c75fcce825dd145
+  Test semantic Private Golden list assertions
+```
+
+No Runtime mutation semantics, production durable state, CRM data or `main` branch were changed by those commits.
+
+Because this file update is itself a new documentation-only commit, the exact final branch head must receive standard Windows + Linux CI before it is treated as the final acceptance head.
+
+## Production MCP entry
+
+`.mcp.json` launches:
 
 ```text
 mcp/server_v61_backup_recovery.py
 ```
 
-The Windows launcher selects a usable Python >= 3.10 runtime rather than assuming one fixed installation path, and its installed-layout cold-start behavior is covered by a real Windows regression.
+The Windows launcher dynamically selects a usable Python >= 3.10 runtime instead of assuming one fixed installation path. Installed-layout cold-start and Windows-specific path/liveness behavior are covered by regression.
 
-The Private Golden runner now also preserves production Runtime root semantics: when `--session-root` is omitted it constructs `UnifiedRuntime()` exactly as the production MCP entry does, so default/environment-driven session, canonical and pending-root derivation is not changed merely for acceptance execution. An explicit `--session-root` remains available only for intentionally explicit/custom Runtime layouts.
+## Private Golden runner boundary
 
-## Independent production-branch CI
-
-Standard workflow run:
+The Private Golden runner is:
 
 ```text
-GitHub Actions run 33225553252
+scripts/run_private_golden_acceptance.py
 ```
 
-| Environment | Result | unittest | MCP compatibility | MCP v6 protocol | MCP v6.1 adapter | Privacy |
-| --- | --- | ---: | ---: | ---: | ---: | --- |
-| Ubuntu 24.04 / Python 3.11 | PASS | 251 tests, 4 Windows-only skips | 58/58 | 30/30 | 16/16 | PASS |
-| Windows Server 2025 / Python 3.11 | PASS | 251/251 | 58/58 | 30/30 | 16/16 | PASS |
+It is restricted to an allow-list of read-only Runtime calls. It does not permit mutation, Resume/initialization, CRM writeback, outreach preparation, migration or account creation.
 
-The new Private Golden production-root regressions execute successfully on both platforms:
+When `--session-root` is omitted, it constructs `UnifiedRuntime()` with the same production-default/environment-driven root semantics as the production MCP process. An explicit `--session-root` remains available only for intentionally explicit/custom acceptance layouts.
 
-- `test_cli_session_root_is_optional_for_production_default`;
-- `test_default_runtime_builder_matches_production_root_semantics`.
+Selector resolution may identify an Investigation by account name, account ID and/or investigation scope, but only through the public `PRODUCTION + ACTIVE` portfolio view. It fails closed when:
 
-The Windows job also actually executes and passes the platform-specific regressions for:
+- zero Investigations match;
+- more than one Investigation matches;
+- the active portfolio exceeds the 1,000-row public auto-resolution limit;
+- a selected row is not a production/active row.
 
-- Windows 8.3 short-path alias protection in backup/recovery roots;
-- live/dead process liveness probing;
-- MCP launcher cold-start from an installed `%USERPROFILE%\plugins\customs-buyer-intelligence` layout;
-- dynamic selection of a Python >= 3.10 runtime.
+The runner's real-Runtime regression verifies that selector-based read-only execution does not mutate the Investigation session bytes.
 
-Both jobs also validate JSON manifests, agent YAML, compatibility parser, intelligence, outreach, strategic and v3 self-tests. The intelligence self-test intentionally contains an internal negative scenario named `empty_input_deep_dive_never_blank` whose case status is `failed`; the self-test's top-level status is `passed`. That negative fixture is not a CI failure.
+### Semantic assertion support
+
+The runner supports scalar/path assertions:
+
+```text
+eq
+ne
+truthy
+falsy
+contains
+not_contains
+in
+not_in
+grade_at_least
+number_at_least
+length_at_least
+```
+
+It also supports unordered semantic list assertions:
+
+```text
+list_item_subset
+no_list_item_subset
+```
+
+These recursively compare value-only subsets and allow private Golden manifests to express facts such as:
+
+- an unordered public `network.peers` list contains a named Peer with required semantic fields;
+- a forbidden role/fact is absent for a named party;
+- nested public Runtime objects contain the expected durable semantics without hard-coding list indexes or private Investigation IDs.
+
+The semantic assertion implementation is read-only and does not inspect repository-private customer files or bypass the Runtime public state boundary.
 
 ## Normal 100-Evidence performance gate
 
@@ -68,24 +126,11 @@ simple state query < 0.5 s
 Resume < 3 s
 ```
 
-Measurements from run `33225553252`:
+The previously recorded production-branch measurements remain passing on both Ubuntu and Windows. Later Private Golden assertion-only commits do not modify Runtime performance code.
 
-| Environment | 100-Evidence Bundle | State query | Resume | Result |
-| --- | ---: | ---: | ---: | --- |
-| Ubuntu | 0.023413 s | 0.062406 s | 0.192737 s | PASS |
-| Windows | 0.139005 s | 0.207893 s | 0.510455 s | PASS |
-
-Daily-backup mutation latency is recorded as a diagnostic only; it is **not** defined as a production SLO and is not substituted for the normal performance gates above.
+Daily-backup mutation latency is diagnostic only and is not substituted for the normal performance SLO gates.
 
 ## Exact v6.1 large-state acceptance — PASS with durable Canonical Account proof
-
-The full-load acceptance was independently audited and hardened. Merely requesting 5,000 Canonical Accounts is not sufficient for a pass. The acceptance runner requires all three of the following to equal the requested count:
-
-1. resolver results whose status is `CREATED`;
-2. durable `CANONICAL_ACCOUNT_CREATED` events persisted in the canonical registry;
-3. unique persisted Canonical Account IDs.
-
-A negative regression deliberately patches the resolver to claim `CREATED` without persistence and verifies that the full profile fails closed.
 
 Strict-count implementation commit:
 
@@ -96,10 +141,10 @@ Strict-count implementation commit:
 Exact full-load workflow:
 
 ```text
-GitHub Actions run 33221892250
+33221892250
 ```
 
-Observed counts:
+Required and observed counts:
 
 | Dimension | Required | Observed |
 | --- | ---: | ---: |
@@ -111,38 +156,15 @@ Observed counts:
 | persisted `CANONICAL_ACCOUNT_CREATED` events | 5,000 | 5,000 |
 | unique persisted Canonical Account IDs | 5,000 | 5,000 |
 
-Measured large-state timings:
+The full-load gate requires actual durable Canonical Account persistence, not merely resolver claims. A negative regression verifies that a resolver claiming `CREATED` without durable persistence cannot pass the strict profile.
 
-```text
-append 9,500 non-peer Evidence     10.854092 s
-create/persist 5,000 accounts     655.014034 s
-large-state load                    0.425034 s
-large public-state query            1.291995 s
-large Resume                       21.345263 s
-```
+A broader supplemental stress run also passed 100,000 Evidence, 100,000 Source Attempts, 20,000 Peers, 1,000 simultaneous/active Investigations and 5,000 Canonical Accounts. It is supplemental evidence and does not replace the strict 10k/1k/500/5k acceptance above.
 
-The specification treats the large envelope as a loadability/scalability target and does not apply the normal 100-Evidence timing thresholds to these full-load measurements. The current branch retains the strict persisted-count runner and its fail-closed regressions. Commits after `0e3836fd...` changed launcher configuration/tests, removed the temporary full-load workflow, hardened the Private Golden acceptance runner's production-root fidelity, and refreshed acceptance documentation; they did not weaken the full-load runner or Runtime large-state semantics.
+## Backup / recovery and mutation durability
 
-### Supplemental broader stress evidence
+The production entry uses hardened validated logical snapshot backup and append-only recovery.
 
-Dedicated stress run `33191266068` previously passed a larger synthetic envelope on scale-validation commit `9657dbede12b69c2838a5a282912d01644b303ea`:
-
-| Dimension | Observed |
-| --- | ---: |
-| Canonical Accounts | 5,000 |
-| simultaneous Investigations | 1,000 |
-| Evidence | 100,000 |
-| Source Attempts | 100,000 |
-| Peers | 20,000 |
-| active portfolio investigations | 1,000 |
-| superseded in acceptance portfolio | 0 |
-| quarantined in acceptance portfolio | 0 |
-
-This broader stress run is supplemental evidence only; it is **not** used as a substitute for the strict 10k Evidence / 1k Pivot / 500 Peer / 5k durably persisted Canonical Account acceptance above.
-
-## Backup and recovery — PASS on production branch
-
-The production entry automatically creates validated logical snapshots:
+Validated backup trigger classes include:
 
 ```text
 daily before the first production mutation
@@ -151,87 +173,60 @@ before CRM commit preparation
 before schema upgrade
 ```
 
-Recovery supports:
+Recovery properties covered by regression include:
 
-```text
-latest valid snapshot
-+ proven append-only live tail replay
-```
-
-Safety properties covered by regression include:
-
-- snapshot file inventory and SHA-256 validation;
+- snapshot inventory and SHA-256 validation;
 - valid-prefix capture when a live append-only chain has a corrupt tail;
-- corrupt or divergent live tails do not overwrite the snapshot state;
+- divergent/corrupt live tails do not overwrite snapshot authority;
 - restore is staged into a separate target and never overwrites the live root;
-- canonical, pending-journal and host-queue target roots are explicitly isolated from live environment aliases;
-- invalid pending/host sidecars prevent activation instead of being trusted;
-- Windows 8.3 short-path aliases cannot bypass protected-root overlap checks;
-- append-only replay occurs only when ancestry is mechanically provable;
-- the adapter WAL is not represented as a fake globally atomic snapshot; adapter reconciliation remains based on durable domain state.
+- canonical, pending-journal and host-queue roots remain isolated from protected live aliases;
+- invalid sidecars block activation instead of being trusted;
+- Windows 8.3 path aliases cannot bypass protected-root overlap checks;
+- append-only tail replay requires mechanically proven ancestry.
 
-The snapshot contract is intentionally described as **per-component serialized logical state**, not as one globally transactional nanosecond snapshot. Recovery authority comes from validated hash-chain ancestry.
+The production mutation adapter maintains a complete guarded mutation inventory. Exact automatic reconciliation is permitted only where durable proof can reconstruct the original result. Ambiguous/no-event/legacy-snapshotless cases fail closed instead of guessing or replaying a mutation.
 
-## Mutation, crash and offline durability — PASS structurally
+The validated mutation families include account/start/objective/information/bundle/provider planning/receipts/peer lifecycle/pivot/closure/outreach/migration/batch sync/host queue and pending journal paths.
 
-Production mutation APIs require idempotency on the hardened public adapter and persist request/result lineage. The WAL/reconciliation inventory has explicit regression for every guarded production mutation family. Where exact recovery is mechanically provable, the original result is reconstructed without duplicate mutation; where proof is absent, recovery remains fail-closed rather than guessing.
+## v6.1 semantic gates — structurally validated
 
-Covered families include account/start/objective/information/bundle/provider planning/receipts/peer lifecycle/pivot/closure/outreach/migration/batch sync/host queue and pending journal paths.
+The source-level architecture now covers the principal historical bug classes:
 
-Additional verified behavior:
-
-- MCP process/session kill does not make the durable Investigation unrecoverable;
-- legacy Resume is byte-for-byte read-only;
-- host research bundle persistence survives MCP process death and replays exactly once after restart;
-- concurrent identical mutations cannot steal another idempotency correlation;
-- stale writer/version conflicts remain rejected;
-- unknown/unproven PREPARED mutations remain fail-closed.
-
-## v6 semantic gates — PASS structurally
-
-The prior architecture blockers are no longer open code gaps:
-
-- canonical seven-state Pivot view is exposed and only `OPEN_MATERIAL` blocks Decision Saturation;
-- `BLOCKED` Pivot is terminal and does not masquerade as an open material research path;
-- current Decision Chain support requires evidence-bound current association/role/procurement relevance rather than a bare company association;
+- only canonical `OPEN_MATERIAL` Pivots block Decision Saturation;
+- `BLOCKED` / terminal Pivots do not masquerade as open material work;
+- Decision Chain authority requires evidence-bound current association, sufficiently current role and role/procurement relevance rather than bare company association;
 - Commercial Value is independent of CRM/contact readiness;
-- ten Commercial Opportunity factors are exposed with Evidence lineage; unknown factors remain unknown rather than fabricated negatives;
-- one active Investigation per canonical account + scope is enforced in the production portfolio view;
-- synthetic/placeholder sessions are excluded from the production portfolio;
-- Canonical Route View binds safe append-only Information Records and compiled route Evidence without promoting masked/guessed/cross-owner routes;
-- Peer promotion remains staged; contact coverage is not a prerequisite for Anchor Eligibility;
-- Research Objective Planner is Claim/EIV-driven rather than a fixed website checklist;
-- Evidence Compiler supports bundle processing and source-type normalization;
+- Commercial Opportunity factors retain Evidence lineage and unknown factors remain unknown instead of fabricated negatives;
+- production portfolio lifecycle filtering enforces one active Investigation per canonical account + scope and excludes synthetic/placeholder sessions by default;
+- Canonical Route View joins safe append-only Information Records and compiled route Evidence without promoting masked/guessed/cross-owner routes;
+- Peer Anchor Eligibility does not require contact coverage;
+- Planner output is Claim/EIV-driven instead of a fixed source checklist;
 - batch ingestion supports partial success and idempotent replay;
-- Claim Closure + Decision Saturation terminates when material unresolved work is actually exhausted.
+- full account state exposes identity, brand, product, trade, supplier, buying-group, contact, route, claim, conflict, network/peer, material-pivot and next-objective views.
+
+These structural regressions do **not** substitute for the named real Golden cases.
 
 ## P0 acceptance matrix
 
-The specification states that all P0 criteria must be satisfied before Production Ready. The current distinction is between **structurally/chaos verified** and **private real-case verified**.
-
 | Criterion | Current status | Evidence boundary |
 | --- | --- | --- |
-| AC-P0-01 — session kill then `resume_investigation` succeeds | PASS | process-kill/resume and read-only Resume regressions |
-| AC-P0-02 — Runtime offline, Host can durable-queue Research Bundle | PASS | MCP-death host persistence + restart exactly-once replay regression |
-| AC-P0-03 — Arecibo can become Anchor Eligible from trade/entity/product Evidence without Zalo/Instagram completion | **PENDING PRIVATE GOLDEN** | generic semantic regression passes, but the specification explicitly names the real Arecibo case |
-| AC-P0-04 — Commercial Grade unaffected by CRM Sync | PASS | commercial-dimension and A+/CRM-independent regressions |
-| AC-P0-05 — Notify Party does not enter Buyer Decision Chain | PASS structurally | party-role/current-authority boundaries; Edwin Seda remains a private Golden assertion |
-| AC-P0-06 — Brand transition does not auto-merge canonical entities | PASS structurally | canonical/non-merge regressions; Arecibo Home Center vs Home Design remains a private Golden assertion |
-| AC-P0-07 — Planner returns Objectives, not checklist calls | PASS | Claim/EIV objective planner regressions |
-| AC-P0-08 — Evidence Compiler handles `source_type` | PASS | compiler/protocol/bundle regressions |
+| AC-P0-01 — session kill then Resume succeeds | PASS | process-kill/resume and durable last-safe-state regressions |
+| AC-P0-02 — Runtime offline, Host durable-queues Research Bundle | PASS structurally | local/process-independent host queue + exactly-once restart replay; remote tunnel availability is a separate transport boundary |
+| AC-P0-03 — real Arecibo can become Anchor Eligible without Zalo/Instagram completion | **PENDING PRIVATE GOLDEN** | generic semantic regression passes; the specification explicitly names the real Arecibo case |
+| AC-P0-04 — Commercial Grade unaffected by CRM Sync | PASS | independent commercial-dimension regressions |
+| AC-P0-05 — Notify Party does not become Buyer Decision Maker | PASS structurally | party-role/current-authority boundaries; Edwin Seda remains a private Golden assertion |
+| AC-P0-06 — Brand relationship does not auto-merge canonical entities | PASS structurally | canonical/non-merge regressions; Arecibo entities remain a private Golden assertion |
+| AC-P0-07 — Planner returns Objectives, not checklist calls | PASS | Claim/EIV planner regressions |
+| AC-P0-08 — Evidence Compiler handles source-type normalization | PASS | compiler/protocol/bundle regressions |
 | AC-P0-09 — Batch ingestion supports partial success | PASS | partial-success/idempotent bundle regressions |
-| AC-P0-10 — Claim Closure + Decision Saturation can terminate | PASS | saturation/closure regressions, including race/freshness invalidation |
+| AC-P0-10 — Claim Closure + Decision Saturation can terminate | PASS | saturation/closure regressions including race/freshness invalidation |
 
-Because AC-P0-03 is an explicitly named real-case criterion, **Production Ready remains blocked until the private Golden run passes.**
+## BLOCKER 1 — Real private Golden suite
 
-## Remaining production acceptance blockers
-
-### BLOCKER 1 — Real private Golden suite on the current hardened runtime
-
-The repository intentionally contains only synthetic Golden metadata. The required private read-only regression must cover at least:
+The real read-only regression must run against the user's durable production state on the exact final branch head and cover at least:
 
 ```text
-Western Woods
+Western Woods / C001
 Arecibo Home Center
 Arecibo Home Design
 Chimelis Home Center
@@ -241,62 +236,40 @@ Edwin Seda
 Hangzhou Promise
 ```
 
-The local runner is:
-
-```text
-scripts/run_private_golden_acceptance.py
-```
-
-It accepts only an allow-list of read-only Runtime calls and rejects mutation, Resume/initialization, CRM writeback, outreach preparation, migration and account creation. Selector resolution is limited to a unique `PRODUCTION + ACTIVE` Investigation. Zero matches, multiple matches, or a truncated active portfolio fail closed rather than guessing. The runner's real-runtime regression verifies byte-for-byte read-only behavior.
-
-By default the runner must be executed **without** `--session-root`. That makes it instantiate `UnifiedRuntime()` exactly like the production MCP entry and therefore preserves any production `CBI_SESSION_ROOT`, `CBI_CANONICAL_ROOT`, `CBI_PENDING_ROOT`, or platform-default root semantics. Supply `--session-root` only when intentionally validating an explicitly custom Runtime layout rather than the production-default process environment.
-
-Private manifests/results are protected by `.gitignore` patterns:
-
-```text
-.cbi-private-golden*.json
-private-golden/
-private-acceptance/
-```
-
-No private Golden manifest or result may be committed to GitHub.
-
-Minimum semantic assertions include:
+Minimum specification-level expectations include:
 
 - Western Woods Commercial Value >= A;
-- Arecibo Home Center and Arecibo Home Design remain distinct canonical entities;
-- Arecibo Anchor Eligibility is not blocked merely by incomplete Zalo/Instagram/contact coverage when trade/entity/product Evidence is sufficient;
-- Tesoro en Maderas II reaches the expected A+ / Anchor-Eligible semantics before Full Audit when the durable Evidence supports them;
-- Edwin Seda is not promoted into buyer Decision Chain without current decision-authority Evidence and remains appropriately classified as intermediary/broker where that is what the Evidence supports;
-- the remaining named Golden cases preserve identity/product/trade/network boundaries without fabricated certainty.
+- Arecibo Home Center, Arecibo Home Design and Chimelis Home Center do not become an unsupported direct legal merge;
+- the real Arecibo Peer can reach Anchor Eligible when trade/entity/product/relationship evidence is sufficient, without Zalo/Instagram/source-checklist completion being a prerequisite;
+- Tesoro en Maderas II reaches A+ and Anchor-Eligible semantics when its durable Evidence supports those facts, even before Full Audit;
+- Edwin Seda is not promoted into Buyer Decision Chain without current decision-authority proof and remains classified as intermediary/broker when that is what the Evidence supports;
+- the remaining named cases preserve evidence-bound identity, product, trade, supplier and network semantics without fabricated certainty.
 
-### BLOCKER 2 — Local plugin/skill packaging validation evidence
+Historical live findings are **regression targets**, not current facts. They must be re-measured on the exact final production head rather than assumed to remain broken or assumed fixed from synthetic CI.
 
-GitHub CI validates repository JSON/YAML, runtime protocols, privacy, Windows installed-layout cold-start, and self-tests. The final locally installed plugin/skill package still needs the official local product validator/installation validation to be executed against the exact checked-out head and its result recorded. This is intentionally separate from GitHub runtime tests because it depends on the local product installation environment.
+Private manifests/results are gitignored and must not be committed.
 
-Do not invent a validator command in this document; use the currently installed product's documented validator interface when executing this gate.
-
-## Private Golden command contract
-
-From the repository root, after syncing the exact production branch, the production-default read-only runner contract is:
+Production-default command:
 
 ```text
-python scripts/run_private_golden_acceptance.py \
-  --manifest ".cbi-private-golden.json" \
-  --output "private-acceptance/private-golden-result.json"
+python scripts/run_private_golden_acceptance.py --manifest ".cbi-private-golden.json" --output "private-acceptance/private-golden-result.json"
 ```
 
-On PowerShell the same arguments can be supplied on one line. If the production process intentionally uses `CBI_SESSION_ROOT` or related root environment variables, run the command from the same environment and still omit `--session-root`; `UnifiedRuntime()` will honor those production environment variables. Use the explicit `--session-root "<EXPLICIT_SESSION_ROOT>"` override only for an intentionally explicit/custom acceptance layout.
-
-The manifest root is `{"cases": [...]}`. Each case requires a unique `case_id`, a read-only `tool`, an `arguments` object and one or more assertions. Supported assertion operators are `eq`, `ne`, `truthy`, `falsy`, `contains`, `not_contains`, `in`, `not_in`, `grade_at_least`, `number_at_least`, and `length_at_least`.
+Run this from the same production environment and omit `--session-root` so the Runtime honors the production default or `CBI_SESSION_ROOT` / `CBI_CANONICAL_ROOT` / `CBI_PENDING_ROOT` environment configuration. Use an explicit `--session-root` only for an intentionally custom acceptance layout.
 
 The runner exits `0` only when every private case passes.
 
+## BLOCKER 2 — Official local installed plugin/skill validation
+
+GitHub CI validates repository manifests, agent YAML, Runtime protocols, privacy, Windows installed-layout cold-start and repository self-tests. The exact locally installed plugin/skill package still requires the official local product validator / installation validation against the exact final checkout.
+
+No official local package-validator execution interface is exposed through this repository or the current plugin-management connector. Do **not** invent a validator command; use the locally installed product's documented validation interface and record the result without committing private customer data.
+
 ## Merge gate
 
-PR #1 must remain Draft and **must not be merged into `main`** until both remaining blockers are closed:
+PR #1 must remain Draft and **must not be merged into `main`** until both local blockers are closed:
 
-1. the real private Golden suite passes against the user's durable production state on the current hardened runtime;
-2. the exact locally installed plugin/skill package passes the official local product validator/installation validation.
+1. the real private Golden suite passes against the user's durable production state on the exact final head;
+2. the exact locally installed plugin/skill package passes the official local product validation.
 
-After those two local gates, if acceptance evidence/documentation changes the branch head, rerun the standard Windows + Linux CI on that final acceptance head, record the local Golden/validator evidence without committing private customer data, and only then consider changing the PR out of Draft or declaring Production Ready.
+After those gates are closed, rerun standard Windows + Linux CI on the exact final acceptance head if any acceptance evidence/documentation changed the branch, record the local evidence without committing private customer data, and only then consider changing the PR out of Draft or declaring Production Ready.
