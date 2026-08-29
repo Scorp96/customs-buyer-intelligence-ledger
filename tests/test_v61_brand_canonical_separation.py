@@ -156,15 +156,21 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
         self.assertEqual(created["status"], "CREATED")
         self.assertEqual(unrelated["status"], "NOT_FOUND")
 
-    def test_same_name_missing_country_fails_closed_instead_of_merging_or_creating_duplicate(self) -> None:
-        existing = self.runtime.resolve_or_create_account({
+    def test_same_name_legacy_missing_country_fails_closed_instead_of_merging_or_creating_duplicate(self) -> None:
+        self.runtime.canonical_registry.log.append("CANONICAL_ACCOUNT_CREATED", {
+            "account_id": "C-LEGACY-NO-COUNTRY",
+            "account": {
+                "account_id": "C-LEGACY-NO-COUNTRY",
+                "name": "Global Name Synthetic LLC",
+            },
+            "identity_keys_sha256": "0" * 64,
+            "created_at": "2026-08-28T00:00:00Z",
+        })
+        unresolved = self.runtime.resolve_or_create_account({
             "candidate": {
                 "name": "Global Name Synthetic LLC",
                 "country": "United States",
             },
-        })
-        unresolved = self.runtime.resolve_or_create_account({
-            "candidate": {"name": "Global Name Synthetic LLC"},
         })
         self.assertEqual(unresolved["status"], "AMBIGUOUS_MATCH")
         self.assertIsNone(unresolved["match"])
@@ -172,7 +178,7 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
             unresolved["ambiguity_reason"],
             "PRIMARY_LEGAL_NAME_REQUIRES_COUNTRY_OR_STRONG_ID",
         )
-        self.assertEqual(unresolved["candidates"][0]["account_id"], existing["match"]["account_id"])
+        self.assertEqual(unresolved["candidates"][0]["account_id"], "C-LEGACY-NO-COUNTRY")
         self.assertEqual(len(self.runtime.canonical_registry.entries()), 1)
 
     def test_same_name_explicit_different_country_can_remain_separate(self) -> None:
