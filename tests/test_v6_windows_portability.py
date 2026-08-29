@@ -30,6 +30,15 @@ class V6WindowsPortabilityTests(unittest.TestCase):
     def test_mcp_launcher_cold_starts_from_installed_userprofile_layout(self) -> None:
         config = json.loads((PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))
         server = config["mcpServers"]["buyer-outreach-actions"]
+        requests = [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18"},
+            },
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        ]
         with tempfile.TemporaryDirectory(prefix="cbi-v6-mcp-launcher-") as temp:
             base = Path(temp)
             profile = base / "profile"
@@ -43,43 +52,26 @@ class V6WindowsPortabilityTests(unittest.TestCase):
             environment["USERPROFILE"] = str(profile)
             environment["CBI_SESSION_ROOT"] = str(base / "会话 数据")
             environment["PYTHONDONTWRITEBYTECODE"] = "1"
-            process = subprocess.Popen(
+            completed = subprocess.run(
                 [server["command"], *server["args"]],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                input="".join(json.dumps(row) + "\n" for row in requests),
                 text=True,
                 encoding="utf-8",
+                capture_output=True,
                 env=environment,
+                check=False,
+                timeout=30,
             )
-            try:
-                assert process.stdin is not None and process.stdout is not None
-                process.stdin.write(json.dumps({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "initialize",
-                    "params": {"protocolVersion": "2025-06-18"},
-                }) + "\n")
-                process.stdin.flush()
-                response = json.loads(process.stdout.readline().lstrip("\ufeff"))
-                self.assertEqual(response["result"]["serverInfo"]["version"], "6.1.0")
-                process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n")
-                process.stdin.flush()
-                tools = json.loads(process.stdout.readline().lstrip("\ufeff"))["result"]["tools"]
-                self.assertEqual(len(tools), 42)
-            finally:
-                if process.stdin:
-                    process.stdin.close()
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
-                if process.stdout:
-                    process.stdout.close()
-                if process.stderr:
-                    process.stderr.close()
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        responses = [
+            json.loads(line.lstrip("\ufeff"))
+            for line in completed.stdout.splitlines()
+            if line.lstrip("\ufeff").startswith("{")
+        ]
+        by_id = {row.get("id"): row for row in responses}
+        self.assertEqual(by_id[1]["result"]["serverInfo"]["version"], "6.1.0")
+        self.assertEqual(len(by_id[2]["result"]["tools"]), 42)
 
     def test_cold_copy_runs_from_utf8_chinese_and_space_path(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cbi-v6-portable-") as temp:
