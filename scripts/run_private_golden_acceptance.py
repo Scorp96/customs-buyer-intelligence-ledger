@@ -68,6 +68,14 @@ GRADE_RANK = {
     "A+": 8,
 }
 
+PEER_STAGE_RANK = {
+    "DISCOVERED": 0,
+    "QUALIFIED": 1,
+    "ANCHOR_ELIGIBLE": 2,
+    "PROMOTED_ANCHOR": 3,
+    "FULLY_AUDITED": 4,
+}
+
 
 def get_path(value: Any, path: str) -> Any:
     current = value
@@ -95,13 +103,7 @@ def _contains(observed: Any, expected: Any) -> bool:
 
 
 def _is_subset(expected: Any, observed: Any) -> bool:
-    """Return True when ``expected`` is recursively contained in ``observed``.
-
-    This is intentionally value-only and read-only. It lets Private Golden
-    manifests assert semantic facts in unordered public Runtime arrays (for
-    example a named Peer with ``stage=ANCHOR_ELIGIBLE``) without depending on
-    brittle list indexes or exposing private Investigation identifiers.
-    """
+    """Return True when ``expected`` is recursively contained in ``observed``."""
     if isinstance(expected, dict):
         return isinstance(observed, dict) and all(
             key in observed and _is_subset(value, observed[key])
@@ -113,6 +115,33 @@ def _is_subset(expected: Any, observed: Any) -> bool:
             for item in expected
         )
     return expected == observed
+
+
+def _peer_stage_at_least(observed: Any, expected: Any) -> bool:
+    """Match one public Peer by semantic subset and require a minimum stage.
+
+    Expected shape::
+
+        {
+          "match": {"name": "Arecibo Home Center, Inc."},
+          "minimum_stage": "ANCHOR_ELIGIBLE"
+        }
+
+    A later valid stage (PROMOTED_ANCHOR/FULLY_AUDITED) also passes.
+    """
+    if not isinstance(observed, list) or not isinstance(expected, dict):
+        return False
+    match = expected.get("match")
+    minimum = str(expected.get("minimum_stage") or "").upper().strip()
+    if not isinstance(match, dict) or minimum not in PEER_STAGE_RANK:
+        return False
+    for candidate in observed:
+        if not isinstance(candidate, dict) or not _is_subset(match, candidate):
+            continue
+        stage = str(candidate.get("stage") or "").upper().strip()
+        if stage in PEER_STAGE_RANK and PEER_STAGE_RANK[stage] >= PEER_STAGE_RANK[minimum]:
+            return True
+    return False
 
 
 def assert_rule(
@@ -138,6 +167,10 @@ def assert_rule(
         passed = isinstance(expected, (list, tuple, set)) and observed in expected
     elif op == "not_in":
         passed = isinstance(expected, (list, tuple, set)) and observed not in expected
+    elif op == "subset":
+        passed = _is_subset(expected, observed)
+    elif op == "not_subset":
+        passed = not _is_subset(expected, observed)
     elif op == "list_item_subset":
         passed = isinstance(observed, list) and any(
             _is_subset(expected, candidate) for candidate in observed
@@ -146,6 +179,8 @@ def assert_rule(
         passed = isinstance(observed, list) and not any(
             _is_subset(expected, candidate) for candidate in observed
         )
+    elif op == "peer_stage_at_least":
+        passed = _peer_stage_at_least(observed, expected)
     elif op == "grade_at_least":
         passed = (
             str(observed) in GRADE_RANK
