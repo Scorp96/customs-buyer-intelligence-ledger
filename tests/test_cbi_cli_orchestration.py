@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -9,6 +10,7 @@ import unittest
 from pathlib import Path
 
 from unified_runtime import UnifiedRuntime
+from unified_runtime.resilience import canonical_json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,10 +90,7 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertTrue(payload["host_execution_required"])
         self.assertEqual(payload["buyer"], "Synthetic Import Buyer LLC")
         self.assertTrue(payload["raw_input_preserved"])
-        self.assertEqual(
-            payload["raw_customs_record"]["opaque_source_field"],
-            "Synthetic Marker",
-        )
+        self.assertEqual(payload["raw_customs_record"], self.input_record)
         self.assertEqual(
             payload["normalized_customs_record"]["bill_type"],
             "House Bill",
@@ -113,10 +112,7 @@ class CbiCliOrchestrationTests(unittest.TestCase):
             payload["raw_flattened_field_count"],
             payload["normalized_field_count"],
         )
-        self.assertEqual(
-            payload["raw_customs_record"]["opaque_source_field"],
-            "Synthetic Marker",
-        )
+        self.assertEqual(payload["raw_customs_record"], self.input_record)
         self.assertEqual(
             payload["normalized_customs_record"]["update_date"],
             "20260818",
@@ -164,30 +160,42 @@ class CbiCliOrchestrationTests(unittest.TestCase):
             for row in state["observations"].values()
             if row["claim_key"] == "trade.import_activity"
         )
+
+        # The Evidence Compiler intentionally canonicalizes source proof: full
+        # source.raw_content is not retained there.  Instead it keeps a content
+        # hash / excerpt contract, while the complete raw customs object remains
+        # durable in the observation value below.
+        self.assertFalse(trade_observation["source"]["raw_content_retained"])
+        self.assertNotIn("raw_content", trade_observation["source"])
+
+        durable_customs = trade_observation["value"]["customs_record"]
+        self.assertEqual(durable_customs["raw_input"], self.input_record)
         self.assertEqual(
-            trade_observation["source"]["raw_content"]["raw_input"][
-                "opaque_source_field"
-            ],
+            durable_customs["raw_input"]["opaque_source_field"],
             "Synthetic Marker",
         )
         self.assertEqual(
-            trade_observation["source"]["raw_content"]["normalized"][
-                "bill_type"
-            ],
+            durable_customs["normalized"]["bill_type"],
             "House Bill",
         )
         self.assertEqual(
-            trade_observation["value"]["customs_record"]["raw_input"][
-                "opaque_source_field"
-            ],
-            "Synthetic Marker",
-        )
-        self.assertEqual(
-            trade_observation["value"]["customs_record"]["normalized"][
-                "update_date"
-            ],
+            durable_customs["normalized"]["update_date"],
             "20260818",
         )
+
+        expected_source_proof = {
+            "schema": "cbi.customs-source-preserved.v1",
+            "raw_input": durable_customs["raw_input"],
+            "normalized": durable_customs["normalized"],
+        }
+        expected_source_hash = hashlib.sha256(
+            canonical_json(expected_source_proof).encode("utf-8")
+        ).hexdigest()
+        self.assertEqual(
+            trade_observation["source"]["content_sha256"],
+            expected_source_hash,
+        )
+
         claims = runtime.get_claims({"investigation_id": investigation_id})[
             "claims"
         ]
