@@ -472,6 +472,294 @@
       },
       "updated_at": "2026-08-04T06:15:38+00:00"
     },
+    "buyer_9b5f8075565a3b6812eb": {
+      "buyer_key": "buyer_9b5f8075565a3b6812eb",
+      "contacts": {
+        "customerservice@regal-plastics.com": {
+          "email": "customerservice@regal-plastics.com",
+          "employment_status": "not_applicable",
+          "entity": "Regal Plastic Supply Company Inc.",
+          "first_seen": "2026-08-29T07:49:56+00:00",
+          "last_checked": "2026-08-29T08:05:00+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "not_procurement",
+          "recommended_use": "Use only for referral if the primary office/website route cannot identify purchasing; ask to be directed to VP Purchasing or purchasing/inventory team.",
+          "risk_note": "Customer-service mailbox, not a procurement route; current third-party directory only.",
+          "route_class": "ALTERNATIVE_REFERRAL",
+          "source_ids": [
+            "regal_e12_general_email_cs"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "directory_current"
+        },
+        "info@regal-plastics.com": {
+          "email": "info@regal-plastics.com",
+          "employment_status": "not_applicable",
+          "entity": "Regal Plastic Supply Company Inc.",
+          "first_seen": "2026-08-29T07:49:56+00:00",
+          "last_checked": "2026-08-29T08:05:00+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "unverified",
+          "recommended_use": "Verify with the Irving office or official website form and ask for Nicholas Gross / the person responsible for PVC sheet sourcing and vendor evaluation before product outreach.",
+          "risk_note": "General information mailbox from a current third-party directory, not verified in readable text on the official site and not a demonstrated purchasing inbox.",
+          "route_class": "FORMAL_GENERAL",
+          "source_ids": [
+            "regal_e11_general_email_info"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "directory_current"
+        },
+        "kjamieson@regal-plastics.com": {
+          "email": "kjamieson@regal-plastics.com",
+          "employment_status": "unknown",
+          "entity": "Regal Plastic Supply Company Inc. / Houston operation",
+          "first_seen": "2026-08-29T07:49:56+00:00",
+          "last_checked": "2026-08-29T08:05:00+00:00",
+          "person_name": "Kevin Jemieson",
+          "privacy_class": "public_business",
+          "procurement_authority_status": "not_procurement",
+          "recommended_use": "Do not use as the primary product pitch recipient; at most ask for a purchasing referral if direct Irving routes fail.",
+          "risk_note": "Published by Gallina USA as a distributor representative; this is a sales/representative route at Houston, not the Irving purchasing team.",
+          "route_class": "ALTERNATIVE_REFERRAL",
+          "source_ids": [
+            "regal_e13_external_current_email"
+          ],
+          "title_as_sourced": "Representative - Regal Plastics/Cover Your Pergola Houston",
+          "verification_status": "directory_current"
+        }
+      },
+      "created_at": "2026-08-29T07:49:56+00:00",
+      "evidence": {
+        "regal_e10_leadership": {
+          "boundary": "Leadership identity does not imply direct purchasing authority for the target product.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "Dun & Bradstreet currently identifies Chad Gono as a key principal of Regal Plastic Supply Company Inc.; current professional org-chart sources also list Chad Gono as CEO and Patsy Gono as President.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B2",
+          "evidence_id": "regal_e10_leadership",
+          "source_date": null,
+          "source_reference": "D&B Regal Plastic Supply Company Inc profile",
+          "source_type": "professional_source",
+          "source_url": "https://www.dnb.com/business-directory/company-profiles.regal_plastic_supply_company_inc.ed415b9da40d6b096cb2ff021df7f591.html"
+        },
+        "regal_e11_general_email_info": {
+          "boundary": "Not independently published in readable text on the official website during this run; therefore this is directory_current, not official_current, and is not a confirmed procurement mailbox.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "A current third-party customer-service directory lists info@regal-plastics.com as Regal Plastic Supply Company Inc.'s general information email.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "C1",
+          "evidence_id": "regal_e11_general_email_info",
+          "source_date": null,
+          "source_reference": "PissedConsumer Regal Plastic Supply Company Inc contact page",
+          "source_type": "third_party_directory",
+          "source_url": "https://www.pissedconsumer.com/company/regal-plastic-supply-company-inc/customer-service.html"
+        },
+        "regal_e12_general_email_cs": {
+          "boundary": "Not independently published in readable text on the official website during this run; it is a customer-service route, not a demonstrated purchasing route.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "A current third-party customer-service directory lists customerservice@regal-plastics.com as Regal Plastic Supply Company Inc.'s customer-service email.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "C1",
+          "evidence_id": "regal_e12_general_email_cs",
+          "source_date": null,
+          "source_reference": "PissedConsumer Regal Plastic Supply Company Inc contact page",
+          "source_type": "third_party_directory",
+          "source_url": "https://www.pissedconsumer.com/company/regal-plastic-supply-company-inc/customer-service.html"
+        },
+        "regal_e13_external_current_email": {
+          "boundary": "This email belongs to a Houston sales/distributor representative and is not a procurement route for the Irving EX-Cel shipment; it is not recommended for direct purchasing outreach.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "Gallina USA's current distributor page lists Regal Plastics/Cover Your Pergola Houston representative Kevin Jemieson with kjamieson@regal-plastics.com, demonstrating active use of the regal-plastics.com business email domain.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B2",
+          "evidence_id": "regal_e13_external_current_email",
+          "source_date": null,
+          "source_reference": "Gallina USA distributor page",
+          "source_type": "professional_source",
+          "source_url": "https://gallinausa.com/resources/distributors/"
+        },
+        "regal_e1_fmcsa": {
+          "boundary": "FMCSA verifies carrier identity/address but not shareholder ownership, state incorporation standing, or procurement authority.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "FMCSA identifies REGAL PLASTIC SUPPLY COMPANY INC as the legal name, USDOT 4249072, active carrier, at 9200 N Royal Ln Ste 120, Irving, TX 75063.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A1",
+          "evidence_id": "regal_e1_fmcsa",
+          "source_date": "2026-08-05",
+          "source_reference": "FMCSA SAFER Company Snapshot, USDOT 4249072",
+          "source_type": "government_registry",
+          "source_url": "https://safer.fmcsa.dot.gov/query.asp?original_query_param=NAME&original_query_string=REGAL+PLASTIC+SUPPLY+COMPANY+INC&query_param=USDOT&query_string=4249072&query_type=queryCarrierSnapshot&searchtype=ANY"
+        },
+        "regal_e2_official": {
+          "boundary": "The website establishes current business/location/product scope but does not identify the EX-Cel purchasing decision-maker or purchase volume.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "Regal Plastics' current official website lists the Dallas/Fort Worth location at 9200 N Royal Ln., Suite 120, Irving, TX 75063, phone 972-484-0741, and describes the company as a wholesale plastic sheet supplier with custom fabrication services.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "regal_e2_official",
+          "source_date": null,
+          "source_reference": "Regal Plastics official website",
+          "source_type": "official_domain",
+          "source_url": "https://www.regal-plastics.com/"
+        },
+        "regal_e3_linkedin": {
+          "boundary": "LinkedIn company profile supports business scope but not specific procurement authority or shipment frequency.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "Regal Plastic Supply Company Inc.'s current LinkedIn profile describes a privately held plastics company headquartered in Irving, TX, founded in 1971, specializing in distribution of plastic sheet, rod and tube, custom fabrication, building/construction and visual display solutions.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "regal_e3_linkedin",
+          "source_date": null,
+          "source_reference": "Regal Plastic Supply Company Inc. LinkedIn",
+          "source_type": "official_social",
+          "source_url": "https://www.linkedin.com/company/regal-plastic-supply-company-inc-"
+        },
+        "regal_e4_expanded_pvc": {
+          "boundary": "This proves expanded foam PVC is within Regal's marketed material set, but does not identify brand, thickness, density, supplier, or exact current inventory.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "Regal Plastics' current official site explicitly directs customers looking for outdoor temporary signage/display material to expanded foam PVC and states it supplies wholesale sheet materials and fabrication services.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A2",
+          "evidence_id": "regal_e4_expanded_pvc",
+          "source_date": null,
+          "source_reference": "Regal Plastics foam products page",
+          "source_type": "official_domain",
+          "source_url": "https://www.regal-plastics.com/foam/"
+        },
+        "regal_e5_user_trade": {
+          "boundary": "This proves only the supplied manifest fields; it does not state sheet count, dimensions, thickness, density, invoice value, purchase-order date, unit price, or procurement contact.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "User supplied a 2026-08-15 House Bill record, master HLCUBO12605BTKF5 / house AMJALLPAOL023733, Jain Irrigation Systems Ltd to Regal Plastic Supply-TX at 9200 N Royal Ln Suite 120, Irving TX, 20 PKG, 16,380 kg, commodity 'HS CODE-39211200 EX-CEL PVC FREE FOAM SHEETS', container HLXU8487129, with Jain Americas Inc as notify party.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "regal_e5_user_trade",
+          "source_date": "2026-08-15",
+          "source_reference": "Current-run user customs record dated 2026-08-15",
+          "source_type": "user_input",
+          "source_url": null
+        },
+        "regal_e6_public_trade": {
+          "boundary": "Provider data confirms the bill but does not establish annual purchase frequency or that Jain is Regal's exclusive/primary PVC foam sheet supplier.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "ImportInfo independently corroborates the Aug. 15, 2026 shipment HLCUBO12605BTKF5 / AMJALLPAOL023733: Jain Irrigation Systems Ltd -> REGAL PLASTIC SUPPLY-TX, 20 PKG, 16,380 kg, EX-CEL PVC FREE FOAM SHEETS, Houston arrival, Jain Americas Inc as notify party.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "regal_e6_public_trade",
+          "source_date": "2026-08-15",
+          "source_reference": "ImportInfo Jain Irrigation Systems Ltd profile",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/jain-irrigation-systems-ltd"
+        },
+        "regal_e7_origin_semantics": {
+          "boundary": "This routing inference does not independently establish formal customs country-of-origin; manufacturer address and shipment origin fields need to be distinguished.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "The current record's Place of Receipt is NHAVA SHEVA while the visible foreign port is Tangier, Morocco; therefore Morocco is a routing/transshipment port in the manifest and should not be treated solely from that field as the manufacturing origin of Jain's sheets.",
+          "claim_class": "INFERENCE",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "regal_e7_origin_semantics",
+          "source_date": null,
+          "source_reference": "ImportInfo bill routing plus user-supplied Place of Receipt",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/jain-irrigation-systems-ltd"
+        },
+        "regal_e8_vp_purchasing": {
+          "boundary": "Third-party professional sources are not official employment verification; they do not prove Nicholas Gross personally owns the EX-Cel/PVC foam sheet category, and no complete current business email was publicly exposed.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "Multiple current professional-directory sources identify Nicholas Gross at Regal Plastic Supply Company Inc. as VP of Purchasing, based in the Dallas-Fort Worth area.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B2",
+          "evidence_id": "regal_e8_vp_purchasing",
+          "source_date": null,
+          "source_reference": "The Org / Wiza current Nicholas Gross profiles",
+          "source_type": "professional_source",
+          "source_url": "https://theorg.com/org/regal-plastics/org-chart/nicholas-gross"
+        },
+        "regal_e9_purchasing_inventory": {
+          "boundary": "Role/currentness is third-party sourced and does not establish category authority for PVC foam board or expose a complete current business email.",
+          "checked_at": "2026-08-29T08:05:00+00:00",
+          "claim": "Current professional-directory evidence lists D'Aunn Owens as Purchasing/Inventory Manager at Regal Plastic Supply Company Inc.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B2",
+          "evidence_id": "regal_e9_purchasing_inventory",
+          "source_date": null,
+          "source_reference": "The Org Regal Plastics project management/operations team",
+          "source_type": "professional_source",
+          "source_url": "https://theorg.com/org/regal-plastics/teams/project-management-and-operations"
+        }
+      },
+      "history_events": [],
+      "identity": {
+        "address": "9200 N Royal Ln Ste 120, Irving, TX 75063",
+        "aliases": [
+          "Regal Plastic Supply-TX",
+          "Regal Plastics",
+          "Regal Plastic Supply Co.",
+          "Regal Plastic Supply Company Inc."
+        ],
+        "business_type": "Wholesale plastic sheet distributor and custom plastic fabricator serving sign, manufacturing and building/construction markets; current official site operates multiple U.S. locations and the Irving address is its Dallas/Fort Worth location.",
+        "country": "United States",
+        "customs_name": "Regal Plastic Supply-Tx",
+        "legal_name": "Regal Plastic Supply Company Inc.",
+        "source_ids": [
+          "regal_e1_fmcsa",
+          "regal_e2_official",
+          "regal_e3_linkedin"
+        ]
+      },
+      "runs": [
+        {
+          "declared_previous_email_count": 0,
+          "declared_previous_trade_count": 0,
+          "input_hash": "d9a5f12d55fb84dbe7a2f891",
+          "investigated_at": "2026-08-29T08:05:00+00:00",
+          "prior_ledger_date": null,
+          "prior_ledger_name": null,
+          "run_id": "regal-20260829-080500z"
+        }
+      ],
+      "trade_records": {
+        "record:regalamjallpaol023733": {
+          "buyer": "Regal Plastic Supply-Tx",
+          "data_level": "bill",
+          "date": "2026-08-15",
+          "date_semantics": "Arrival date 2026-08-15 as displayed by ImportInfo; user estimated arrival was 2026-08-01 and run date 2026-08-17. Arrival date is not purchase-order, invoice or manufacturing date.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:49:56+00:00",
+          "house_bill": "AMJALLPAOL023733",
+          "item_number": null,
+          "last_seen": "2026-08-29T07:49:56+00:00",
+          "master_bill": "HLCUBO12605BTKF5",
+          "normalized_product": "EX-Cel rigid/cellular PVC free-foam sheets; exact dimensions, thickness and density unknown",
+          "product_raw": "HS CODE-39211200EX-CEL PVC FREE FOAM SHEETS",
+          "provider": "User-supplied customs record corroborated by ImportInfo",
+          "quantity": 20.0,
+          "record_id": "regal-AMJALLPAOL023733",
+          "source_ids": [
+            "regal_e5_user_trade",
+            "regal_e6_public_trade"
+          ],
+          "supplier_or_exporter": "Jain Irrigation Systems Ltd",
+          "uom": "PKG",
+          "weight_kg": 16380.0
+        }
+      },
+      "updated_at": "2026-08-29T07:49:56+00:00"
+    },
     "buyer_a88f249cc1e4616a1084": {
       "buyer_key": "buyer_a88f249cc1e4616a1084",
       "contacts": {
@@ -945,5 +1233,5 @@
     }
   },
   "schema_version": "2.1",
-  "updated_at": "2026-08-29T07:44:36+00:00"
+  "updated_at": "2026-08-29T07:49:56+00:00"
 }
