@@ -150,6 +150,7 @@ class ProductionMcpClient:
 
 
 CUSTOMS_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "data_source": ("data_source", "source_dataset", "数据源"),
     "date": ("date", "shipment_date", "日期"),
     "master_bill": ("master_bill", "mbl", "主单号"),
     "house_bill": ("house_bill", "hbl", "分单号"),
@@ -165,21 +166,32 @@ CUSTOMS_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "logistics_shipper": ("logistics_shipper", "物流发货人"),
     "logistics_consignee": ("logistics_consignee", "物流收货人"),
     "origin": ("origin", "origin_country", "原产地"),
-    "origin_port": ("origin_port", "port_of_loading", "place_of_receipt", "起运港"),
+    "origin_port": ("origin_port", "port_of_loading", "起运港"),
+    "place_of_receipt": ("place_of_receipt", "Place Of Receipt"),
     "destination": ("destination", "destination_country", "目的地"),
     "destination_port": ("destination_port", "port_of_discharge", "目的港"),
     "carrier": ("carrier", "承运人"),
     "vessel": ("vessel", "vessel_name", "船名"),
+    "vessel_country": ("vessel_country", "Vessel Country"),
     "transport_mode": ("transport_mode", "运输方式"),
     "container": ("container", "container_number", "集装箱"),
+    "containers": ("containers", "Containers"),
     "voyage_number": ("voyage_number", "Voyage Number"),
     "notify": ("notify", "Notify"),
+    "notify_address": ("notify_address", "notify_addr", "Notify_addr"),
     "secondary_notify": ("secondary_notify", "Secondary Notify"),
     "estimated_arrival_date": (
         "estimated_arrival_date",
         "eta",
         "Estimated Arrival Date",
     ),
+    "update_date": ("update_date", "Update Date"),
+    "run_date": ("run_date", "Run Date"),
+    "hidden": ("hidden", "Hidden"),
+    "bill_type": ("bill_type", "Bill Type"),
+    "manifest_number": ("manifest_number", "Manifest Number"),
+    "record_status": ("record_status", "Record Status"),
+    "conveyance": ("conveyance", "Conveyance"),
 }
 
 
@@ -252,11 +264,27 @@ def _flatten_customs_payload(value: dict[str, Any]) -> dict[str, Any]:
     return flattened
 
 
+def _normalized_customs_view(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in record.items()
+        if not key.startswith("_")
+    }
+
+
+def _raw_customs_input(record: dict[str, Any]) -> dict[str, Any]:
+    raw = record.get("_raw_input")
+    if not isinstance(raw, dict):
+        raise ValueError("normalized customs record is missing preserved raw input")
+    return raw
+
+
 def normalize_customs_record(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("customs input must be one JSON object")
 
-    flattened = _flatten_customs_payload(value)
+    raw_input = json.loads(canonical_json(value))
+    flattened = _flatten_customs_payload(raw_input)
     normalized: dict[str, Any] = {}
     for canonical, aliases in CUSTOMS_FIELD_ALIASES.items():
         found = _first_present(flattened, aliases)
@@ -304,8 +332,13 @@ def normalize_customs_record(value: Any) -> dict[str, Any]:
 
     normalized["_input_schema"] = "cbi.customs-input.v1"
     normalized["_input_sha256"] = hashlib.sha256(
-        canonical_json(value).encode("utf-8")
+        canonical_json(raw_input).encode("utf-8")
     ).hexdigest()
+    normalized["_raw_input"] = raw_input
+    normalized["_raw_flattened_field_count"] = len(flattened)
+    normalized["_normalized_field_count"] = len(
+        [key for key in normalized if not key.startswith("_")]
+    )
     return normalized
 
 
@@ -365,21 +398,22 @@ def customs_observations(
 ) -> list[dict[str, Any]]:
     input_hash = str(record["_input_sha256"])
     locator = f"user-input://customs-record/{input_hash}"
+    raw_input = _raw_customs_input(record)
+    normalized_view = _normalized_customs_view(record)
     source = {
         "source_family": "user_customs_record",
         "source_type": "USER_INPUT",
         "reference_type": "USER_INPUT",
         "url": "",
         "locator": locator,
-        "raw_content": record,
+        "raw_content": {
+            "schema": "cbi.customs-source-preserved.v1",
+            "raw_input": raw_input,
+            "normalized": normalized_view,
+        },
         "authority_level": "D1_USER_SUPPLIED_UNVERIFIED",
         "freshness": _customs_freshness(record),
         "observed_at": _shipment_observed_at(record),
-    }
-    shipment_value = {
-        key: value
-        for key, value in record.items()
-        if not key.startswith("_")
     }
     observations = [
         {
@@ -388,7 +422,10 @@ def customs_observations(
             "owner_type": "ACCOUNT",
             "owner_id": account_id,
             "value": {
-                "customs_record": shipment_value,
+                "customs_record": {
+                    "normalized": normalized_view,
+                    "raw_input": raw_input,
+                },
                 "verification_status": "USER_SUPPLIED_UNVERIFIED",
             },
             "source": dict(source),
@@ -413,6 +450,7 @@ def customs_observations(
                     "declared_supplier": record["supplier"],
                     "master_bill": record.get("master_bill"),
                     "house_bill": record.get("house_bill"),
+                    "customs_input_sha256": input_hash,
                     "verification_status": "USER_SUPPLIED_UNVERIFIED",
                 },
                 "source": dict(source),
@@ -428,15 +466,18 @@ def customs_observations(
 
 
 def host_lookup_request(record: dict[str, Any]) -> dict[str, Any]:
+    normalized_view = _normalized_customs_view(record)
+    raw_input = _raw_customs_input(record)
     return {
         "schema": "cbi.cli-host-handoff.v1",
         "mode": "ANSWER_FIRST",
         "runtime_persistence_requested": False,
         "buyer": record["buyer"],
         "country": record["buyer_country"],
-        "customs_record": {
-            key: value for key, value in record.items() if not key.startswith("_")
-        },
+        "customs_record": normalized_view,
+        "normalized_customs_record": normalized_view,
+        "raw_customs_record": raw_input,
+        "raw_input_preserved": True,
         "host_execution_required": True,
         "reason": (
             "The Git-controlled CLI has no public web/browser/registry/maps "
@@ -463,13 +504,19 @@ def audit_preview(record: dict[str, Any]) -> dict[str, Any]:
         "runtime_mutation_performed": False,
         "candidate": candidate_from_customs(record),
         "customs_input_sha256": record["_input_sha256"],
+        "raw_input_preserved": True,
+        "raw_flattened_field_count": record["_raw_flattened_field_count"],
+        "normalized_field_count": record["_normalized_field_count"],
+        "normalized_customs_record": _normalized_customs_view(record),
+        "raw_customs_record": _raw_customs_input(record),
         "proposed_initial_claims": [
             row["claim_key"]
             for row in customs_observations(record, account_id="PREVIEW-ACCOUNT")
         ],
         "boundary": (
-            "Preview validates and normalizes input only. No canonical account, "
-            "Investigation, Evidence, Pivot, Peer, CRM or outreach state is written."
+            "Preview validates and normalizes input while preserving the exact "
+            "raw JSON object. No canonical account, Investigation, Evidence, "
+            "Pivot, Peer, CRM or outreach state is written."
         ),
         "next_command": "repeat with --commit to bootstrap the durable FULL_AUDIT",
     }
@@ -486,6 +533,8 @@ def bootstrap_audit(
     candidate = candidate_from_customs(record)
     input_hash = str(record["_input_sha256"])
     candidate_hash = digest(candidate)
+    normalized_view = _normalized_customs_view(record)
+    raw_input = _raw_customs_input(record)
 
     with ProductionMcpClient(session_root) as client:
         resolution = client.tool(
@@ -516,11 +565,10 @@ def bootstrap_audit(
             "input": {
                 "schema": "cbi.cli-customs-audit-start.v1",
                 "customs_input_sha256": input_hash,
-                "customs_record": {
-                    key: value
-                    for key, value in record.items()
-                    if not key.startswith("_")
-                },
+                "customs_record": normalized_view,
+                "normalized_customs_record": normalized_view,
+                "raw_customs_record": raw_input,
+                "raw_input_preserved": True,
             },
             "mode": "EXHAUSTIVE",
             "history": {"events": []},
@@ -592,6 +640,9 @@ def bootstrap_audit(
         "investigation_resumed_existing": start.get("resumed_existing") is True,
         "research_priority_grade": priority_grade,
         "customs_input_sha256": input_hash,
+        "raw_input_preserved": True,
+        "raw_flattened_field_count": record["_raw_flattened_field_count"],
+        "normalized_field_count": record["_normalized_field_count"],
         "customs_bundle_id": bundle_id,
         "customs_evidence_compilation": compiled,
         "initial_commercial_value": commercial,
@@ -603,14 +654,15 @@ def bootstrap_audit(
         "host_instruction": (
             f"Use $investigate-customs-buyers to resume Investigation "
             f"{investigation_id} in FULL_AUDIT mode. The Git-controlled CLI "
-            "has already persisted only the user-supplied customs input as D1 "
-            "evidence through the v6.1 production WAL adapter. Execute the "
-            "EIV-ranked next research objectives with real public "
-            "web/browser/registry/maps sources; compile real host results into "
-            "Evidence; run all six network branches for every Anchor; preserve "
-            "conflicts; and continue until Decision Saturation or a truthful "
-            "PAUSED_RESOURCE_LIMIT. Do not treat the input shipment as proof "
-            "of Ultimate Buyer, repeat demand or product specifications."
+            "has already persisted the complete raw user-supplied customs JSON "
+            "plus its normalized view as D1 evidence through the v6.1 "
+            "production WAL adapter. Execute the EIV-ranked next research "
+            "objectives with real public web/browser/registry/maps sources; "
+            "compile real host results into Evidence; run all six network "
+            "branches for every Anchor; preserve conflicts; and continue until "
+            "Decision Saturation or a truthful PAUSED_RESOURCE_LIMIT. Do not "
+            "treat the input shipment as proof of Ultimate Buyer, repeat demand "
+            "or product specifications."
         ),
         "crm_writeback_performed": False,
         "outreach_send_performed": False,
