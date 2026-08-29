@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from unified_runtime import UnifiedRuntime
 
@@ -95,6 +96,68 @@ class V61PortfolioHardeningTests(unittest.TestCase):
             first["investigation_id"],
         )
 
+    def test_case_variant_account_ids_share_one_active_portfolio_identity(self) -> None:
+        first_id = "INV-20260829T010000Z-aaaaaaaaaaaa"
+        second_id = "INV-20260829T010001Z-bbbbbbbbbbbb"
+        for investigation_id in (first_id, second_id):
+            (self.runtime.store.root / f"{investigation_id}.jsonl").touch()
+
+        rows = {
+            first_id: {
+                "investigation_id": first_id,
+                "account_id": "pending_target_account",
+                "account_name": "Pending buyer target",
+                "investigation_scope": "DEFAULT",
+                "canonical_scope_key": "pending_target_account::DEFAULT",
+                "environment": "PRODUCTION",
+                "lifecycle": "ACTIVE",
+                "commercial_value_grade": "NQ",
+                "research_confidence": "D",
+                "decision_saturation": "NOT_SATURATED",
+                "next_eiv": 0.0,
+                "budget": {},
+                "observation_count": 0,
+                "peer_count": 0,
+                "event_count": 1,
+                "last_safe_seq": 1,
+                "last_safe_event_hash": "a" * 64,
+            },
+            second_id: {
+                "investigation_id": second_id,
+                "account_id": "PENDING_TARGET_ACCOUNT",
+                "account_name": "Pending target buyer",
+                "investigation_scope": "default",
+                "canonical_scope_key": "PENDING_TARGET_ACCOUNT::default",
+                "environment": "PRODUCTION",
+                "lifecycle": "ACTIVE",
+                "commercial_value_grade": "NQ",
+                "research_confidence": "D",
+                "decision_saturation": "NOT_SATURATED",
+                "next_eiv": 0.0,
+                "budget": {},
+                "observation_count": 0,
+                "peer_count": 0,
+                "event_count": 2,
+                "last_safe_seq": 2,
+                "last_safe_event_hash": "b" * 64,
+            },
+        }
+
+        with mock.patch.object(self.runtime, "_portfolio_row", side_effect=lambda inv: rows[inv]):
+            queue = self.runtime.get_portfolio_queue({"limit": 100})
+
+        self.assertEqual(queue["count"], 1)
+        self.assertEqual(queue["active_count"], 1)
+        self.assertEqual(queue["superseded_count"], 1)
+        self.assertEqual(queue["queue"][0]["investigation_id"], second_id)
+        self.assertEqual(len(queue["canonical_duplicate_groups"]), 1)
+        duplicate_ids = next(iter(queue["canonical_duplicate_groups"].values()))
+        self.assertEqual(set(duplicate_ids), {first_id, second_id})
+        self.assertEqual(
+            queue["policy"]["identity_grouping"],
+            "CASE_INSENSITIVE_ACCOUNT_ID_AND_SCOPE",
+        )
+
     def test_synthetic_and_placeholder_sessions_are_excluded_by_default(self) -> None:
         production = self.start(
             "C-PORTFOLIO-PROD",
@@ -112,10 +175,15 @@ class V61PortfolioHardeningTests(unittest.TestCase):
             "pending_user_input",
             "Unknown",
         )
+        pending_target = self.start(
+            "PENDING_TARGET_ACCOUNT",
+            "Pending target buyer",
+            "Unknown",
+        )
 
         queue = self.runtime.get_portfolio_queue({"limit": 100})
         self.assertEqual([row["investigation_id"] for row in queue["queue"]], [production["investigation_id"]])
-        self.assertEqual(queue["excluded_non_production_count"], 2)
+        self.assertEqual(queue["excluded_non_production_count"], 3)
 
         expanded = self.runtime.get_portfolio_queue({
             "limit": 100,
@@ -127,6 +195,8 @@ class V61PortfolioHardeningTests(unittest.TestCase):
         self.assertEqual(rows[test_session["investigation_id"]]["lifecycle"], "TEST")
         self.assertEqual(rows[placeholder["investigation_id"]]["environment"], "PLACEHOLDER")
         self.assertEqual(rows[placeholder["investigation_id"]]["lifecycle"], "PLACEHOLDER")
+        self.assertEqual(rows[pending_target["investigation_id"]]["environment"], "PLACEHOLDER")
+        self.assertEqual(rows[pending_target["investigation_id"]]["lifecycle"], "PLACEHOLDER")
 
 
 if __name__ == "__main__":

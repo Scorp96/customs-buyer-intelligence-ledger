@@ -1,6 +1,6 @@
 {
   "name": "customs-buyer-intelligence",
-  "version": "6.1.0+codex.20260829115000",
+  "version": "6.1.0+codex.20260829145500",
   "description": "Answer-first public buyer research plus a v6.1 claim-driven Runtime with evidence-bound monotonic Peers, exactly-once batch compilation, EIV Decision Saturation, crash-safe durability, verified migration, safe CRM writeback and guarded draft-only actions.",
   "author": {
     "name": "Xinghuai Sales Intelligence"

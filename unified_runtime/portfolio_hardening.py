@@ -25,6 +25,7 @@ PORTFOLIO_ENVIRONMENTS = ("PRODUCTION", "TEST", "MIGRATION", "PLACEHOLDER")
 
 _EXPLICIT_NON_PRODUCTION_MARKERS = {
     "plugin_runtime_check_only",
+    "pending_target_account",
     "pending_user_input",
     "pending_user_target",
 }
@@ -52,8 +53,8 @@ class V61PortfolioHardeningMixin:
         if raw_input.get("synthetic") is True or str(account.get("country") or "").casefold() == "synthetic":
             return "TEST"
         marker_values = {
-            str(account.get("account_id") or "").casefold(),
-            str(account.get("name") or "").casefold(),
+            str(account.get("account_id") or "").strip().casefold(),
+            str(account.get("name") or "").strip().casefold(),
         }
         if marker_values & _EXPLICIT_NON_PRODUCTION_MARKERS:
             return "PLACEHOLDER"
@@ -91,6 +92,13 @@ class V61PortfolioHardeningMixin:
             int(row.get("event_count") or 0),
             str(row.get("investigation_id") or ""),
         )
+
+    @staticmethod
+    def _portfolio_group_key(row: dict[str, Any]) -> str:
+        """Return the case-insensitive identity key used only for ACTIVE dedup."""
+        account_id = str(row.get("account_id") or "").strip().casefold()
+        scope = str(row.get("investigation_scope") or "DEFAULT").strip().casefold() or "default"
+        return f"{account_id}::{scope}"
 
     def _portfolio_row(self, investigation_id: str) -> dict[str, Any]:
         state = self._v6_state(investigation_id)
@@ -153,16 +161,17 @@ class V61PortfolioHardeningMixin:
         ]
         groups: dict[str, list[dict[str, Any]]] = {}
         for row in active_candidates:
-            groups.setdefault(row["canonical_scope_key"], []).append(row)
+            groups.setdefault(self._portfolio_group_key(row), []).append(row)
 
         active_ids: set[str] = set()
         superseded_by: dict[str, str] = {}
         duplicate_groups: dict[str, list[str]] = {}
-        for scope_key, rows in groups.items():
+        for rows in groups.values():
             winner = max(rows, key=self._maturity_rank)
             active_ids.add(winner["investigation_id"])
             if len(rows) > 1:
-                duplicate_groups[scope_key] = [row["investigation_id"] for row in rows]
+                public_scope_key = str(winner.get("canonical_scope_key") or self._portfolio_group_key(winner))
+                duplicate_groups[public_scope_key] = [row["investigation_id"] for row in rows]
             for row in rows:
                 if row["investigation_id"] != winner["investigation_id"]:
                     superseded_by[row["investigation_id"]] = winner["investigation_id"]
@@ -215,6 +224,7 @@ class V61PortfolioHardeningMixin:
             "queue": queue,
             "policy": {
                 "one_active_investigation_per_canonical_account_and_scope": True,
+                "identity_grouping": "CASE_INSENSITIVE_ACCOUNT_ID_AND_SCOPE",
                 "historical_sessions_deleted": False,
                 "test_and_placeholder_sessions_excluded_by_default": True,
                 "winner_selection": "SATURATION_THEN_OBSERVATION_PEER_EVENT_MATURITY",
