@@ -40,6 +40,9 @@ class CbiCliOrchestrationTests(unittest.TestCase):
             "destination": "United States",
             "destination_port": "Synthetic US Port",
             "container": "SYNTH0000001",
+            "Bill Type": "House Bill",
+            "Update Date": "20260818",
+            "opaque_source_field": "Synthetic Marker",
         }
         self.input_path.write_text(
             json.dumps(self.input_record, ensure_ascii=False, indent=2) + "\n",
@@ -84,6 +87,19 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertFalse(payload["runtime_persistence_requested"])
         self.assertTrue(payload["host_execution_required"])
         self.assertEqual(payload["buyer"], "Synthetic Import Buyer LLC")
+        self.assertTrue(payload["raw_input_preserved"])
+        self.assertEqual(
+            payload["raw_customs_record"]["opaque_source_field"],
+            "Synthetic Marker",
+        )
+        self.assertEqual(
+            payload["normalized_customs_record"]["bill_type"],
+            "House Bill",
+        )
+        self.assertNotIn(
+            "opaque_source_field",
+            payload["normalized_customs_record"],
+        )
         self.assertFalse(self.session_root.exists())
 
     def test_audit_preview_is_read_only(self) -> None:
@@ -92,6 +108,19 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertEqual(payload["schema"], "cbi.cli-audit-preview.v1")
         self.assertEqual(payload["status"], "PREVIEW")
         self.assertFalse(payload["runtime_mutation_performed"])
+        self.assertTrue(payload["raw_input_preserved"])
+        self.assertGreater(
+            payload["raw_flattened_field_count"],
+            payload["normalized_field_count"],
+        )
+        self.assertEqual(
+            payload["raw_customs_record"]["opaque_source_field"],
+            "Synthetic Marker",
+        )
+        self.assertEqual(
+            payload["normalized_customs_record"]["update_date"],
+            "20260818",
+        )
         self.assertEqual(
             payload["proposed_initial_claims"],
             ["trade.import_activity", "relationship.supply_chain"],
@@ -110,6 +139,7 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertEqual(first["status"], "AUDIT_BOOTSTRAPPED")
         self.assertEqual(first["mutation_path"], "V6_1_PRODUCTION_MCP_WAL")
         self.assertTrue(first["runtime_mutation_performed"])
+        self.assertTrue(first["raw_input_preserved"])
         self.assertFalse(first["decision_saturation"]["decision_saturated"])
         self.assertFalse(first["crm_writeback_performed"])
         self.assertFalse(first["outreach_send_performed"])
@@ -128,6 +158,35 @@ class CbiCliOrchestrationTests(unittest.TestCase):
                 == "D1_USER_SUPPLIED_UNVERIFIED"
                 for row in state["observations"].values()
             )
+        )
+        trade_observation = next(
+            row
+            for row in state["observations"].values()
+            if row["claim_key"] == "trade.import_activity"
+        )
+        self.assertEqual(
+            trade_observation["source"]["raw_content"]["raw_input"][
+                "opaque_source_field"
+            ],
+            "Synthetic Marker",
+        )
+        self.assertEqual(
+            trade_observation["source"]["raw_content"]["normalized"][
+                "bill_type"
+            ],
+            "House Bill",
+        )
+        self.assertEqual(
+            trade_observation["value"]["customs_record"]["raw_input"][
+                "opaque_source_field"
+            ],
+            "Synthetic Marker",
+        )
+        self.assertEqual(
+            trade_observation["value"]["customs_record"]["normalized"][
+                "update_date"
+            ],
+            "20260818",
         )
         claims = runtime.get_claims({"investigation_id": investigation_id})[
             "claims"
@@ -161,6 +220,7 @@ class CbiCliOrchestrationTests(unittest.TestCase):
             "house_bill": "SYNTH-HBL-002",
             "buyer": "Synthetic Import Buyer Two LLC",
             "buyer_address": "200 Synthetic Buyer Avenue",
+            "opaque_source_field": "Synthetic Marker Two",
         }
         batch_path.write_text(
             json.dumps([self.input_record, second], ensure_ascii=False, indent=2)
@@ -172,6 +232,13 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertEqual(payload["status"], "PREVIEW")
         self.assertEqual(payload["record_count"], 2)
         self.assertFalse(payload["runtime_mutation_performed"])
+        self.assertTrue(
+            all(row["raw_input_preserved"] for row in payload["records"])
+        )
+        self.assertEqual(
+            payload["records"][1]["raw_customs_record"]["opaque_source_field"],
+            "Synthetic Marker Two",
+        )
         self.assertFalse(self.session_root.exists())
 
     def test_invalid_input_fails_closed_before_runtime_write(self) -> None:
