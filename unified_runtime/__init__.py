@@ -68,6 +68,14 @@ from .canonical_identity_hardening import (
     EvidenceBoundCanonicalRegistry,
     V61CanonicalIdentityHardeningMixin,
 )
+from .country_identity_hardening import (
+    COUNTRY_RELATION_CONFLICT,
+    COUNTRY_RELATION_MISSING,
+    COUNTRY_RELATION_SAME,
+    COUNTRY_RELATION_UNRESOLVED,
+    CountryAwareCanonicalRegistry,
+    V61CountryIdentityHardeningMixin,
+)
 
 RUNTIME_VERSION = V6_RUNTIME_VERSION
 BUILD_ID = V6_BUILD_ID
@@ -76,7 +84,7 @@ FRESHNESS_LEVELS = V61_FRESHNESS_LEVELS
 
 
 class UnifiedRuntime(
-    V61CanonicalIdentityHardeningMixin,
+    V61CountryIdentityHardeningMixin,
     V61BrandHardeningMixin,
     V61PortfolioHardeningMixin,
     V61OutreachHardeningMixin,
@@ -138,4 +146,10 @@ __all__ = [
     "V61BrandHardeningMixin",
     "EvidenceBoundCanonicalRegistry",
     "V61CanonicalIdentityHardeningMixin",
+    "CountryAwareCanonicalRegistry",
+    "V61CountryIdentityHardeningMixin",
+    "COUNTRY_RELATION_SAME",
+    "COUNTRY_RELATION_CONFLICT",
+    "COUNTRY_RELATION_MISSING",
+    "COUNTRY_RELATION_UNRESOLVED",
 ]
