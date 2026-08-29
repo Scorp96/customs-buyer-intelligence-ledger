@@ -28,6 +28,8 @@ The new commands are intentionally fail-closed:
   mutation WAL/idempotency and automatic backup guards remain in force.
 - a committed audit initially persists only the user-provided customs record as
   `D1_USER_SUPPLIED_UNVERIFIED` Evidence.
+- the complete raw input object is retained alongside the canonical normalized
+  view; unknown or currently unclassified source fields are not discarded.
 - the initial customs row never proves Ultimate Buyer, repeat demand, annual
   volume, product specifications, warehouse/channel capability, decision
   authority or final Commercial Value.
@@ -57,6 +59,7 @@ Therefore a committed CLI audit performs the durable bootstrap:
 customs JSON
   -> canonical account resolution
   -> start/reuse EXHAUSTIVE Investigation
+  -> preserve raw JSON + normalize known fields
   -> compile D1 user customs Evidence
   -> calculate initial state
   -> emit EIV-ranked next objectives
@@ -88,7 +91,9 @@ Minimal example (synthetic):
   "quantity": "16 PKG",
   "weight_kg": 23820,
   "teu": 2,
-  "destination": "United States"
+  "destination": "United States",
+  "Bill Type": "House Bill",
+  "opaque_source_field": "Synthetic Marker"
 }
 ```
 
@@ -99,6 +104,48 @@ matches a supported United States spelling.
 Do not store real customer/customs input files in this public repository. Keep
 production inputs outside the repository or in a local ignored/private path.
 
+## Raw-input retention and canonical normalization
+
+Information retention comes before classification. The CLI therefore maintains
+two simultaneous views of every accepted customs object:
+
+```text
+raw_customs_record
+normalized_customs_record
+```
+
+The raw view preserves the complete decoded JSON object, including fields that
+the current normalizer does not yet understand. The normalized view maps known
+labels to stable canonical keys for identity resolution, Evidence claims and
+later automation.
+
+Examples of normalized metadata include, where present:
+
+```text
+data_source
+update_date
+run_date
+vessel_country
+hidden
+bill_type
+manifest_number
+record_status
+conveyance
+place_of_receipt
+notify_address
+```
+
+Unknown fields remain in `raw_customs_record` even when they have no canonical
+mapping. The original input SHA-256 is computed from the complete raw object.
+
+For committed audits, both views are preserved in the Investigation start input
+and in the initial D1 customs Evidence source/value. This prevents normalization
+from silently deleting future-useful data while still allowing stable canonical
+queries.
+
+Raw preservation does **not** increase authority. Both views remain
+user-supplied, unverified input until independently verified.
+
 ## `lookup`: ANSWER_FIRST Host handoff
 
 ```powershell
@@ -108,8 +155,10 @@ python scripts/cbi.py lookup C:\PrivateInputs\buyer.json
 This command:
 
 - validates and normalizes the customs record;
-- computes a stable input SHA-256;
-- emits a `cbi.cli-host-handoff.v1` JSON request;
+- preserves the complete raw JSON object;
+- computes a stable input SHA-256 from that raw object;
+- emits a `cbi.cli-host-handoff.v1` JSON request containing both raw and
+  normalized customs views;
 - tells the Host to run `$investigate-customs-buyers` in `ANSWER_FIRST` mode;
 - performs no Runtime mutation.
 
@@ -132,8 +181,8 @@ or:
 python scripts/cbi.py audit C:\PrivateInputs\buyer.json
 ```
 
-The preview validates/normalizes the record and shows the initial claims that
-would be compiled. It writes nothing.
+The preview validates/normalizes the record, preserves and shows the raw object,
+and shows the initial claims that would be compiled. It writes nothing.
 
 ## `audit-file --commit`: durable FULL_AUDIT bootstrap
 
@@ -164,6 +213,9 @@ investigation_id
 account_resolution
 investigation_start
 customs_input_sha256
+raw_input_preserved
+raw_flattened_field_count
+normalized_field_count
 customs_evidence_compilation
 initial_commercial_value
 initial_research_confidence
@@ -195,6 +247,10 @@ reference_type = USER_INPUT
 authority_level = D1_USER_SUPPLIED_UNVERIFIED
 ```
 
+The Evidence source `raw_content` retains both the complete raw input and its
+normalized view. The `trade.import_activity` value does the same. This retention
+is provenance, not verification.
+
 The product description remains part of the customs record, but the bootstrap
 does not mark `product.fit` as proven. Likewise it does not mark
 `identity.ultimate_buyer` or `identity.legal_entity` as proven merely because a
@@ -205,9 +261,9 @@ This is deliberate. Verification belongs to later public-source objectives.
 ## Idempotency
 
 Stable request material is derived from the normalized candidate and original
-input hash. Re-running the same committed input should therefore reconcile or
-replay the same canonical account/start/bundle through the production WAL rather
-than duplicating Evidence or spawning parallel Investigations.
+raw-input hash. Re-running the same committed input should therefore reconcile
+or replay the same canonical account/start/bundle through the production WAL
+rather than duplicating Evidence or spawning parallel Investigations.
 
 A materially different customs input receives a different input hash and can be
 appended to the same canonical account under normal Runtime identity/reuse
@@ -230,7 +286,8 @@ python scripts/cbi.py batch-audit C:\PrivateInputs\buyers.json --priority-grade 
 ```
 
 Batch mode bootstraps each record using the same safe single-record contract. It
-does not perform CRM writeback and does not mean research is complete.
+preserves each record's complete raw input, does not perform CRM writeback and
+does not mean research is complete.
 
 ## Existing operator commands
 
@@ -257,18 +314,18 @@ Do not paste private customs/customer records into public workflow inputs or
 commit them as repository fixtures.
 
 CI should validate the orchestration with synthetic data only. GitHub Actions
-can test normalization, preview behavior, WAL-backed bootstrap, idempotency and
-privacy boundaries. It is not the production public-web research agent unless a
-separate, explicitly authorized online research infrastructure is designed and
-reviewed.
+can test normalization, raw-field retention, preview behavior, WAL-backed
+bootstrap, idempotency and privacy boundaries. It is not the production
+public-web research agent unless a separate, explicitly authorized online
+research infrastructure is designed and reviewed.
 
 ## Recommended real-customer procedure
 
 1. keep the customs JSON in a private local path outside the public repo;
 2. sync the reviewed CLI code locally;
 3. run `audit-file` without `--commit` first;
-4. inspect the normalized candidate/boundary;
-5. explicitly run `audit-file ... --commit`;
+4. inspect the canonical candidate, raw/normalized preservation and boundary;
+5. explicitly run `audit-file ... --commit` only after that review;
 6. retain the returned `investigation_id`;
 7. give the returned Host instruction to a Host with `$investigate-customs-buyers`
    and real public web tools;
