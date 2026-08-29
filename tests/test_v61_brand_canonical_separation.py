@@ -31,10 +31,13 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
         self.assertFalse(canonical["raw_aliases_are_legal_identity_keys"])
         self.assertFalse(canonical["typed_aliases_are_automatic_match_keys"])
         self.assertFalse(canonical["address_only_match_allowed"])
+        self.assertTrue(canonical["primary_name_match_requires_explicit_country_overlap"])
+        self.assertEqual(canonical["same_name_missing_country_policy"], "AMBIGUOUS_FAIL_CLOSED")
         self.assertTrue(canonical["requested_account_id_is_exact_constraint"])
         self.assertFalse(canonical["requested_id_fuzzy_substitution_allowed"])
         self.assertTrue(canonical["explicit_new_id_without_fuzzy_identity_can_be_allocated"])
         self.assertTrue(canonical["contradictory_tax_ids_fail_closed"])
+        self.assertTrue(canonical["tax_conflict_applies_to_external_id_candidates"])
 
     def test_explicit_new_account_id_allows_low_information_allocation_without_fuzzy_substitution(self) -> None:
         created = self.runtime.resolve_or_create_account({
@@ -153,6 +156,37 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
         self.assertEqual(created["status"], "CREATED")
         self.assertEqual(unrelated["status"], "NOT_FOUND")
 
+    def test_same_name_missing_country_fails_closed_instead_of_merging_or_creating_duplicate(self) -> None:
+        existing = self.runtime.resolve_or_create_account({
+            "candidate": {
+                "name": "Global Name Synthetic LLC",
+                "country": "United States",
+            },
+        })
+        unresolved = self.runtime.resolve_or_create_account({
+            "candidate": {"name": "Global Name Synthetic LLC"},
+        })
+        self.assertEqual(unresolved["status"], "AMBIGUOUS_MATCH")
+        self.assertIsNone(unresolved["match"])
+        self.assertEqual(
+            unresolved["ambiguity_reason"],
+            "PRIMARY_LEGAL_NAME_REQUIRES_COUNTRY_OR_STRONG_ID",
+        )
+        self.assertEqual(unresolved["candidates"][0]["account_id"], existing["match"]["account_id"])
+        self.assertEqual(len(self.runtime.canonical_registry.entries()), 1)
+
+    def test_same_name_explicit_different_country_can_remain_separate(self) -> None:
+        first = self.runtime.resolve_or_create_account({
+            "candidate": {"name": "Cross Border Synthetic Ltd", "country": "Canada"},
+        })
+        second = self.runtime.resolve_or_create_account({
+            "candidate": {"name": "Cross Border Synthetic Ltd", "country": "Australia"},
+        })
+        self.assertEqual(first["status"], "CREATED")
+        self.assertEqual(second["status"], "CREATED")
+        self.assertNotEqual(first["match"]["account_id"], second["match"]["account_id"])
+        self.assertEqual(len(self.runtime.canonical_registry.entries()), 2)
+
     def test_requested_account_id_is_never_fuzzily_substituted(self) -> None:
         existing = self.runtime.resolve_or_create_account({
             "candidate": {
@@ -205,6 +239,29 @@ class V61BrandCanonicalSeparationTests(unittest.TestCase):
         self.assertEqual(exact_id_conflict["status"], "AMBIGUOUS_MATCH")
         self.assertIsNone(exact_id_conflict["match"])
         self.assertIn("TAX_ID_CONFLICT", exact_id_conflict["candidates"][0]["reasons"])
+
+    def test_external_id_match_cannot_override_tax_id_conflict(self) -> None:
+        created = self.runtime.resolve_or_create_account({
+            "candidate": {
+                "name": "External Identity One LLC",
+                "country": "United States",
+                "tax_ids": ["US-TAX-EXT-A"],
+                "external_ids": ["EXT-SYNTH-001"],
+            },
+        })
+        conflict = self.runtime.resolve_or_create_account({
+            "candidate": {
+                "name": "External Identity Renamed LLC",
+                "country": "United States",
+                "tax_ids": ["US-TAX-EXT-B"],
+                "external_ids": ["EXT-SYNTH-001"],
+            },
+            "create_if_missing": False,
+        })
+        self.assertEqual(created["status"], "CREATED")
+        self.assertEqual(conflict["status"], "AMBIGUOUS_MATCH")
+        self.assertEqual(conflict["ambiguity_reason"], "STRONG_IDENTITY_CONFLICT_REQUIRES_REVIEW")
+        self.assertIn("TAX_ID_CONFLICT", conflict["candidates"][0]["reasons"])
 
     def test_matching_tax_id_remains_strong_identity_authority(self) -> None:
         created = self.runtime.resolve_or_create_account({

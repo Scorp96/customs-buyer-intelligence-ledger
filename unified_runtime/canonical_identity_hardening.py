@@ -1,9 +1,10 @@
 """Evidence-bound Canonical Account resolution for the v6.1 production runtime.
 
 The v5 compatibility registry historically treated every free-form ``aliases``
-string as a legal identity key, allowed an address alone to match, and treated
-``requested_account_id`` as a scoring hint rather than an exact identity
-constraint. Those behaviors are too permissive for production buyer
+string as a legal identity key, allowed an address alone to match, treated a
+missing country as equivalent to a matching country for legal-name resolution,
+and treated ``requested_account_id`` as a scoring hint rather than an exact
+identity constraint. Those behaviors are too permissive for production buyer
 intelligence.
 
 This overlay preserves historical payloads while enforcing fail-closed legal
@@ -11,8 +12,11 @@ identity semantics:
 
 * no alias field has automatic merge authority;
 * address similarity is supporting evidence only;
+* primary-name matching requires an explicit country overlap;
+* a missing country on a same-name collision requires review rather than merge;
 * a requested Canonical Account ID is exact, never a fuzzy hint;
-* contradictory Tax IDs block matching, even when names or requested IDs agree;
+* contradictory Tax IDs block a candidate identity formed by legal name,
+  External ID or requested Canonical ID;
 * ambiguous identity signals cannot silently create a second Account;
 * an explicitly requested *new* ID remains creatable when no competing
   identity signal exists, preserving the supported low-information start path.
@@ -29,6 +33,7 @@ from .resilience import ACCOUNT_ID_RE, CanonicalRegistry, normalized_values
 _ALIAS_REVIEW_REASON = "ALIAS_RELATION_REQUIRES_CANONICAL_ID_PROOF"
 _REQUESTED_ID_COLLISION_REASON = "REQUESTED_ACCOUNT_ID_NOT_FOUND_IDENTITY_COLLISION"
 _STRONG_ID_CONFLICT_REASON = "STRONG_IDENTITY_CONFLICT_REQUIRES_REVIEW"
+_NAME_COUNTRY_REVIEW_REASON = "PRIMARY_LEGAL_NAME_REQUIRES_COUNTRY_OR_STRONG_ID"
 
 
 class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
@@ -64,7 +69,13 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         return any(keys[key] for key in ("names", "tax_ids", "addresses", "external_ids"))
 
     @staticmethod
-    def _same_country(candidate: dict[str, set[str]], row: dict[str, set[str]]) -> bool:
+    def _country_overlap(candidate: dict[str, set[str]], row: dict[str, set[str]]) -> bool:
+        """True only when both sides state a country and at least one value agrees."""
+        return bool(candidate["countries"] and row["countries"] and candidate["countries"] & row["countries"])
+
+    @staticmethod
+    def _country_compatible(candidate: dict[str, set[str]], row: dict[str, set[str]]) -> bool:
+        """Used only for review/conflict detection, never as legal-name authority."""
         return (
             not candidate["countries"]
             or not row["countries"]
@@ -86,11 +97,10 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             score, reasons = max(score, 95), reasons + ["TAX_ID"]
         if candidate["external_ids"] & row["external_ids"]:
             score, reasons = max(score, 90), reasons + ["EXTERNAL_ID"]
-
-        same_country = EvidenceBoundCanonicalRegistry._same_country(candidate, row)
-        if same_country and candidate["names"] & row["names"]:
+        if EvidenceBoundCanonicalRegistry._country_overlap(candidate, row) and candidate["names"] & row["names"]:
             score, reasons = max(score, 85), reasons + ["PRIMARY_LEGAL_NAME_COUNTRY"]
-        if score and same_country and candidate["addresses"] & row["addresses"]:
+
+        if score and EvidenceBoundCanonicalRegistry._country_overlap(candidate, row) and candidate["addresses"] & row["addresses"]:
             reasons.append("ADDRESS_SUPPORT")
         return score, sorted(set(reasons))
 
@@ -111,14 +121,19 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         candidate_keys = self._keys(candidate)
         conflicts: list[dict[str, Any]] = []
         for entry in self.entries():
-            if requested_account_id and entry["account_id"].casefold() != requested_account_id.casefold():
+            exact_requested = bool(
+                requested_account_id
+                and entry["account_id"].casefold() == requested_account_id.casefold()
+            )
+            if requested_account_id and not exact_requested:
                 continue
             row_keys = self._keys(entry["account"])
-            same_primary_identity = (
-                self._same_country(candidate_keys, row_keys)
-                and bool(candidate_keys["names"] & row_keys["names"])
+            same_primary_name = bool(
+                self._country_compatible(candidate_keys, row_keys)
+                and candidate_keys["names"] & row_keys["names"]
             )
-            if not requested_account_id and not same_primary_identity:
+            same_external_id = bool(candidate_keys["external_ids"] & row_keys["external_ids"])
+            if not (exact_requested or same_primary_name or same_external_id):
                 continue
             conflict_types: list[str] = []
             if self._tax_id_conflict(candidate_keys, row_keys):
@@ -141,7 +156,7 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         collisions: list[dict[str, Any]] = []
         for row in self.entries():
             row_keys = self._keys(row["account"])
-            if not self._same_country(candidate_keys, row_keys):
+            if not self._country_compatible(candidate_keys, row_keys):
                 continue
             row_primary = row_keys["names"]
             row_aliases = row_keys["aliases"] | row_keys["legal_aliases"]
@@ -158,6 +173,30 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                     "origin": row["origin"],
                     "alias_overlap": overlap,
                 })
+        return sorted(collisions, key=lambda item: item["account_id"].casefold())
+
+    def _name_country_review_collisions(self, candidate: dict[str, Any]) -> list[dict[str, Any]]:
+        """Same legal name with a missing country is insufficient for auto-merge/create."""
+        candidate_keys = self._keys(candidate)
+        if not candidate_keys["names"]:
+            return []
+        collisions: list[dict[str, Any]] = []
+        for row in self.entries():
+            row_keys = self._keys(row["account"])
+            if not (candidate_keys["names"] & row_keys["names"]):
+                continue
+            if self._country_overlap(candidate_keys, row_keys):
+                continue
+            # Explicitly different countries are a useful disambiguator and do
+            # not block creating a separate legal entity with the same name.
+            if candidate_keys["countries"] and row_keys["countries"]:
+                continue
+            collisions.append({
+                "account_id": row["account_id"],
+                "score": 0,
+                "reasons": [_NAME_COUNTRY_REVIEW_REASON],
+                "origin": row["origin"],
+            })
         return sorted(collisions, key=lambda item: item["account_id"].casefold())
 
     @staticmethod
@@ -194,12 +233,19 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         resolved = super().resolve(candidate, requested_account_id="")
         if resolved["status"] != "NOT_FOUND":
             return resolved
-        collisions = self._alias_collisions(candidate)
-        if collisions:
+        alias_collisions = self._alias_collisions(candidate)
+        if alias_collisions:
             return self._ambiguous(
                 _ALIAS_REVIEW_REASON,
-                collisions,
+                alias_collisions,
                 resolution_requirement="SUPPLY_EXACT_CANONICAL_ACCOUNT_ID_AFTER_EVIDENCE_REVIEW",
+            )
+        name_collisions = self._name_country_review_collisions(candidate)
+        if name_collisions:
+            return self._ambiguous(
+                _NAME_COUNTRY_REVIEW_REASON,
+                name_collisions,
+                resolution_requirement="ADD_COUNTRY_OR_STRONG_IDENTITY_EVIDENCE_BEFORE_CANONICAL_BIND",
             )
         return resolved
 
@@ -256,10 +302,6 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 "requested_account_id_exact": True,
             }
 
-        # Explicit allocation with no fuzzy identity material is safe: there is
-        # nothing to substitute against. This keeps the established MCP path for
-        # creating a caller-chosen synthetic/known ID with only metadata such as
-        # country, while still forbidding fuzzy replacement of that ID.
         candidate_keys = self._keys(candidate)
         if not self._has_primary_identity(candidate_keys) and not (
             candidate_keys["aliases"] or candidate_keys["legal_aliases"]
@@ -293,7 +335,7 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
 
 
 class V61CanonicalIdentityHardeningMixin:
-    """Install the evidence-bound registry only on the v6.1 production runtime."""
+    """Install the fail-closed registry only on the v6.1 production runtime."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -311,10 +353,13 @@ class V61CanonicalIdentityHardeningMixin:
             "alias_resolution_requirement": "EXACT_CANONICAL_ACCOUNT_ID_AFTER_EVIDENCE_REVIEW",
             "address_only_match_allowed": False,
             "address_is_supporting_evidence_only": True,
+            "primary_name_match_requires_explicit_country_overlap": True,
+            "same_name_missing_country_policy": "AMBIGUOUS_FAIL_CLOSED",
             "requested_account_id_is_exact_constraint": True,
             "requested_id_fuzzy_substitution_allowed": False,
             "explicit_new_id_without_fuzzy_identity_can_be_allocated": True,
             "contradictory_tax_ids_fail_closed": True,
+            "tax_conflict_applies_to_external_id_candidates": True,
             "automatic_match_authorities": [
                 "EXACT_ACCOUNT_ID",
                 "TAX_ID",
