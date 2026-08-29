@@ -17,6 +17,8 @@ identity semantics:
 * a requested Canonical Account ID is exact, never a fuzzy hint;
 * contradictory Tax IDs block a candidate identity formed by legal name,
   External ID or requested Canonical ID;
+* when both sides state countries, an explicit country contradiction blocks
+  exact-ID, Tax-ID and External-ID automatic binding;
 * ambiguous identity signals cannot silently create a second Account;
 * an explicitly requested *new* ID remains creatable when no competing
   identity signal exists, preserving the supported low-information start path.
@@ -83,6 +85,15 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         )
 
     @staticmethod
+    def _country_conflict(candidate: dict[str, set[str]], row: dict[str, set[str]]) -> bool:
+        """True only when both sides explicitly state countries and none overlap."""
+        return bool(
+            candidate["countries"]
+            and row["countries"]
+            and not (candidate["countries"] & row["countries"])
+        )
+
+    @staticmethod
     def _match_score(
         candidate: dict[str, set[str]],
         row: dict[str, set[str]],
@@ -132,12 +143,17 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
                 self._country_compatible(candidate_keys, row_keys)
                 and candidate_keys["names"] & row_keys["names"]
             )
+            same_tax_id = bool(candidate_keys["tax_ids"] & row_keys["tax_ids"])
             same_external_id = bool(candidate_keys["external_ids"] & row_keys["external_ids"])
-            if not (exact_requested or same_primary_name or same_external_id):
+            if not (exact_requested or same_primary_name or same_tax_id or same_external_id):
                 continue
             conflict_types: list[str] = []
             if self._tax_id_conflict(candidate_keys, row_keys):
                 conflict_types.append("TAX_ID_CONFLICT")
+            if self._country_conflict(candidate_keys, row_keys) and (
+                exact_requested or same_tax_id or same_external_id
+            ):
+                conflict_types.append("COUNTRY_CONFLICT")
             if conflict_types:
                 conflicts.append({
                     "account_id": entry["account_id"],
@@ -360,6 +376,8 @@ class V61CanonicalIdentityHardeningMixin:
             "explicit_new_id_without_fuzzy_identity_can_be_allocated": True,
             "contradictory_tax_ids_fail_closed": True,
             "tax_conflict_applies_to_external_id_candidates": True,
+            "strong_id_country_conflict_policy": "AMBIGUOUS_FAIL_CLOSED",
+            "country_conflict_applies_to": ["EXACT_ACCOUNT_ID", "TAX_ID", "EXTERNAL_ID"],
             "automatic_match_authorities": [
                 "EXACT_ACCOUNT_ID",
                 "TAX_ID",
