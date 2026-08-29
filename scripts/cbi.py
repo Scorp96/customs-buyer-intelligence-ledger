@@ -35,7 +35,7 @@ if str(PLUGIN_ROOT) not in sys.path:
 
 from unified_runtime import UnifiedRuntime, ValidationError  # noqa: E402
 from unified_runtime.backup_recovery_hardened import ProductionBackupRecoveryManager  # noqa: E402
-from unified_runtime.resilience import canonical_json, digest  # noqa: E402
+from unified_runtime.resilience import ACCOUNT_ID_RE, canonical_json, digest  # noqa: E402
 
 
 class ProductionMcpClient:
@@ -251,6 +251,13 @@ def production_session_root() -> str | None:
             / "sessions"
         )
     return None
+
+
+def _validated_requested_account_id(value: Any) -> str:
+    requested = str(value or "").strip()
+    if requested and not ACCOUNT_ID_RE.fullmatch(requested):
+        raise ValueError("requested_account_id: invalid")
+    return requested
 
 
 def _first_present(source: dict[str, Any], aliases: tuple[str, ...]) -> Any:
@@ -552,13 +559,19 @@ def host_lookup_request(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def audit_preview(record: dict[str, Any]) -> dict[str, Any]:
+def audit_preview(
+    record: dict[str, Any],
+    *,
+    requested_account_id: str = "",
+) -> dict[str, Any]:
+    requested = _validated_requested_account_id(requested_account_id)
     return {
         "schema": "cbi.cli-audit-preview.v1",
         "status": "PREVIEW",
         "mode": "FULL_AUDIT",
         "runtime_mutation_performed": False,
         "candidate": candidate_from_customs(record),
+        "requested_account_id": requested or None,
         "buyer_country_resolution": record["_buyer_country_resolution"],
         "customs_input_sha256": record["_input_sha256"],
         "raw_input_preserved": True,
@@ -572,12 +585,18 @@ def audit_preview(record: dict[str, Any]) -> dict[str, Any]:
         ],
         "boundary": (
             "Preview validates and normalizes input while preserving the exact "
-            "raw JSON object. A derived buyer country is disclosed as an "
-            "identity-routing inference, not legal-entity proof. No canonical "
-            "account, Investigation, Evidence, Pivot, Peer, CRM or outreach "
-            "state is written."
+            "raw JSON object. A requested Account ID is only displayed as an "
+            "identity constraint; it is not resolved or written in preview. A "
+            "derived buyer country is disclosed as an identity-routing inference, "
+            "not legal-entity proof. No canonical account, Investigation, "
+            "Evidence, Pivot, Peer, CRM or outreach state is written."
         ),
-        "next_command": "repeat with --commit to bootstrap the durable FULL_AUDIT",
+        "next_command": (
+            f"repeat with --requested-account-id {requested} --commit to bootstrap "
+            "the durable FULL_AUDIT"
+            if requested
+            else "repeat with --commit to bootstrap the durable FULL_AUDIT"
+        ),
     }
 
 
@@ -588,23 +607,42 @@ def bootstrap_audit(
     objective_limit: int,
     priority_grade: str,
     budget_units: float | None,
+    requested_account_id: str = "",
 ) -> dict[str, Any]:
     candidate = candidate_from_customs(record)
+    requested = _validated_requested_account_id(requested_account_id)
     input_hash = str(record["_input_sha256"])
-    candidate_hash = digest(candidate)
+    resolution_request_hash = digest(
+        {
+            "candidate": candidate,
+            "requested_account_id": requested,
+        }
+    )
     normalized_view = _normalized_customs_view(record)
     raw_input = _raw_customs_input(record)
     country_resolution = dict(record["_buyer_country_resolution"])
 
     with ProductionMcpClient(session_root) as client:
+        resolution_arguments: dict[str, Any] = {
+            "candidate": candidate,
+            "create_if_missing": True,
+            "idempotency_key": f"cli-resolve-{resolution_request_hash[:32]}",
+        }
+        if requested:
+            resolution_arguments["requested_account_id"] = requested
         resolution = client.tool(
             "resolve_or_create_account",
-            {
-                "candidate": candidate,
-                "create_if_missing": True,
-                "idempotency_key": f"cli-resolve-{candidate_hash[:32]}",
-            },
+            resolution_arguments,
         )
+        if resolution.get("status") == "AMBIGUOUS_MATCH":
+            reason = str(
+                resolution.get("ambiguity_reason")
+                or "AMBIGUOUS_MATCH"
+            )
+            raise RuntimeError(
+                "canonical resolution blocked before Investigation start: "
+                f"{reason}"
+            )
         match = resolution.get("match")
         if (
             not isinstance(match, dict)
@@ -615,6 +653,24 @@ def bootstrap_audit(
                 "manual identity review is required"
             )
         account_id = str(match["account_id"])
+        if requested and account_id.casefold() != requested.casefold():
+            raise RuntimeError(
+                "canonical resolver returned an Account different from the "
+                f"requested identity constraint: requested={requested}, "
+                f"resolved={account_id}"
+            )
+
+        start_input: dict[str, Any] = {
+            "schema": "cbi.cli-customs-audit-start.v1",
+            "customs_input_sha256": input_hash,
+            "customs_record": normalized_view,
+            "normalized_customs_record": normalized_view,
+            "raw_customs_record": raw_input,
+            "raw_input_preserved": True,
+            "buyer_country_resolution": country_resolution,
+        }
+        if requested:
+            start_input["requested_account_id"] = requested
 
         start_arguments: dict[str, Any] = {
             "account": {
@@ -622,15 +678,7 @@ def bootstrap_audit(
                 "country": candidate["country"],
                 "name": candidate["name"],
             },
-            "input": {
-                "schema": "cbi.cli-customs-audit-start.v1",
-                "customs_input_sha256": input_hash,
-                "customs_record": normalized_view,
-                "normalized_customs_record": normalized_view,
-                "raw_customs_record": raw_input,
-                "raw_input_preserved": True,
-                "buyer_country_resolution": country_resolution,
-            },
+            "input": start_input,
             "mode": "EXHAUSTIVE",
             "history": {"events": []},
             "authority_claims": [],
@@ -694,6 +742,7 @@ def bootstrap_audit(
         "mode": "FULL_AUDIT",
         "runtime_mutation_performed": True,
         "mutation_path": "V6_1_PRODUCTION_MCP_WAL",
+        "requested_account_id": requested or None,
         "account_resolution": resolution,
         "account_id": account_id,
         "investigation_id": investigation_id,
@@ -854,6 +903,15 @@ def main() -> int:
         ),
     )
     _add_customs_file_arguments(audit, allow_commit=True)
+    audit.add_argument(
+        "--requested-account-id",
+        default="",
+        help=(
+            "Optional exact existing Canonical Account ID. In preview it is "
+            "display-only; with --commit it becomes a hard resolver constraint. "
+            "A conflicting existing identity blocks before Investigation start."
+        ),
+    )
 
     batch = sub.add_parser(
         "batch-audit",
@@ -874,7 +932,12 @@ def main() -> int:
         if args.command in {"audit-file", "audit"}:
             record = normalize_customs_record(_load_json_file(args.input_file))
             if not args.commit:
-                return emit(audit_preview(record))
+                return emit(
+                    audit_preview(
+                        record,
+                        requested_account_id=args.requested_account_id,
+                    )
+                )
             return emit(
                 bootstrap_audit(
                     args.session_root,
@@ -882,6 +945,7 @@ def main() -> int:
                     objective_limit=args.objective_limit,
                     priority_grade=args.priority_grade,
                     budget_units=args.budget_units,
+                    requested_account_id=args.requested_account_id,
                 )
             )
 
