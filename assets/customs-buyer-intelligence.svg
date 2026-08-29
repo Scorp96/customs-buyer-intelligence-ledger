@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Customs Buyer Intelligence</title>
+  <desc id="desc">A customs document and shipping container inspected through a magnifying glass.</desc>
+  <rect width="256" height="256" rx="52" fill="#0F766E"/>
+  <path d="M57 43h93l35 35v86a15 15 0 0 1-15 15H57a15 15 0 0 1-15-15V58a15 15 0 0 1 15-15Z" fill="#F0FDFA"/>
+  <path d="M150 43v35h35" fill="none" stroke="#5EEAD4" stroke-width="13" stroke-linejoin="round"/>
+  <rect x="65" y="97" width="93" height="52" rx="8" fill="#14B8A6"/>
+  <path d="M88 100v46M112 100v46M136 100v46" stroke="#CCFBF1" stroke-width="6"/>
+  <circle cx="166" cy="164" r="37" fill="#0F172A" stroke="#F8FAFC" stroke-width="12"/>
+  <path d="m194 192 31 31" stroke="#F8FAFC" stroke-width="17" stroke-linecap="round"/>
+  <path d="M147 164h38M166 145v38" stroke="#5EEAD4" stroke-width="8" stroke-linecap="round"/>
+</svg>

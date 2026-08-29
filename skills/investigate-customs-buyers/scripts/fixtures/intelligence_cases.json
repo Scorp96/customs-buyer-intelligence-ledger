@@ -1,0 +1,948 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "purpose": "Offline deterministic regression scenarios for evidence-controlled buyer intelligence.",
+    "as_of": "2026-07-30",
+    "network_allowed": false,
+    "source_boundary": "All company names, shipment identifiers, addresses and facts in this fixture are deliberately synthetic. They preserve only the semantic shapes needed for offline regression tests.",
+    "forbidden_pipeline_name_literals": [
+      "Northwind Trade Agency",
+      "Ferretería Delta Sintética",
+      "Lumina Display Brands",
+      "Andean Synthetic Materials Ecuador",
+      "Trí Triển",
+      "Harborline Ventures",
+      "Meridian Global",
+      "Suncrest Panels",
+      "Coastal Timber Supply",
+      "Bluewater Composite Works",
+      "Pacific Link Logistics Mexico"
+    ]
+  },
+  "product_matrix": [
+    {
+      "id": "exact_foam_board",
+      "description": "PVC Foam Board 1220 x 2440 x 18mm",
+      "expected_match": "EXACT",
+      "expected_category": "PVC_FOAM_BOARD"
+    },
+    {
+      "id": "exact_celuka",
+      "description": "White PVC Celuka Board",
+      "expected_match": "EXACT",
+      "expected_category": "PVC_CELUKA_BOARD"
+    },
+    {
+      "id": "exact_expanded_sheet",
+      "description": "Expanded PVC Sheet for printing",
+      "expected_match": "EXACT",
+      "expected_category": "EXPANDED_PVC_SHEET"
+    },
+    {
+      "id": "related_wall_panel",
+      "description": "Patterned PVC Wall Panel",
+      "expected_match": "RELATED",
+      "expected_category": "PVC_WALL_PANEL"
+    },
+    {
+      "id": "related_rigid_plate",
+      "description": "Rigid PVC Plate, non-porous",
+      "expected_match": "RELATED",
+      "expected_category": "RIGID_PVC_SHEET_OR_PLATE"
+    },
+    {
+      "id": "incidental_display",
+      "description": "Finished PVC Display Stand for cosmetics",
+      "expected_match": "INCIDENTAL",
+      "expected_category": "FINISHED_DISPLAY_OR_FIXTURE"
+    },
+    {
+      "id": "incidental_beats_exact_substring",
+      "description": "Finished PVC Foam Board used in an assembled PVC Display Stand",
+      "expected_match": "INCIDENTAL",
+      "expected_category": "FINISHED_DISPLAY_OR_FIXTURE"
+    },
+    {
+      "id": "none_square_tube",
+      "description": "PVC Square Tube profile",
+      "expected_match": "NONE",
+      "expected_category": "NON_TARGET_PVC_OR_FOAM_PRODUCT"
+    },
+    {
+      "id": "none_floor_mat",
+      "description": "Foam Floor Mat with PVC backing",
+      "expected_match": "NONE",
+      "expected_category": "NON_TARGET_PVC_OR_FOAM_PRODUCT"
+    },
+    {
+      "id": "none_structural_marine_core",
+      "description": "Structural PVC Foam Core for a marine sandwich composite",
+      "expected_match": "NONE",
+      "expected_category": "STRUCTURAL_PVC_FOAM_CORE"
+    },
+    {
+      "id": "unknown_sound_panel",
+      "description": "Sound-absorbing decorative panel",
+      "expected_match": "UNKNOWN",
+      "expected_category": "UNCLASSIFIED"
+    }
+  ],
+  "score_boundaries": [
+    {"score": 100, "grade": "A+"},
+    {"score": 90, "grade": "A+"},
+    {"score": 89, "grade": "A"},
+    {"score": 80, "grade": "A"},
+    {"score": 79, "grade": "A-"},
+    {"score": 75, "grade": "A-"},
+    {"score": 74, "grade": "B+"},
+    {"score": 68, "grade": "B+"},
+    {"score": 67, "grade": "B"},
+    {"score": 60, "grade": "B"},
+    {"score": 59, "grade": "C"},
+    {"score": 40, "grade": "C"},
+    {"score": 39, "grade": "D"},
+    {"score": 0, "grade": "D"}
+  ],
+  "cases": [
+    {
+      "id": "northwind_evidence_combination_ior",
+      "fixture_kind": "synthetic_from_acceptance_requirement",
+      "purpose": "A probable IOR result must be driven by multiple supplied signals, not the company name.",
+      "raw_input": "Buyer\tNorthwind Trade Agency\nProduct\tFoam Floor Mat with PVC backing\nWeight\t420 kg",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Northwind Trade Agency",
+          "buyer_address": "Registered agent suite, United States",
+          "supplier": "Synthetic Consolidator Ltd",
+          "product": "Foam Floor Mat with PVC backing",
+          "weight_kg": 420,
+          "dates": {"arrival_date": "2026-04-12"},
+          "master_bill": "SYN-NORTH-001",
+          "destination_country": "United States",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {
+        "entity": {
+          "address_type": "registered_agent",
+          "match_evidence": [
+            {
+              "basis": "tax_id",
+              "evidence_grade": "A",
+              "source_id": "fixture-government-registration"
+            },
+            {
+              "basis": "exact_address",
+              "evidence_grade": "C",
+              "source_id": "fixture-directory-address"
+            }
+          ],
+          "legal_name": "Northwind Trade Agency",
+          "legal_registration": {
+            "identifier": "SYNTHETIC-TAX-ID",
+            "status": "fixture-only"
+          },
+          "official_channels": []
+        },
+        "business": {
+          "evidence_grade": "C",
+          "no_visible_business_channel_confirmed": true
+        },
+        "trade_summary": {
+          "product_concentration": 0.05,
+          "unrelated_product_categories": 9,
+          "top_consolidator_share": 0.82,
+          "purchase_pattern": "highly_diversified"
+        },
+        "evidence": [
+          {
+            "source_id": "fixture-trade-profile",
+            "type": "offline_synthetic_trade_snapshot",
+            "evidence_grade": "C",
+            "source": "Synthetic trade profile used only for regression testing",
+            "date_checked": "2026-07-30"
+          }
+        ]
+      },
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "normalized_shipment.product.match_level", "op": "eq", "value": "NONE"},
+        {"path": "buyer_intelligence.buyer_role", "op": "eq", "value": "IMPORTER_OF_RECORD"},
+        {"path": "buyer_intelligence.reason_codes", "op": "contains", "value": "registered_agent_address"},
+        {"path": "buyer_intelligence.reason_codes", "op": "contains", "value": "high_unrelated_product_diversity"},
+        {"path": "commercial_scoring.grade", "op": "eq", "value": "D"},
+        {"path": "contacts", "op": "length", "value": 0},
+        {"path": "exclusion_reason", "op": "eq", "value": "non_target_product"}
+      ],
+      "name_invariance_paths": [
+        "normalized_shipment.product.match_level",
+        "buyer_intelligence.buyer_role",
+        "commercial_scoring.grade",
+        "exclusion_reason"
+      ]
+    },
+    {
+      "id": "northwind_external_search_failure",
+      "fixture_kind": "synthetic_failure_path",
+      "purpose": "A failed company search must still return useful, non-empty analysis without promoting a name-pattern candidate.",
+      "raw_input": "Buyer\tNorthwind Trade Agency\nProduct\tPVC Foam Board\nMaster Bill\tSYN-NORTH-FAIL",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Northwind Trade Agency",
+          "supplier": "Synthetic Supplier",
+          "product": "PVC Foam Board",
+          "dates": {"arrival_date": "2026-04-13"},
+          "master_bill": "SYN-NORTH-FAIL",
+          "destination_country": "United States",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {
+        "errors": [
+          {
+            "stage": "external_company_search",
+            "code": "transport_timeout",
+            "message": "Offline fixture simulates timeout followed by an empty response.",
+            "retry_count": 1,
+            "retryable": false
+          }
+        ]
+      },
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "status", "op": "eq", "value": "partial"},
+        {"path": "input_snapshot.raw_input", "op": "nonempty"},
+        {"path": "normalized_shipment.buyer.raw_name", "op": "eq", "value": "Northwind Trade Agency"},
+        {"path": "normalized_shipment.product.match_level", "op": "eq", "value": "EXACT"},
+        {"path": "buyer_intelligence.buyer_role", "op": "eq", "value": "UNKNOWN"},
+        {
+          "path": "buyer_intelligence.candidate_roles",
+          "op": "list_item_subset",
+          "value": {
+            "role": "DIRECT_IMPORTER",
+            "reason_codes": ["exact_product_customs_record_only"]
+          }
+        },
+        {
+          "path": "errors",
+          "op": "list_item_subset",
+          "value": {
+            "stage": "external_company_search",
+            "code": "transport_timeout",
+            "retry_count": 1
+          }
+        },
+        {"path": "completed_sections", "op": "contains", "value": "shipment_normalization"},
+        {"path": "completed_sections", "op": "contains", "value": "product_classification"},
+        {"path": "contacts", "op": "length", "value": 0}
+      ]
+    },
+    {
+      "id": "ferreteria_delta_synthetic_evidence_route_and_score",
+      "fixture_kind": "synthetic_from_acceptance_requirement",
+      "purpose": "Distribution, origin, route and A-minus scoring are all supported by explicit fixture evidence.",
+      "raw_input": "Buyer\tFerretería Delta Sintética\nProduct\tPVC Foam Board\nCOO\tCN\nPlace of Receipt\tNingbo\nPort of Lading\tCaucedo\nPort of Discharge\tSan Juan",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Ferretería Delta Sintética",
+          "buyer_address": "San Juan, Puerto Rico",
+          "supplier": "Synthetic PVC Board Factory",
+          "product": "PVC Foam Board 1220 x 2440 x 12mm",
+          "weight_kg": 1500,
+          "package_count": 30,
+          "quantity_count": null,
+          "quantity_unit": null,
+          "dates": {"arrival_date": "2026-03-18"},
+          "master_bill": "SYN-DELTA-001",
+          "coo_code": "CN",
+          "origin": "Caucedo, Dominican Republic",
+          "place_of_receipt": "Ningbo, China",
+          "port_of_lading": "Caucedo, Dominican Republic",
+          "port_of_discharge": "San Juan, Puerto Rico",
+          "destination_country": "Puerto Rico",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {
+        "entity": {
+          "legal_name": "Ferretería Delta Sintética",
+          "match_evidence": [
+            {
+              "basis": "tax_id",
+              "evidence_grade": "A",
+              "source_id": "fixture-government-registration"
+            }
+          ],
+          "legal_registration": {
+            "identifier": "SYNTHETIC-TAX-ID",
+            "status": "fixture-only"
+          },
+          "address_type": "commercial_warehouse"
+        },
+        "business": {
+          "verified_role": "DISTRIBUTOR",
+          "official_description": "Building materials distributor and hardware store",
+          "business_model": "wholesale_and_retail",
+          "evidence_grade": "A"
+        },
+        "trade_summary": {
+          "product_specific_shipments": 1,
+          "purchase_pattern": "single_observed_exact_product_shipment"
+        },
+        "route": {
+          "transshipment_ports": ["Caucedo, Dominican Republic"],
+          "final_delivery_location": "San Juan, Puerto Rico"
+        },
+        "evidence": [
+          {
+            "source_id": "fixture-government-registration",
+            "type": "offline_synthetic_government_snapshot",
+            "evidence_grade": "A",
+            "source": "Synthetic official registration evidence",
+            "date_checked": "2026-07-30"
+          },
+          {
+            "source_id": "fixture-official-product-page",
+            "type": "offline_synthetic_official_company_snapshot",
+            "evidence_grade": "A",
+            "source": "Synthetic company product catalogue",
+            "date_checked": "2026-07-30"
+          }
+        ]
+      },
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "normalized_shipment.product.match_level", "op": "eq", "value": "EXACT"},
+        {"path": "buyer_intelligence.buyer_role", "op": "eq", "value": "DISTRIBUTOR"},
+        {"path": "buyer_intelligence.secondary_roles", "op": "contains", "value": "RETAILER"},
+        {"path": "normalized_shipment.route.manufacturing_origin", "op": "eq", "value": "China"},
+        {"path": "normalized_shipment.route.manufacturing_origin_status", "op": "eq", "value": "DECLARED"},
+        {
+          "path": "normalized_shipment.route.transshipment_ports",
+          "op": "contains",
+          "value": "Caucedo, Dominican Republic"
+        },
+        {
+          "path": "data_quality.origin_field_interpretation",
+          "op": "eq",
+          "value": "route_or_transshipment_field_possible"
+        },
+        {"path": "normalized_shipment.quantity.declared_quantity", "op": "eq", "value": null},
+        {"path": "normalized_shipment.quantity.package_count", "op": "eq", "value": 30},
+        {
+          "path": "normalized_shipment.quantity.package_count_is_product_quantity",
+          "op": "eq",
+          "value": false
+        },
+        {"path": "commercial_scoring.total_score", "op": "eq", "value": 76},
+        {"path": "commercial_scoring.grade", "op": "eq", "value": "A-"},
+        {"path": "commercial_scoring.deep_dive_eligible", "op": "eq", "value": true}
+      ],
+      "name_invariance_paths": [
+        "normalized_shipment.product.match_level",
+        "buyer_intelligence.buyer_role",
+        "normalized_shipment.route.manufacturing_origin",
+        "commercial_scoring.grade"
+      ]
+    },
+    {
+      "id": "lumina_display_brands_incidental_end_use",
+      "fixture_kind": "synthetic_from_acceptance_requirement",
+      "purpose": "A finished cosmetics display is incidental PVC use, not evidence of standard board distribution.",
+      "raw_input": "Buyer\tLumina Display Brands\nProduct\tFinished PVC Cosmetic Display Stand\nWeight\t300 kg",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Lumina Display Brands",
+          "buyer_address": "Synthetic commercial address",
+          "supplier": "Synthetic Display Manufacturer",
+          "product": "Finished PVC Cosmetic Display Stand",
+          "weight_kg": 300,
+          "dates": {"arrival_date": "2026-02-10"},
+          "master_bill": "SYN-LUMINA-001",
+          "destination_country": "United States",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {
+        "entity": {
+          "legal_name": "Lumina Display Brands",
+          "match_evidence": [
+            {
+              "basis": "registration_number",
+              "evidence_grade": "A",
+              "source_id": "fixture-company-registration"
+            }
+          ],
+          "legal_registration": {
+            "identifier": "SYNTHETIC-REGISTRATION",
+            "status": "fixture-only"
+          }
+        },
+        "business": {
+          "official_description": "Cosmetics brand using finished display fixtures in stores",
+          "business_model": "cosmetics_brand",
+          "evidence_grade": "A"
+        },
+        "trade_summary": {
+          "product_specific_shipments": 1,
+          "purchase_pattern": "single_finished_display_import"
+        }
+      },
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "normalized_shipment.product.match_level", "op": "eq", "value": "INCIDENTAL"},
+        {
+          "path": "normalized_shipment.product.normalized_category",
+          "op": "eq",
+          "value": "FINISHED_DISPLAY_OR_FIXTURE"
+        },
+        {"path": "buyer_intelligence.buyer_role", "op": "eq", "value": "END_USER"},
+        {"path": "commercial_scoring.total_score", "op": "eq", "value": 44},
+        {"path": "commercial_scoring.grade", "op": "eq", "value": "C"},
+        {
+          "path": "exclusion_reason",
+          "op": "eq",
+          "value": "finished_item_or_incidental_material_use"
+        }
+      ],
+      "name_invariance_paths": [
+        "normalized_shipment.product.match_level",
+        "buyer_intelligence.buyer_role",
+        "commercial_scoring.grade",
+        "exclusion_reason"
+      ]
+    },
+    {
+      "id": "andean_materials_area_weight_thickness_consistency",
+      "fixture_kind": "synthetic_from_acceptance_requirement",
+      "purpose": "The unit checker should expose the arithmetic and a verification warning without alleging misconduct.",
+      "raw_input": "Buyer\tAndean Synthetic Materials Ecuador\nQuantity\t200 SQM\nWeight\t494 kg\nProduct\tPVC Foam Board 2mm",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Andean Synthetic Materials Ecuador",
+          "buyer_address": "Ecuador",
+          "supplier": "Synthetic Sheet Supplier",
+          "product": "PVC Foam Board, thickness 2mm",
+          "quantity_count": 200,
+          "quantity_unit": "SQM",
+          "weight_kg": 494,
+          "dates": {"arrival_date": "2026-01-22"},
+          "master_bill": "SYN-ANDEAN-001",
+          "destination_country": "Ecuador",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {},
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "normalized_shipment.product.match_level", "op": "eq", "value": "EXACT"},
+        {"path": "data_quality.unit_conflict", "op": "eq", "value": true},
+        {
+          "path": "data_quality.unit_consistency_metrics.declared_area_m2",
+          "op": "approx",
+          "value": 200,
+          "tolerance": 0.0001
+        },
+        {
+          "path": "data_quality.unit_consistency_metrics.areal_mass_kg_m2",
+          "op": "approx",
+          "value": 2.47,
+          "tolerance": 0.0001
+        },
+        {
+          "path": "data_quality.unit_consistency_metrics.implied_density_g_cm3",
+          "op": "approx",
+          "value": 1.235,
+          "tolerance": 0.0001
+        },
+        {
+          "path": "data_quality.warnings",
+          "op": "list_item_subset",
+          "value": {"code": "quantity_weight_spec_conflict", "severity": "medium"}
+        },
+        {"path": "data_quality.scoring_suspended", "op": "eq", "value": false}
+      ],
+      "name_invariance_paths": [
+        "normalized_shipment.product.match_level",
+        "data_quality.unit_conflict",
+        "data_quality.unit_consistency_metrics.implied_density_g_cm3"
+      ]
+    },
+    {
+      "id": "viet_synthetic_cross_record_contamination",
+      "fixture_kind": "user_record_transcription_plus_synthetic_collision_record",
+      "purpose": "The supplied Vietnam row contains internal route/product conflicts; a related frozen row makes the cross-record collision deterministically testable.",
+      "raw_input": "Buyer\tViet Synthetic Travel Trade Company Limited\nHouse Bill\tSYNVNHBL00049183\nProduct\tPVC Foam Board, Wall Cladding, Made Of PVC, hard, Non-Porous\nPort of Lading\tCharlotte Amalie\nDestination\tVietnam\nPort of Discharge\tCharlotte Amalie\nContainer\tSYNX7601738",
+      "normalized": {
+        "record": {
+          "data_source": "Vietnam All(EN)(import)",
+          "buyer": "Viet Synthetic Travel Trade Company Limited",
+          "buyer_address": "Lot 88 Synthetic Avenue, Da Nang, Vietnam",
+          "buyer_registered_name_local": "CÔNG TY TNHH THƯƠNG MẠI MÔ PHỎNG VIỆT",
+          "supplier": "Zhejiang Synthetic Materials Export Co Ltd",
+          "product": "PVC Foam Board, Wall Cladding, Plate, Made Of PVC, hard, Non-Porous, Not Self-Adhesive; Width 122cm, Thickness 0.8cm",
+          "product_description_local": "PVC FOAM BOARD - Tấm ốp tường, làm bằng PVC cứng, không xốp, không tự dính",
+          "quantity_count": 1763,
+          "quantity_unit": "PIECES",
+          "unit_price": 14.5,
+          "original_amount": 25563.5,
+          "weight_kg": null,
+          "teu": 2,
+          "dates": {"arrival_date": "2026-05-28"},
+          "master_bill": "SYNTSCW0001",
+          "house_bill": "SYNVNHBL00049183",
+          "origin": "China Mainland",
+          "coo_code": "CN",
+          "port_of_lading": "Charlotte Amalie, St Thomas",
+          "port_of_discharge": "Charlotte Amalie, US Virgin Islands",
+          "destination_country": "Vietnam",
+          "carrier": "SYNL",
+          "vessel": "Synthetic Palm",
+          "containers": ["SYNX7601738"],
+          "hs_code": "392190"
+        },
+        "anomalies": [
+          {
+            "code": "same_loading_discharge_port",
+            "severity": "high",
+            "message": "Port of lading and port of discharge are the same or strongly overlap."
+          },
+          {
+            "code": "product_structure_conflict",
+            "severity": "medium",
+            "message": "Description says foam board and also non-porous/non-foamed."
+          }
+        ],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {},
+      "related_records": [
+        {
+          "record": {
+            "buyer": "Synthetic Florida Importer",
+            "destination_country": "United States",
+            "house_bill": "SYNVNHBL00049183",
+            "containers": ["SYNX7601738"],
+            "dates": {"arrival_date": "2026-05-02"}
+          }
+        }
+      ],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "normalized_shipment.product.match_level", "op": "eq", "value": "EXACT"},
+        {"path": "data_quality.possible_contamination", "op": "eq", "value": true},
+        {
+          "path": "data_quality.warnings",
+          "op": "list_item_subset",
+          "value": {"code": "same_loading_discharge_port"}
+        },
+        {
+          "path": "data_quality.warnings",
+          "op": "list_item_subset",
+          "value": {"code": "product_structure_conflict"}
+        },
+        {
+          "path": "data_quality.warnings",
+          "op": "list_item_subset",
+          "value": {"code": "route_country_conflict"}
+        },
+        {
+          "path": "data_quality.warnings",
+          "op": "list_item_subset",
+          "value": {"code": "cross_record_house_bill_collision"}
+        },
+        {
+          "path": "data_quality.warnings",
+          "op": "list_item_subset",
+          "value": {"code": "cross_record_container_collision"}
+        },
+        {"path": "data_quality.scoring_suspended", "op": "eq", "value": true},
+        {"path": "commercial_scoring.status", "op": "eq", "value": "suspended"},
+        {"path": "commercial_scoring.grade", "op": "eq", "value": "UNSCORABLE"},
+        {"path": "exclusion_reason", "op": "eq", "value": "record_contamination_requires_reconciliation"}
+      ]
+    },
+    {
+      "id": "harborline_weak_affiliate_no_merge",
+      "fixture_kind": "synthetic_negative_entity_resolution",
+      "purpose": "Weak similarity and supplier signals must never merge Harborline with Meridian Global.",
+      "raw_input": "Buyer\tHarborline Ventures\nProduct\tPVC Foam Board",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Harborline Ventures",
+          "buyer_address": "Synthetic city address",
+          "supplier": "Shared Synthetic Supplier",
+          "product": "PVC Foam Board",
+          "dates": {"arrival_date": "2026-03-01"},
+          "master_bill": "SYN-HARBOR-001",
+          "destination_country": "United States",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {
+        "entity": {
+          "legal_name": "Meridian Global",
+          "match_evidence": [
+            {"basis": "similar_name", "evidence_grade": "C"},
+            {"basis": "same_supplier", "evidence_grade": "C"}
+          ],
+          "legal_registration": {
+            "identifier": "MUST-NOT-COPY"
+          },
+          "possible_affiliates": [
+            {
+              "name": "Meridian Global",
+              "relationship": "suggested",
+              "match_basis": ["same_supplier", "same_city", "third_party_suggestion"]
+            }
+          ]
+        }
+      },
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "entity_resolution.matched", "op": "eq", "value": false},
+        {"path": "entity_resolution.status", "op": "eq", "value": "UNVERIFIED"},
+        {"path": "entity_resolution.legal_name", "op": "eq", "value": null},
+        {"path": "entity_resolution.legal_registration", "op": "eq", "value": {}},
+        {
+          "path": "entity_resolution.possible_affiliates",
+          "op": "list_item_subset",
+          "value": {
+            "name": "Meridian Global",
+            "relationship": "unverified",
+            "do_not_merge": true
+          }
+        },
+        {"path": "contacts", "op": "length", "value": 0}
+      ],
+      "name_invariance_paths": [
+        "entity_resolution.matched",
+        "entity_resolution.possible_affiliates",
+        "normalized_shipment.product.match_level"
+      ]
+    },
+    {
+      "id": "suncrest_weak_affiliate_no_merge",
+      "fixture_kind": "synthetic_negative_entity_resolution",
+      "purpose": "Same city, similar product and a directory suggestion do not prove a Suncrest/Coastal Timber Supply relationship.",
+      "raw_input": "Buyer\tSuncrest Panels\nProduct\tPVC Foam Board",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Suncrest Panels",
+          "buyer_address": "South Florida",
+          "supplier": "Synthetic Board Supplier",
+          "product": "PVC Foam Board",
+          "dates": {"arrival_date": "2026-03-02"},
+          "master_bill": "SYN-SUN-001",
+          "destination_country": "United States",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {
+        "entity": {
+          "legal_name": "Coastal Timber Supply",
+          "match_evidence": [
+            {"basis": "same_city", "evidence_grade": "C"},
+            {"basis": "similar_product", "evidence_grade": "C"}
+          ],
+          "legal_registration": {
+            "identifier": "MUST-NOT-COPY"
+          },
+          "possible_affiliates": [
+            {
+              "name": "Coastal Timber Supply",
+              "relationship": "suggested",
+              "match_basis": ["same_city", "similar_product", "third_party_suggestion"]
+            }
+          ]
+        }
+      },
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "entity_resolution.matched", "op": "eq", "value": false},
+        {"path": "entity_resolution.legal_name", "op": "eq", "value": null},
+        {"path": "entity_resolution.legal_registration", "op": "eq", "value": {}},
+        {
+          "path": "entity_resolution.possible_affiliates",
+          "op": "list_item_subset",
+          "value": {
+            "name": "Coastal Timber Supply",
+            "relationship": "unverified",
+            "do_not_merge": true
+          }
+        }
+      ],
+      "name_invariance_paths": [
+        "entity_resolution.matched",
+        "entity_resolution.possible_affiliates",
+        "normalized_shipment.product.match_level"
+      ]
+    },
+    {
+      "id": "bluewater_structural_core_not_standard_board",
+      "fixture_kind": "synthetic_product_semantics",
+      "purpose": "Marine structural foam core must not be promoted to an exact ordinary PVC foam-board lead.",
+      "raw_input": "Buyer\tBluewater Composite Works\nProduct\tStructural PVC Foam Core for marine sandwich composite",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Bluewater Composite Works",
+          "supplier": "Synthetic Composite Materials Supplier",
+          "product": "Structural PVC Foam Core for marine sandwich composite",
+          "dates": {"arrival_date": "2026-03-03"},
+          "master_bill": "SYN-BLUE-001",
+          "destination_country": "United States",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {},
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "normalized_shipment.product.match_level", "op": "eq", "value": "NONE"},
+        {
+          "path": "normalized_shipment.product.normalized_category",
+          "op": "eq",
+          "value": "STRUCTURAL_PVC_FOAM_CORE"
+        },
+        {"path": "commercial_scoring.grade", "op": "eq", "value": "D"},
+        {"path": "exclusion_reason", "op": "eq", "value": "non_target_product"}
+      ],
+      "name_invariance_paths": [
+        "normalized_shipment.product.match_level",
+        "normalized_shipment.product.normalized_category",
+        "commercial_scoring.grade",
+        "exclusion_reason"
+      ]
+    },
+    {
+      "id": "pacific_link_official_nvocc_evidence",
+      "fixture_kind": "synthetic_evidence_gated_role",
+      "purpose": "NVOCC classification requires strong supplied role evidence and should exclude the logistics intermediary as buyer.",
+      "raw_input": "Buyer\tPacific Link Logistics Mexico\nProduct\tPVC Foam Board",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Pacific Link Logistics Mexico",
+          "buyer_address": "Synthetic Mexico business address",
+          "supplier": "Synthetic PVC Supplier",
+          "product": "PVC Foam Board",
+          "weight_kg": 10000,
+          "dates": {"arrival_date": "2026-03-04"},
+          "master_bill": "SYN-PAC-001",
+          "destination_country": "Mexico",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {
+        "entity": {
+          "legal_name": "Pacific Link Logistics Mexico",
+          "match_evidence": [
+            {
+              "basis": "government_filing",
+              "evidence_grade": "A",
+              "source_id": "fixture-nvocc-license"
+            }
+          ],
+          "legal_registration": {
+            "identifier": "SYNTHETIC-NVOCC-LICENSE",
+            "status": "fixture-only"
+          }
+        },
+        "business": {
+          "verified_role": "NVOCC",
+          "official_description": "Non vessel operating common carrier and freight forwarder",
+          "business_model": "logistics_intermediary",
+          "evidence_grade": "A"
+        },
+        "trade_summary": {
+          "product_specific_shipments": 1
+        },
+        "evidence": [
+          {
+            "source_id": "fixture-nvocc-license",
+            "type": "offline_synthetic_government_snapshot",
+            "evidence_grade": "A",
+            "source": "Synthetic official NVOCC role evidence",
+            "date_checked": "2026-07-30"
+          }
+        ]
+      },
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "buyer_intelligence.buyer_role", "op": "eq", "value": "NVOCC"},
+        {"path": "buyer_intelligence.role_status", "op": "eq", "value": "VERIFIED"},
+        {
+          "path": "commercial_scoring.risk_penalties",
+          "op": "list_item_subset",
+          "value": {"code": "freight_forwarder_or_nvocc", "points": -30}
+        },
+        {"path": "commercial_scoring.grade", "op": "eq", "value": "D"},
+        {
+          "path": "exclusion_reason",
+          "op": "eq",
+          "value": "logistics_intermediary_not_end_buyer"
+        }
+      ],
+      "name_invariance_paths": [
+        "buyer_intelligence.buyer_role",
+        "commercial_scoring.grade",
+        "exclusion_reason"
+      ]
+    },
+    {
+      "id": "pacific_link_name_only_unknown",
+      "fixture_kind": "synthetic_negative_role_gate",
+      "purpose": "The same company label without role evidence must remain UNKNOWN.",
+      "raw_input": "Buyer\tPacific Link Logistics Mexico\nProduct\tPVC Foam Board",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Pacific Link Logistics Mexico",
+          "supplier": "Synthetic PVC Supplier",
+          "product": "PVC Foam Board",
+          "dates": {"arrival_date": "2026-03-05"},
+          "master_bill": "SYN-PAC-002",
+          "destination_country": "Mexico",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {},
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "buyer_intelligence.buyer_role", "op": "eq", "value": "UNKNOWN"},
+        {"path": "entity_resolution.matched", "op": "eq", "value": false},
+        {"path": "exclusion_reason", "op": "eq", "value": null}
+      ]
+    },
+    {
+      "id": "package_count_scope_not_product_quantity",
+      "fixture_kind": "synthetic_field_scope",
+      "purpose": "Shipment package count must remain separate from product-unit quantity.",
+      "raw_input": "Buyer\tSynthetic Scope Buyer\nItem No\t6\nPackages\t6 BG\nWeight\t394 kg\nProduct\tPVC Foam Board",
+      "normalized": {
+        "record": {
+          "data_source": "offline-fixture",
+          "buyer": "Synthetic Scope Buyer",
+          "buyer_address": "Synthetic address",
+          "supplier": "Synthetic PVC Supplier",
+          "product": "PVC Foam Board 1220 x 2440 x 17mm",
+          "item_number": "6",
+          "quantity_count": null,
+          "quantity_unit": null,
+          "quantity_scope": "not_declared",
+          "package_count": 6,
+          "package_type": "BG",
+          "weight_kg": 394,
+          "gross_weight_kg": 395.92,
+          "dates": {"arrival_date": "2026-06-17"},
+          "master_bill": "SYN-SCOPE-001",
+          "destination_country": "Philippines",
+          "containers": []
+        },
+        "anomalies": [],
+        "pvc_sheet_inference": {
+          "nearest_full_sheet_count": 12,
+          "estimated_sheet_count": 11.98,
+          "plausible_for_sheet_count": true
+        }
+      },
+      "enrichment": {},
+      "related_records": [],
+      "mode": "fast_scan",
+      "assertions": [
+        {"path": "normalized_shipment.quantity.declared_quantity", "op": "eq", "value": null},
+        {"path": "normalized_shipment.quantity.quantity_scope", "op": "eq", "value": "not_declared"},
+        {"path": "normalized_shipment.quantity.package_count", "op": "eq", "value": 6},
+        {
+          "path": "normalized_shipment.quantity.package_count_is_product_quantity",
+          "op": "eq",
+          "value": false
+        },
+        {"path": "normalized_shipment.quantity.estimated_sheets", "op": "eq", "value": 12},
+        {"path": "data_quality.shipment_line_conflict", "op": "eq", "value": true},
+        {
+          "path": "data_quality.warnings",
+          "op": "list_item_subset",
+          "value": {"code": "shipment_line_scope_ambiguous", "severity": "high"}
+        },
+        {
+          "path": "data_quality.warnings",
+          "op": "list_item_subset",
+          "value": {"code": "package_count_not_product_quantity"}
+        },
+        {
+          "path": "data_quality.field_scope.ambiguous",
+          "op": "contains",
+          "value": "package_count"
+        }
+      ]
+    },
+    {
+      "id": "empty_input_deep_dive_never_blank",
+      "fixture_kind": "synthetic_failure_contract",
+      "purpose": "Even empty input plus missing Deep Dive enrichment must return a structured result and readable report.",
+      "raw_input": "",
+      "normalized": {
+        "record": {},
+        "anomalies": [],
+        "pvc_sheet_inference": null
+      },
+      "enrichment": {},
+      "related_records": [],
+      "mode": "deep_dive",
+      "assertions": [
+        {"path": "status", "op": "eq", "value": "failed"},
+        {"path": "input_snapshot.sha256", "op": "nonempty"},
+        {"path": "normalized_shipment.product.match_level", "op": "eq", "value": "UNKNOWN"},
+        {"path": "buyer_intelligence.buyer_role", "op": "eq", "value": "UNKNOWN"},
+        {"path": "commercial_scoring.provisional", "op": "eq", "value": true},
+        {
+          "path": "errors",
+          "op": "list_item_subset",
+          "value": {
+            "stage": "input_validation",
+            "code": "normalized_record_missing"
+          }
+        },
+        {"path": "missing_sections", "op": "contains", "value": "shipment_normalization"}
+      ]
+    }
+  ]
+}

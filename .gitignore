@@ -1,6 +1,41 @@
+﻿# Python
 __pycache__/
+*.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
 .venv/
-*.pyc
+venv/
+env/
+
+# Local secrets
 .env
-data/customs-buyer-ledger.json
+.env.*
+*.pem
+*.key
+
+# Private production acceptance inputs/results
+.cbi-private-golden*.json
+private-golden/
+private-acceptance/
+
+# Logs / temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

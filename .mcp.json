@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "buyer-outreach-actions": {
+      "command": "powershell.exe",
+      "args": [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$root = Join-Path $env:USERPROFILE 'plugins\\customs-buyer-intelligence'; $runtimeSessions = Join-Path $env:LOCALAPPDATA 'XingHuai\\CustomsBuyerIntelligenceV6\\sessions'; $env:CBI_SESSION_ROOT = $runtimeSessions; $candidates = @(); $candidates += @(Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'Programs\\Python') -Filter python.exe -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike '*\\Scripts\\*' } | Sort-Object FullName -Descending | Select-Object -ExpandProperty FullName); $candidates += @(Get-ChildItem -LiteralPath (Join-Path $env:USERPROFILE '.cache\\codex-runtimes') -Filter python.exe -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\\\dependencies\\\\python\\\\python\\.exe$' } | Select-Object -ExpandProperty FullName); $candidates += @(Get-Command python.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notlike '*\\WindowsApps\\*' } | Select-Object -ExpandProperty Source); $python = $null; foreach ($candidate in @($candidates | Select-Object -Unique)) { if (-not $candidate) { continue }; & $candidate -c \"import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)\" *> $null; if ($LASTEXITCODE -eq 0) { $python = $candidate; break } }; if (-not $python) { throw 'Python 3.10+ was not found. Install Python 3.10+ or launch Codex Desktop to provision its runtime, then retry.' }; & $python -B -Xutf8 (Join-Path $root 'mcp\\server_v61_backup_recovery.py') --stdio"
+      ]
+    }
+  }
+}
