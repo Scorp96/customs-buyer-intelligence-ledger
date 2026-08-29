@@ -1,6 +1,6 @@
 {
   "name": "customs-buyer-intelligence",
-  "version": "6.1.0+codex.20260829223600",
+  "version": "6.1.0+codex.20260829231000",
   "description": "Answer-first public buyer research plus a v6.1 claim-driven Runtime with evidence-bound monotonic Peers, exactly-once batch compilation, EIV Decision Saturation, crash-safe durability, verified migration, guarded legacy-Evidence reconciliation, Git-controlled customs audit bootstrap, safe CRM writeback and guarded draft-only actions.",
   "author": {
     "name": "Xinghuai Sales Intelligence"
@@ -27,7 +27,7 @@
   "interface": {
     "displayName": "Customs Buyer Intelligence",
     "shortDescription": "先查先答；也可由Git受控CLI显式启动正式审计",
-    "longDescription": "普通买家、联系人、邮箱和电话查询默认只搜索并立即回答最新可验证内容，附具体来源与边界，同时生成一封定制开发邮件和一条定制即时聊天草稿；不创建 Runtime 历史、审计文档、Closure、Excel 写回或可执行发送入口。累计多家也不会自动入库；只有用户明确要求新增到表格、批量写回、正式审核或一键发送时，才进入相应的去重、历史保留、审计或安全发送流程。Git-controlled CLI 可对本地海关 JSON 做只读预览，或在显式 --commit 后通过 v6.1 production MCP/WAL 安全创建/复用 Account 与 FULL_AUDIT Investigation、写入仅为 D1 的用户海关证据并输出 EIV 研究目标；CLI 本身不伪装成网页研究代理，真实 web/browser/registry/maps 调查仍由有相应工具的 Host 执行。原有十二模块、六方向网络、Evidence/Pivot、10 项商业结果、恢复与草稿外联能力继续保留给显式全量审计流程。",
+    "longDescription": "普通买家、联系人、邮箱和电话查询默认只搜索并立即回答最新可验证内容，附具体来源与边界，同时生成一封定制开发邮件和一条定制即时聊天草稿；不创建 Runtime 历史、审计文档、Closure、Excel 写回或可执行发送入口。累计多家也不会自动入库；只有用户明确要求新增到表格、批量写回、正式审核或一键发送时，才进入相应的去重、历史保留、审计或安全发送流程。Git-controlled CLI 可对本地海关 JSON 做只读预览，完整保留原始 JSON 并同时生成 canonical normalized view；显式 --commit 后通过 v6.1 production MCP/WAL 安全创建/复用 Account 与 FULL_AUDIT Investigation、写入仅为 D1 的用户海关证据并输出 EIV 研究目标。未知或尚未分类的原始字段不会在规范化时被丢弃，但原始保留不提高证据等级。CLI 本身不伪装成网页研究代理，真实 web/browser/registry/maps 调查仍由有相应工具的 Host 执行。原有十二模块、六方向网络、Evidence/Pivot、10 项商业结果、恢复与草稿外联能力继续保留给显式全量审计流程。",
     "developerName": "Xinghuai Sales Intelligence",
     "category": "Business",
     "capabilities": [
