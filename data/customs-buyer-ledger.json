@@ -1,5 +1,323 @@
 {
   "buyers": {
+    "buyer_072a768f8ee60a960299": {
+      "buyer_key": "buyer_072a768f8ee60a960299",
+      "contacts": {
+        "consolidadorarevier@hotmail.com": {
+          "email": "consolidadorarevier@hotmail.com",
+          "employment_status": "not_applicable",
+          "entity": "Revier International Services C.A.",
+          "first_seen": "2026-08-01",
+          "last_checked": "2026-08-29T07:17:36+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "not_procurement",
+          "recommended_use": "Only as a verification/referral route to ask who the commercial cargo owner or ultimate Venezuelan buyer was for Shanghai Allwin sheet-material shipments; do not send a product quotation as if Revier were the end buyer.",
+          "risk_note": "Current trade-record address and strongly logistics-oriented handle ('consolidador'). No evidence this inbox purchases PVC foam board for Revier's own inventory. Do not treat as direct procurement.",
+          "route_class": "ALTERNATIVE_REFERRAL",
+          "source_ids": [
+            "rv_e1_user_bol",
+            "rv_e7_email_hotmail"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "directory_current"
+        },
+        "revier.lg@gmail.com": {
+          "email": "revier.lg@gmail.com",
+          "employment_status": "not_applicable",
+          "entity": "Revier International Services C.A.",
+          "first_seen": "2025-08-15",
+          "last_checked": "2026-08-29T07:17:36+00:00",
+          "person_name": null,
+          "privacy_class": "public_business",
+          "procurement_authority_status": "not_procurement",
+          "recommended_use": "Secondary referral/verification route only; ask for the cargo owner/importer responsible for sheet-material purchasing, not for a direct quote decision.",
+          "risk_note": "Appears repeatedly in public manifest data, including July 2026, but is not verified on an official company domain and has no demonstrated PVC-board procurement authority.",
+          "route_class": "ALTERNATIVE_REFERRAL",
+          "source_ids": [
+            "rv_e8_email_gmail"
+          ],
+          "title_as_sourced": null,
+          "verification_status": "directory_current"
+        }
+      },
+      "created_at": "2026-08-29T07:38:24+00:00",
+      "evidence": {
+        "rv_e10_allwin_products": {
+          "boundary": "Exhibitor information is supplier-presented/industry-source information, not a Chinese corporate registry. It does not prove that every exported PVC foam board SKU is made at a specific plant.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "A current trade-show exhibitor profile for Shanghai Allwin Advanced Material Co., Ltd lists PVC foam board and acrylic sheet among its principal products and gives the Shanghai Huizhan International Business Center address consistent with the supplier details in the current bill.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B2",
+          "evidence_id": "rv_e10_allwin_products",
+          "source_date": null,
+          "source_reference": "ReklamExpo exhibitor profile for Shanghai Allwin Advanced Material Co., Ltd",
+          "source_type": "professional_source",
+          "source_url": "https://reklamexpo.kz/exhibitor-detail/?id=24546&lang=en"
+        },
+        "rv_e11_fam_fmc": {
+          "boundary": "FAM Cargo's regulatory status does not prove it owns the current goods or identify the Venezuelan ultimate consignee.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "The U.S. Federal Maritime Commission lists FAM CARGO USA LLC as an Ocean Transportation Intermediary with license number 032696, supporting its logistics/NVO role in the current shipment chain.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A1",
+          "evidence_id": "rv_e11_fam_fmc",
+          "source_date": null,
+          "source_reference": "Federal Maritime Commission OTI list",
+          "source_type": "court_or_regulator",
+          "source_url": "https://www2.fmc.gov/FMC1Users/scripts/ExtReports.asp?tariffClass=oti"
+        },
+        "rv_e12_fam_entity": {
+          "boundary": "This verifies FAM Cargo USA LLC's Florida entity status only; it is a separate legal entity from Revier and Shanghai Allwin.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "Florida Division of Corporations shows FAM CARGO USA LLC, document L22000477653, as an active Florida LLC, with 2026 annual report filed Jan. 8, 2026.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A1",
+          "evidence_id": "rv_e12_fam_entity",
+          "source_date": null,
+          "source_reference": "Florida Division of Corporations Sunbiz FAM CARGO USA LLC record",
+          "source_type": "government_registry",
+          "source_url": "https://search.sunbiz.org/Inquiry/corporationsearch/SearchResultDetail?aggregateId=flal-l22000477653-490a5bf6-a808-48e5-8ea2-931acc22dd2d&directionType=Initial&inquirytype=EntityName&listNameOrder=FAMCAPITAL+L180002559590&searchNameOrder=FAMCARGOUSA+L220004776530&searchTerm=FAM+CAPITAL+LLC"
+        },
+        "rv_e13_vehicle_sample": {
+          "boundary": "One vehicle shipment does not alone define Revier's entire business model; it is used together with broader trade patterns and logistics-directory evidence.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "A July 11, 2026 Simple BOL FROB record shows Regal International FZE shipping two Toyota vehicles to Revier International Services CA, with Revier's current Maiquetia phone/email; this is representative evidence that Revier handles cargo far outside PVC sheet materials.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "rv_e13_vehicle_sample",
+          "source_date": "2026-07-11",
+          "source_reference": "ImportInfo Revier sample bill MAEU270363430",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/revier-international-services-c-a"
+        },
+        "rv_e1_user_bol": {
+          "boundary": "This proves what the supplied manifest record states. It does not establish that Revier is the inventory owner, final material consumer, U.S. importer, or procurement decision-maker; it also does not provide PVC board dimensions, thickness, density, process or end use.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "The current user-supplied record identifies REVIER INTERNATIONAL SERVICES C.A., RIF J308561045, at Galeria Comercial La Vela in Maiquetia as consignee/buyer on master BOL CMDUNGP3611420 / house BOL SWCVBLS26070462, with 116 PKG, 31,899 kg and cargo description including ACRYLIC SHEET, PVC FOAM BOARD and ABS DOUBLE COLOR SHEET.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "rv_e1_user_bol",
+          "source_date": "2026-08-01",
+          "source_reference": "Current-run user customs record dated 2026-08-01",
+          "source_type": "user_input",
+          "source_url": null
+        },
+        "rv_e2_public_bol": {
+          "boundary": "Third-party U.S. manifest database. The page does not prove final ownership, ultimate buyer, commercial invoice party, or Venezuelan customs clearance party. Its displayed arrival date conflicts with the user record's estimated-arrival field.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "ImportGenius independently displays master BOL CMDUNGP3611420 with Shanghai Allwin Advanced Material as supplier, Revier International Services C.A. as importer/consignee, 116 PKG, 31,899 kg, container CMAU7229945 and the same mixed cargo description including PVC FOAM BOARD; the record is coded Simple BOL FROB.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "rv_e2_public_bol",
+          "source_date": "2026-08-01",
+          "source_reference": "ImportGenius Revier International Services CA shipment sample",
+          "source_type": "trade_database",
+          "source_url": "https://www.importgenius.cn/importers/revier-international-services-ca"
+        },
+        "rv_e3_frob": {
+          "boundary": "FROB status establishes routing/manifest semantics only; it does not by itself identify the ultimate foreign buyer or determine ownership of the cargo.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "CBP ocean-manifest guidance defines FROB cargo as foreign-laden cargo that touches one or more U.S. ports and proceeds foreign on the same vessel/voyage; therefore a U.S. port appearance on a FROB bill is not evidence that the cargo was imported into U.S. commerce by Revier.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "A1",
+          "evidence_id": "rv_e3_frob",
+          "source_date": "2025-02",
+          "source_reference": "U.S. Customs and Border Protection ACE Ocean Import Manifest guidance, FROB definition",
+          "source_type": "government_registry",
+          "source_url": "https://www.cbp.gov/sites/default/files/2025-02/ImportOcean_IG_CAMIR_Mfst_with%20SecurityFiling_2025_Feb_NONDRAFT_508_1_0.pdf"
+        },
+        "rv_e4_trade_pattern": {
+          "boundary": "Provider aggregate counts may use bill/party-role deduplication rules different from other databases and are not treated as a count of target-product purchases. Cargo diversity supports role analysis but does not by itself prove freight-forwarder legal status.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "ImportInfo aggregates 189 bills of lading associated with Revier International Services C.A. through Aug. 1, 2026, with major associated shippers including DunaCommerce, GT Cars Holding, Sahara Motors, Farago Motors and Regal International; many visible records concern vehicles rather than building sheet materials.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "rv_e4_trade_pattern",
+          "source_date": null,
+          "source_reference": "ImportInfo Revier International Services C.A. profile",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/revier-international-services-c-a"
+        },
+        "rv_e5_cargo_directory": {
+          "boundary": "Directory inclusion strongly supports a cargo/logistics-services context but is not an official Venezuelan corporate-registry record. The listed address differs from the more recent customs address at Galeria Comercial La Vela and may be historical.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "DirectorioDeCarga, a Latin American cargo/logistics directory, has a dedicated listing for REVIER INTERNATIONAL SERVICES, C.A. in Maiquetia, Venezuela, with an address at Iglesia Navarrete, Edif. San Luis, Piso 1, Of. 2-A.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "C1",
+          "evidence_id": "rv_e5_cargo_directory",
+          "source_date": null,
+          "source_reference": "DirectorioDeCarga Revier International Services C.A. listing",
+          "source_type": "third_party_directory",
+          "source_url": "https://directoriodecarga.com/empresas/revier-international-services-c-a"
+        },
+        "rv_e6_role_inference": {
+          "boundary": "This is not a government-stated corporate purpose. Revier could in some shipments also be owner or purchaser; the ultimate buyer on the current Allwin shipment remains unknown.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "Revier is more likely acting as a freight/consolidation/import-services intermediary than as the end buyer of PVC foam board.",
+          "claim_class": "INFERENCE",
+          "conflict": null,
+          "evidence_grade": "B2",
+          "evidence_id": "rv_e6_role_inference",
+          "source_date": null,
+          "source_reference": "Inference from ImportInfo trade pattern, FROB semantics, cargo-directory listing and email handles",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/revier-international-services-c-a"
+        },
+        "rv_e7_email_hotmail": {
+          "boundary": "The address is current in a trade record but is not published on a verified official company website; it should not be treated as a PVC-board procurement inbox.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "The current Aug. 2026 shipment data publicly exposes consolidadorarevier@hotmail.com together with Revier's Maiquetia address and phone +58 212 331 8585.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "rv_e7_email_hotmail",
+          "source_date": "2026-08-01",
+          "source_reference": "ImportKey current Revier shipment record",
+          "source_type": "trade_database",
+          "source_url": "https://importkey.com/i/revier-international-services-c-a"
+        },
+        "rv_e8_email_gmail": {
+          "boundary": "Trade-record email only; no independent official-domain verification and no evidence of procurement authority.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "A July 2026 ImportInfo bill lists REVIER.LG@GMAIL.COM and +58 212 331 8585 for Revier International Services CA at Maiquetia.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "rv_e8_email_gmail",
+          "source_date": "2026-07-11",
+          "source_reference": "ImportInfo Revier sample bill MAEU270363430",
+          "source_type": "trade_database",
+          "source_url": "https://www.importinfo.com/revier-international-services-c-a"
+        },
+        "rv_e9_allwin_mar": {
+          "boundary": "The page repeats visually identical rows; they are treated here as one underlying event. The visible March cargo description does not establish PVC foam board in that shipment, so it proves supplier relationship continuity, not repeated foam-board demand.",
+          "checked_at": "2026-08-29T07:17:36+00:00",
+          "claim": "Trademo shows a Mar. 28, 2026 shipment from Shanghai Allwin Advanced Material Co Ltd to Revier International Services CA at Port Everglades, 30,854 kg, with cargo keywords ACRYLIC SHEET, ABS DOUBLE COLOR SHEET and HOT FIX TAPE.",
+          "claim_class": "FACT",
+          "conflict": null,
+          "evidence_grade": "B1",
+          "evidence_id": "rv_e9_allwin_mar",
+          "source_date": "2026-03-28",
+          "source_reference": "Trademo Shanghai Allwin Advanced Material supplier profile",
+          "source_type": "trade_database",
+          "source_url": "https://www.trademo.com/companies/shanghai-allwin-advanced-material/18534427"
+        }
+      },
+      "history_events": [],
+      "identity": {
+        "address": "RIF J308561045, Esq. Entre Cristo y Autopista No. 43, Edif. Galeria Comercial La Vela, Piso Terraza, Local T-2, Maiquetia, La Guaira 1162, Venezuela",
+        "aliases": [
+          "Revier International Services CA",
+          "REVIER INTERNATIONAL SERVICES, C.A.",
+          "Revier International Services C.A.",
+          "Revier International Services C.a"
+        ],
+        "business_type": "Likely freight/consolidation/import-services intermediary rather than the end purchaser of PVC foam board. This is an evidence-based inference from FROB routing, logistics-directory presence, company email naming, diverse third-party cargo and repeated consignee/notify roles; the exact corporate purpose was not independently verified in an official Venezuelan corporate registry.",
+        "country": "Venezuela",
+        "customs_name": "Revier International Services C.a",
+        "legal_name": "Revier International Services C.A.",
+        "source_ids": [
+          "rv_e1_user_bol",
+          "rv_e2_public_bol",
+          "rv_e4_trade_pattern",
+          "rv_e5_cargo_directory"
+        ]
+      },
+      "runs": [
+        {
+          "declared_previous_email_count": 0,
+          "declared_previous_trade_count": 0,
+          "input_hash": "f4f2a360864d88da7c790615",
+          "investigated_at": "2026-08-29T07:17:36+00:00",
+          "prior_ledger_date": null,
+          "prior_ledger_name": null,
+          "run_id": "revier-20260829-071736z"
+        }
+      ],
+      "trade_records": {
+        "record:importinfomaeu270363430": {
+          "buyer": "Revier International Services CA",
+          "data_level": "bill",
+          "date": "2026-07-11",
+          "date_semantics": "Actual-arrival/shipment context as displayed by ImportInfo; the bill is Simple BOL FROB and is used only as representative evidence of Revier's intermediary cargo profile.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:38:24+00:00",
+          "house_bill": null,
+          "item_number": null,
+          "last_seen": "2026-08-29T07:38:24+00:00",
+          "master_bill": "MAEU270363430",
+          "normalized_product": "Motor vehicles (representative non-sheet-material cargo)",
+          "product_raw": "2 UNITS TOYOTA VEHICLES TOYOTA FORTUNER; TOYOTA LC 79 DC; MODEL 2026",
+          "provider": "ImportInfo",
+          "quantity": 2.0,
+          "record_id": "importinfo-MAEU270363430",
+          "source_ids": [
+            "rv_e13_vehicle_sample"
+          ],
+          "supplier_or_exporter": "Regal International FZE",
+          "uom": "CTN",
+          "weight_kg": 4355.0
+        },
+        "record:reviercmdungp3611420swcvbls26070462": {
+          "buyer": "Revier International Services C.a",
+          "data_level": "bill",
+          "date": "2026-08-01",
+          "date_semantics": "User record date is 2026-08-01, with Estimated Arrival Date 2026-08-02 and Run Date 2026-08-03. ImportGenius displays arrival date 2026-08-01. Do not treat 2026-08-01 as purchase, invoice or manufacturing date.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:38:24+00:00",
+          "house_bill": "SWCVBLS26070462",
+          "item_number": null,
+          "last_seen": "2026-08-29T07:38:24+00:00",
+          "master_bill": "CMDUNGP3611420",
+          "normalized_product": "Mixed sheet-material cargo including PVC foam board, acrylic sheet and ABS double-color sheet; exact PVC foam-board subtype unknown",
+          "product_raw": "Acrylic Sheet Pvc Foam Board Abs Double Color Sheet Freight Prepaid",
+          "provider": "User-supplied record corroborated by ImportGenius",
+          "quantity": 116.0,
+          "record_id": "revier-CMDUNGP3611420-SWCVBLS26070462",
+          "source_ids": [
+            "rv_e1_user_bol",
+            "rv_e2_public_bol"
+          ],
+          "supplier_or_exporter": "Shanghai Allwin Advanced Material Co.,ltd",
+          "uom": "PKG",
+          "weight_kg": 31899.0
+        },
+        "record:trademoallwinrevier2026032830854": {
+          "buyer": "revier international services ca",
+          "data_level": "shipment",
+          "date": "2026-03-28",
+          "date_semantics": "Shipment date as displayed by Trademo. Repeated identical visible rows were deduplicated into one event.",
+          "declaration_number": null,
+          "first_seen": "2026-08-29T07:38:24+00:00",
+          "house_bill": null,
+          "item_number": null,
+          "last_seen": "2026-08-29T07:38:24+00:00",
+          "master_bill": null,
+          "normalized_product": "Acrylic sheet + ABS double-color sheet + hot-fix tape; no PVC foam board visible in public description",
+          "product_raw": "ACRYLIC SHEET ABS DOUBLE COLOR SHEET HOT FIX TAPE FREIGHT PREPAID",
+          "provider": "Trademo",
+          "quantity": null,
+          "record_id": "trademo-allwin-revier-2026-03-28-30854",
+          "source_ids": [
+            "rv_e9_allwin_mar"
+          ],
+          "supplier_or_exporter": "shanghai allwin advanced material co ltd",
+          "uom": null,
+          "weight_kg": 30854.0
+        }
+      },
+      "updated_at": "2026-08-29T07:38:24+00:00"
+    },
     "buyer_15dcb9eaa64d2fc72676": {
       "buyer_key": "buyer_15dcb9eaa64d2fc72676",
       "contacts": {
@@ -387,5 +705,5 @@
     }
   },
   "schema_version": "2.1",
-  "updated_at": "2026-08-29T07:17:36+00:00"
+  "updated_at": "2026-08-29T07:38:24+00:00"
 }
