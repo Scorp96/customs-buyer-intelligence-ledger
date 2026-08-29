@@ -90,8 +90,15 @@ class V61HostOfflineQueueTests(unittest.TestCase):
             env=environment,
         )
         process.terminate()
-        process.wait(timeout=5)
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate(timeout=5)
         self.assertIsNotNone(process.poll())
+        self.assertTrue(process.stdin is None or process.stdin.closed)
+        self.assertTrue(process.stdout is None or process.stdout.closed)
+        self.assertTrue(process.stderr is None or process.stderr.closed)
 
     def _offline_queue(self, payload_path: Path) -> dict:
         environment = dict(os.environ)
@@ -123,18 +130,15 @@ class V61HostOfflineQueueTests(unittest.TestCase):
         self._kill_mcp_transport()
         payload_path = self.root / "offline-bundle.json"
         payload_path.write_text(json.dumps(self.payload()), encoding="utf-8")
-
         first = self._offline_queue(payload_path)
         self.assertTrue(first["queued"])
         self.assertFalse(first["deduplicated"])
         self.assertEqual(first["status"], "PENDING")
         self.assertEqual(first["transport"], "LOCAL_FILESYSTEM_NO_MCP")
-
         replay = self._offline_queue(payload_path)
         self.assertFalse(replay["queued"])
         self.assertTrue(replay["deduplicated"])
         self.assertEqual(replay["request_sha256"], first["request_sha256"])
-
         restarted = UnifiedRuntime(self.session_root)
         synced = restarted.sync_pending_bundles({
             "investigation_id": self.investigation_id,
@@ -142,19 +146,13 @@ class V61HostOfflineQueueTests(unittest.TestCase):
         })
         self.assertEqual(synced["processed"], 1)
         self.assertEqual(synced["counts"], {"SYNCED": 1})
-        self.assertEqual(
-            synced["outcomes"][0]["result"]["bundle_id"],
-            "BUNDLE-OFFLINE-CHAOS-001",
-        )
-
+        self.assertEqual(synced["outcomes"][0]["result"]["bundle_id"], "BUNDLE-OFFLINE-CHAOS-001")
         second_sync = restarted.sync_pending_bundles({
             "investigation_id": self.investigation_id,
             "limit": 10,
         })
         self.assertEqual(second_sync["processed"], 0)
-        state = restarted.get_investigation_state({
-            "investigation_id": self.investigation_id,
-        })
+        state = restarted.get_investigation_state({"investigation_id": self.investigation_id})
         self.assertEqual(state["observation_count"], 1)
         self.assertEqual(state["bundle_count"], 1)
         health = restarted.get_runtime_health({})
