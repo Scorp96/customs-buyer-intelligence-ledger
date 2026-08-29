@@ -25,6 +25,8 @@ The customs commands are intentionally fail-closed:
 - `batch-audit` is read-only unless `--commit` is supplied.
 - committed mutations go through `mcp/server_v61_backup_recovery.py --stdio`,
   so v6.1 mutation WAL/idempotency and automatic backup guards remain in force.
+- an optional `--requested-account-id` on a single audit becomes an exact
+  Canonical identity constraint during commit; it is never a fuzzy suggestion.
 - committed customs input starts only as `D1_USER_SUPPLIED_UNVERIFIED` Evidence.
 - the complete raw input is retained alongside a canonical normalized view.
 - unknown/unclassified raw fields are not discarded.
@@ -58,6 +60,7 @@ customs JSON
   -> preserve exact raw JSON
   -> normalize known fields
   -> resolve buyer-country routing signal conservatively
+  -> apply optional exact requested Account ID constraint
   -> canonical account resolution
   -> start/reuse EXHAUSTIVE Investigation
   -> compile D1 user customs Evidence
@@ -219,10 +222,20 @@ or:
 python scripts/cbi.py audit C:\PrivateInputs\buyer.json
 ```
 
+When an already-reviewed Canonical C-number is known, it can be carried through
+preview without mutation:
+
+```powershell
+python scripts/cbi.py audit-file `
+  C:\PrivateInputs\buyer.json `
+  --requested-account-id C157
+```
+
 Preview shows at least:
 
 ```text
 candidate
+requested_account_id
 buyer_country_resolution
 customs_input_sha256
 raw_input_preserved
@@ -233,6 +246,10 @@ normalized_customs_record
 proposed_initial_claims
 runtime_mutation_performed=false
 ```
+
+In preview, `requested_account_id` is display-only. The command does not resolve,
+allocate or bind that ID. Use `scripts/cbi_canonical_preflight.py` for the
+byte-read-only Runtime identity check.
 
 No canonical account, Investigation, Evidence, Pivot, Peer, CRM or outreach
 state is written.
@@ -245,6 +262,33 @@ Only explicit `--commit` may persist state:
 python scripts/cbi.py audit-file C:\PrivateInputs\buyer.json --priority-grade A --commit
 ```
 
+For an existing reviewed customer, bind the exact intended Canonical ID:
+
+```powershell
+python scripts/cbi.py audit-file `
+  C:\PrivateInputs\buyer.json `
+  --requested-account-id C157 `
+  --priority-grade A `
+  --commit
+```
+
+`--requested-account-id` is a **hard identity constraint** on single-record
+`audit-file` / `audit` only. During commit:
+
+- the ID is validated before the production MCP client is started;
+- it is included in the `resolve_or_create_account` request;
+- it is included in resolver idempotency material, so a later change of requested
+  identity cannot silently replay an earlier automatic resolution;
+- if the requested ID collides with another existing Canonical identity, the
+  resolver returns ambiguity and the CLI blocks before `start_investigation`;
+- if a resolver ever returns a different Account ID than the requested one, the
+  CLI performs a second fail-closed check and blocks;
+- the requested ID is retained in the Investigation start input for provenance;
+- successful output exposes both `requested_account_id` and resolved `account_id`.
+
+A requested ID does not override country/tax/strong-identity conflicts. It is an
+identity constraint, not permission to force a merge.
+
 `--priority-grade` is a research-budget priority, not the buyer's Commercial
 Value grade. Commercial Value remains Evidence-derived.
 
@@ -254,12 +298,14 @@ Optional controls:
 --objective-limit N
 --priority-grade A+|A|A-|B+|B|B-|C|D|NQ
 --budget-units FLOAT
+--requested-account-id ACCOUNT_ID   # single audit only
 --session-root PATH
 ```
 
 A successful bootstrap returns at least:
 
 ```text
+requested_account_id
 account_id
 investigation_id
 account_resolution
@@ -304,10 +350,20 @@ Verification belongs to later public-source objectives.
 
 ## Idempotency
 
-Stable request material is derived from the canonical candidate and original raw
-input hash. Re-running the same committed input should reconcile/replay the same
-account/start/bundle through production WAL rather than duplicate Evidence or
-spawn parallel Investigations.
+Resolver idempotency material is derived from both:
+
+```text
+canonical candidate
+requested_account_id (or empty when automatic)
+```
+
+Investigation/bundle idempotency remains bound to the resolved Account and raw
+customs input hash. Re-running the same committed input with the same identity
+constraint should reconcile/replay the same account/start/bundle through
+production WAL rather than duplicate Evidence or spawn parallel Investigations.
+
+Changing a requested Account ID changes resolver idempotency material instead of
+replaying the previous resolution under a different identity intent.
 
 A materially different raw input receives a different input hash and can be
 appended under normal Runtime identity/reuse rules.
@@ -329,8 +385,12 @@ python scripts/cbi.py batch-audit C:\PrivateInputs\buyers.json --priority-grade 
 ```
 
 Each record independently applies the same country-resolution and raw-retention
-contract. Batch mode does not perform CRM writeback and does not mean research
-is complete.
+contract. Batch mode intentionally does **not** expose one shared
+`--requested-account-id`; applying one C-number to an array would create a
+cross-record misbinding risk. Known existing IDs must be handled per record or by
+a future explicitly mapped batch identity manifest.
+
+Batch mode does not perform CRM writeback and does not mean research is complete.
 
 ## Existing operator commands
 
@@ -355,20 +415,26 @@ Do not paste private customs/customer records into public workflow inputs or
 commit them as repository fixtures.
 
 CI validates orchestration with synthetic data only. It can test normalization,
-country-resolution boundaries, raw retention, preview behavior, WAL-backed
-bootstrap, idempotency and privacy. GitHub Actions is not the production
-public-web research agent.
+country-resolution boundaries, raw retention, preview behavior, exact requested
+Account binding, identity-collision blocking, WAL-backed bootstrap, idempotency
+and privacy. GitHub Actions is not the production public-web research agent.
 
 ## Recommended real-customer procedure
 
 1. keep customs JSON in a private local path outside the public repo;
 2. sync the reviewed CLI code locally;
-3. run `audit-file` without `--commit`;
-4. inspect the exact raw object, normalized view, candidate and
-   `buyer_country_resolution`;
-5. if country is inferred, confirm the inference is reasonable before commit;
-6. explicitly run `audit-file ... --commit` only after preview review;
-7. retain the returned `investigation_id`;
-8. give the Host instruction to a Host with `$investigate-customs-buyers` and
-   real public web tools;
-9. do not claim exhaustive completion until Runtime Decision Saturation passes.
+3. run `audit-file` without `--commit`, carrying a known C-number with
+   `--requested-account-id` when applicable;
+4. inspect the exact raw object, normalized view, candidate,
+   `buyer_country_resolution` and requested ID;
+5. run `scripts/cbi_canonical_preflight.py`, supplying the same known C-number;
+6. reconcile any Runtime/CRM identity mismatch before commit; Runtime `NOT_FOUND`
+   does not prove an external CRM has no customer;
+7. if country is inferred, confirm the routing inference is reasonable;
+8. explicitly run `audit-file ... --requested-account-id ... --commit` only after
+   identity/preview review;
+9. confirm returned `account_id` equals the intended requested ID;
+10. retain the returned `investigation_id`;
+11. give the Host instruction to a Host with `$investigate-customs-buyers` and
+    real public web tools;
+12. do not claim exhaustive completion until Runtime Decision Saturation passes.
