@@ -18,7 +18,6 @@ invented into either SAME or CONFLICT.
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from typing import Any
 
@@ -38,8 +37,13 @@ _COUNTRY_REPRESENTATION_REASON = "COUNTRY_REPRESENTATION_UNRESOLVED"
 
 
 def _country_token(value: str) -> str:
+    """Match the Canonical normalize_scalar key shape without guessing semantics."""
     text = unicodedata.normalize("NFKC", value).casefold()
-    return re.sub(r"[^\w]+", " ", text, flags=re.UNICODE).strip()
+    return "".join(
+        character
+        for character in text
+        if unicodedata.category(character)[:1] in {"L", "N", "M"}
+    )
 
 
 _COUNTRY_GROUPS: dict[str, tuple[str, ...]] = {
