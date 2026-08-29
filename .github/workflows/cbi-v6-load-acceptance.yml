@@ -16,6 +16,9 @@ on:
         required: true
         default: "5000"
         type: string
+  push:
+    branches:
+      - cbi-v6-full-acceptance
 
 permissions:
   contents: read
@@ -26,12 +29,19 @@ concurrency:
 
 jobs:
   load-acceptance:
-    name: ${{ inputs.profile }} load acceptance
+    name: load acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Assert exact acceptance head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "Exact acceptance head: $GITHUB_SHA"
 
       - name: Set up Python 3.11
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -39,12 +49,14 @@ jobs:
           python-version: "3.11"
 
       - name: Smoke performance acceptance
-        if: ${{ inputs.profile == 'smoke' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.profile == 'smoke' }}
         run: python scripts/run_v6_load_acceptance.py --profile smoke --enforce-targets
 
       - name: Full structural load acceptance
-        if: ${{ inputs.profile == 'full' }}
+        if: ${{ github.event_name == 'push' || inputs.profile == 'full' }}
+        env:
+          CANONICAL_ACCOUNTS: ${{ github.event_name == 'push' && '5000' || inputs.canonical_accounts }}
         run: >-
           python scripts/run_v6_load_acceptance.py
           --profile full
-          --canonical-accounts "${{ inputs.canonical_accounts }}"
+          --canonical-accounts "$CANONICAL_ACCOUNTS"
