@@ -123,26 +123,45 @@ recommendation = RETRY_READ_ONLY_PREFLIGHT_BEFORE_COMMIT
 The command refuses to present a stale single-snapshot resolution when another
 process changed the canonical/session read set during the check.
 
-## Relationship to customs preview
+## Relationship to customs preview and commit
 
-The normal sequence for an existing production environment is:
+For an existing reviewed customer, carry the **same** Account ID through all
+three stages. Example with `C157`:
 
 ```text
-1. cbi.py audit-file buyer.json
-   -> customs normalization only; no Runtime state
+1. cbi.py audit-file buyer.json --requested-account-id C157
+   -> customs normalization only; requested ID is display-only; no Runtime state
 
-2. cbi_canonical_preflight.py buyer.json
+2. cbi_canonical_preflight.py --requested-account-id C157 buyer.json
    -> byte-read-only Runtime identity check; no WAL
 
-3. compare any known CRM C-number with the preflight result
+3. compare C157 with the external CRM/workbook identity and resolve any mismatch
 
 4. only after identity reconciliation:
-   cbi.py audit-file buyer.json --commit
+   cbi.py audit-file buyer.json --requested-account-id C157 --commit
+```
+
+The production commit path now treats `--requested-account-id` as a hard
+Canonical constraint. It includes the requested ID in resolver idempotency
+material, refuses a different resolved ID, and blocks `AMBIGUOUS_MATCH` before
+`start_investigation`. The requested ID is also retained in Investigation start
+input for provenance.
+
+This separation is intentional:
+
+```text
+preview       = zero Runtime resolution/write
+preflight     = byte-read-only Runtime resolution
+commit        = explicit WAL-guarded exact identity binding + audit bootstrap
 ```
 
 If a known CRM C-number is not represented in the Runtime, stop between steps 3
 and 4 and reconcile identity first. Do not create a second Account merely because
 the Runtime and CRM have not yet been synchronized.
+
+If preflight reports that the candidate already resolves to another Canonical
+Account while the operator requests `C157`, do not force `C157`; the commit path
+must block for identity review.
 
 ## Privacy
 
