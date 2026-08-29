@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from unified_runtime import UnifiedRuntime
 
@@ -185,6 +186,17 @@ class V61LegacyPeerProjectionTests(unittest.TestCase):
         self.assertEqual(rows[0]["name"], "Native V6 Peer")
         self.assertNotIn("projection_source", rows[0])
         self.assertEqual(state["network"]["legacy_validated_peer_projection_count"], 0)
+
+    def test_projection_reuses_legacy_event_stream_without_v6_replay(self) -> None:
+        peer_id = self.append_validated_legacy_peer(promote=False)
+        with mock.patch.object(
+            self.runtime,
+            "_v6_state",
+            side_effect=AssertionError("projection must not replay v6 state"),
+        ):
+            rows = self.runtime._legacy_peer_projections(self.investigation_id)
+        self.assertEqual([row["peer_id"] for row in rows], [peer_id])
+        self.assertEqual(rows[0]["stage"], "QUALIFIED")
 
 
 if __name__ == "__main__":
