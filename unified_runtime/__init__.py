@@ -65,6 +65,7 @@ from .portfolio_hardening import (
 )
 from .portfolio_state_hardening import V61PortfolioStateHardeningMixin
 from .legacy_peer_projection_hardening import V61LegacyPeerProjectionMixin
+from .migration_lineage_hardening import V61MigrationLineageHardeningMixin
 from .brand_hardening import BRAND_RELATIONSHIPS, V61BrandHardeningMixin
 from .canonical_identity_hardening import (
     EvidenceBoundCanonicalRegistry,
@@ -89,6 +90,7 @@ class UnifiedRuntime(
     V61CountryIdentityHardeningMixin,
     V61BrandHardeningMixin,
     V61LegacyPeerProjectionMixin,
+    V61MigrationLineageHardeningMixin,
     V61PortfolioStateHardeningMixin,
     V61PortfolioHardeningMixin,
     V61OutreachHardeningMixin,
@@ -148,6 +150,7 @@ __all__ = [
     "PORTFOLIO_LIFECYCLES",
     "V61PortfolioStateHardeningMixin",
     "V61LegacyPeerProjectionMixin",
+    "V61MigrationLineageHardeningMixin",
     "BRAND_RELATIONSHIPS",
     "V61BrandHardeningMixin",
     "EvidenceBoundCanonicalRegistry",
