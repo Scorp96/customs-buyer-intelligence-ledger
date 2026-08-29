@@ -139,9 +139,12 @@ Unknown fields remain in `raw_customs_record` even when they have no canonical
 mapping. The original input SHA-256 is computed from the complete raw object.
 
 For committed audits, both views are preserved in the Investigation start input
-and in the initial D1 customs Evidence source/value. This prevents normalization
-from silently deleting future-useful data while still allowing stable canonical
-queries.
+and in the durable `trade.import_activity` Evidence value. The Evidence source
+accepts the raw proof at compile time, but the v6.1 Evidence Compiler deliberately
+canonicalizes that source proof into `content_sha256`, `raw_excerpt` and
+`raw_content_retained=false` instead of duplicating the full raw payload inside
+`source`. This prevents normalization from silently deleting future-useful data
+while preserving the Runtime's bounded source representation.
 
 Raw preservation does **not** increase authority. Both views remain
 user-supplied, unverified input until independently verified.
@@ -247,9 +250,12 @@ reference_type = USER_INPUT
 authority_level = D1_USER_SUPPLIED_UNVERIFIED
 ```
 
-The Evidence source `raw_content` retains both the complete raw input and its
-normalized view. The `trade.import_activity` value does the same. This retention
-is provenance, not verification.
+At compile time, the source proof contains the complete raw/normalized customs
+material. The Evidence Compiler verifies and hashes that proof, then persists a
+bounded canonical source descriptor rather than the full `source.raw_content`.
+The complete raw object and normalized view remain durable in
+`trade.import_activity.value.customs_record` and in the Investigation start
+input. This retention is provenance, not verification.
 
 The product description remains part of the customs record, but the bootstrap
 does not mark `product.fit` as proven. Likewise it does not mark
