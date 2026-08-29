@@ -1,16 +1,19 @@
 """Evidence-bound Canonical Account resolution for the v6.1 production runtime.
 
 The v5 compatibility registry historically treated every free-form ``aliases``
-string as a legal identity key and allowed an address alone to produce a
-canonical match. That is too permissive for production buyer intelligence:
-brands, trade names, occupants and related entities can share aliases or an
-address without being the same legal entity.
+string as a legal identity key, allowed an address alone to match, and treated
+``requested_account_id`` as a scoring hint rather than an exact identity
+constraint. Those behaviors are too permissive for production buyer
+intelligence.
 
-This overlay preserves historical alias payloads but gives *no alias field*
-automatic legal-entity merge authority. Alias overlap is a review signal only
-and fails closed. After evidence review, callers must bind the known Canonical
-Account explicitly by account ID; a free-form alias string can never perform
-that legal-identity transition by itself.
+This overlay preserves historical payloads while enforcing fail-closed legal
+identity semantics:
+
+* no alias field has automatic merge authority;
+* address similarity is supporting evidence only;
+* a requested Canonical Account ID is exact, never a fuzzy hint;
+* contradictory Tax IDs block matching, even when names or requested IDs agree;
+* ambiguous identity signals cannot silently create a second Account.
 """
 
 from __future__ import annotations
@@ -18,14 +21,16 @@ from __future__ import annotations
 from typing import Any
 
 from .errors import ValidationError
-from .resilience import CanonicalRegistry, normalized_values
+from .resilience import ACCOUNT_ID_RE, CanonicalRegistry, normalized_values
 
 
 _ALIAS_REVIEW_REASON = "ALIAS_RELATION_REQUIRES_CANONICAL_ID_PROOF"
+_REQUESTED_ID_COLLISION_REASON = "REQUESTED_ACCOUNT_ID_NOT_FOUND_IDENTITY_COLLISION"
+_STRONG_ID_CONFLICT_REASON = "STRONG_IDENTITY_CONFLICT_REQUIRES_REVIEW"
 
 
 class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
-    """Canonical resolver that separates legal identity from all alias strings."""
+    """Canonical resolver that separates legal identity from weak similarity."""
 
     @staticmethod
     def _string_array(account: dict[str, Any], field: str) -> list[str]:
@@ -40,10 +45,6 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
 
     @classmethod
     def _keys(cls, account: dict[str, Any]) -> dict[str, set[str]]:
-        # Both legacy ``aliases`` and newer typed/descriptive ``legal_aliases``
-        # remain durable metadata only. Neither can become a legal match key
-        # without a separate evidence-bound identity transition, which this
-        # resolver intentionally does not invent.
         aliases = cls._string_array(account, "aliases")
         legal_aliases = cls._string_array(account, "legal_aliases")
         return {
@@ -55,6 +56,14 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             "external_ids": normalized_values(account.get("external_ids")),
             "countries": normalized_values(account.get("country")),
         }
+
+    @staticmethod
+    def _same_country(candidate: dict[str, set[str]], row: dict[str, set[str]]) -> bool:
+        return (
+            not candidate["countries"]
+            or not row["countries"]
+            or bool(candidate["countries"] & row["countries"])
+        )
 
     @staticmethod
     def _match_score(
@@ -72,19 +81,52 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         if candidate["external_ids"] & row["external_ids"]:
             score, reasons = max(score, 90), reasons + ["EXTERNAL_ID"]
 
-        same_country = (
-            not candidate["countries"]
-            or not row["countries"]
-            or bool(candidate["countries"] & row["countries"])
-        )
+        same_country = EvidenceBoundCanonicalRegistry._same_country(candidate, row)
         if same_country and candidate["names"] & row["names"]:
             score, reasons = max(score, 85), reasons + ["PRIMARY_LEGAL_NAME_COUNTRY"]
 
-        # Address is supporting evidence only. Shared offices, warehouses,
-        # registered agents, malls and group facilities cannot merge entities.
         if score and same_country and candidate["addresses"] & row["addresses"]:
             reasons.append("ADDRESS_SUPPORT")
         return score, sorted(set(reasons))
+
+    @staticmethod
+    def _tax_id_conflict(candidate: dict[str, set[str]], row: dict[str, set[str]]) -> bool:
+        return bool(
+            candidate["tax_ids"]
+            and row["tax_ids"]
+            and not (candidate["tax_ids"] & row["tax_ids"])
+        )
+
+    def _strong_identity_conflicts(
+        self,
+        candidate: dict[str, Any],
+        *,
+        requested_account_id: str = "",
+    ) -> list[dict[str, Any]]:
+        candidate_keys = self._keys(candidate)
+        conflicts: list[dict[str, Any]] = []
+        for entry in self.entries():
+            if requested_account_id and entry["account_id"].casefold() != requested_account_id.casefold():
+                continue
+            row_keys = self._keys(entry["account"])
+            same_primary_identity = (
+                self._same_country(candidate_keys, row_keys)
+                and bool(candidate_keys["names"] & row_keys["names"])
+            )
+            if not requested_account_id and not same_primary_identity:
+                continue
+            conflict_types: list[str] = []
+            if self._tax_id_conflict(candidate_keys, row_keys):
+                conflict_types.append("TAX_ID_CONFLICT")
+            if not conflict_types:
+                continue
+            conflicts.append({
+                "account_id": entry["account_id"],
+                "score": 0,
+                "reasons": [_STRONG_ID_CONFLICT_REASON, *conflict_types],
+                "origin": entry["origin"],
+            })
+        return sorted(conflicts, key=lambda item: item["account_id"].casefold())
 
     def _alias_collisions(self, candidate: dict[str, Any]) -> list[dict[str, Any]]:
         candidate_keys = self._keys(candidate)
@@ -96,14 +138,8 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
         collisions: list[dict[str, Any]] = []
         for row in self.entries():
             row_keys = self._keys(row["account"])
-            same_country = (
-                not candidate_keys["countries"]
-                or not row_keys["countries"]
-                or bool(candidate_keys["countries"] & row_keys["countries"])
-            )
-            if not same_country:
+            if not self._same_country(candidate_keys, row_keys):
                 continue
-
             row_primary = row_keys["names"]
             row_aliases = row_keys["aliases"] | row_keys["legal_aliases"]
             overlap = sorted(
@@ -122,23 +158,124 @@ class EvidenceBoundCanonicalRegistry(CanonicalRegistry):
             })
         return sorted(collisions, key=lambda item: item["account_id"].casefold())
 
-    def resolve(self, candidate: dict[str, Any], *, requested_account_id: str = "") -> dict[str, Any]:
-        resolved = super().resolve(candidate, requested_account_id=requested_account_id)
-        if resolved["status"] != "NOT_FOUND" or requested_account_id.strip():
+    @staticmethod
+    def _ambiguous(
+        reason: str,
+        candidates: list[dict[str, Any]],
+        **extra: Any,
+    ) -> dict[str, Any]:
+        return {
+            "status": "AMBIGUOUS_MATCH",
+            "match": None,
+            "candidates": candidates,
+            "ambiguity_reason": reason,
+            "automatic_merge_allowed": False,
+            "automatic_create_allowed": False,
+            **extra,
+        }
+
+    def _resolve_unrequested(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        strong_conflicts = self._strong_identity_conflicts(candidate)
+        if strong_conflicts:
+            return self._ambiguous(
+                _STRONG_ID_CONFLICT_REASON,
+                strong_conflicts,
+                resolution_requirement="RECONCILE_STRONG_IDENTITY_CONFLICT_BEFORE_CANONICAL_BIND",
+            )
+
+        resolved = super().resolve(candidate, requested_account_id="")
+        if resolved["status"] != "NOT_FOUND":
             return resolved
 
         collisions = self._alias_collisions(candidate)
         if collisions:
-            return {
-                "status": "AMBIGUOUS_MATCH",
-                "match": None,
-                "candidates": collisions,
-                "ambiguity_reason": _ALIAS_REVIEW_REASON,
-                "automatic_merge_allowed": False,
-                "automatic_create_allowed": False,
-                "resolution_requirement": "SUPPLY_EXACT_CANONICAL_ACCOUNT_ID_AFTER_EVIDENCE_REVIEW",
-            }
+            return self._ambiguous(
+                _ALIAS_REVIEW_REASON,
+                collisions,
+                resolution_requirement="SUPPLY_EXACT_CANONICAL_ACCOUNT_ID_AFTER_EVIDENCE_REVIEW",
+            )
         return resolved
+
+    def resolve(self, candidate: dict[str, Any], *, requested_account_id: str = "") -> dict[str, Any]:
+        requested_account_id = requested_account_id.strip()
+        if requested_account_id and not ACCOUNT_ID_RE.fullmatch(requested_account_id):
+            raise ValidationError("requested_account_id: invalid")
+        if not requested_account_id:
+            return self._resolve_unrequested(candidate)
+
+        exact_rows = [
+            row
+            for row in self.entries()
+            if row["account_id"].casefold() == requested_account_id.casefold()
+        ]
+        if len(exact_rows) > 1:
+            return self._ambiguous(
+                "DUPLICATE_CANONICAL_ACCOUNT_ID",
+                [
+                    {
+                        "account_id": row["account_id"],
+                        "score": 0,
+                        "reasons": ["DUPLICATE_CANONICAL_ACCOUNT_ID"],
+                        "origin": row["origin"],
+                    }
+                    for row in exact_rows
+                ],
+            )
+        if exact_rows:
+            conflicts = self._strong_identity_conflicts(
+                candidate,
+                requested_account_id=requested_account_id,
+            )
+            if conflicts:
+                return self._ambiguous(
+                    _STRONG_ID_CONFLICT_REASON,
+                    conflicts,
+                    requested_account_id=requested_account_id,
+                    resolution_requirement="RECONCILE_STRONG_IDENTITY_CONFLICT_BEFORE_CANONICAL_BIND",
+                )
+            row = exact_rows[0]
+            candidate_keys = self._keys(candidate)
+            row_keys = self._keys(row["account"])
+            score, reasons = self._match_score(
+                candidate_keys,
+                row_keys,
+                requested_account_id,
+                row["account_id"],
+            )
+            return {
+                "status": "MATCHED",
+                "match": {
+                    "account_id": row["account_id"],
+                    "score": score,
+                    "reasons": reasons,
+                    "origin": row["origin"],
+                },
+                "candidates": [],
+                "requested_account_id_exact": True,
+            }
+
+        other_identity = self._resolve_unrequested(candidate)
+        if other_identity["status"] != "NOT_FOUND":
+            candidates = list(other_identity.get("candidates") or [])
+            if other_identity.get("match"):
+                candidates.insert(0, dict(other_identity["match"]))
+            return self._ambiguous(
+                _REQUESTED_ID_COLLISION_REASON,
+                candidates,
+                requested_account_id=requested_account_id,
+                discovered_identity_status=other_identity["status"],
+                resolution_requirement="REVIEW_REQUESTED_ACCOUNT_ID_VS_EXISTING_CANONICAL_IDENTITY",
+            )
+
+        # Exact requested ID is genuinely absent and no competing identity signal
+        # exists. Returning NOT_FOUND lets resolve_or_create allocate that exact ID
+        # only when the caller explicitly permits creation.
+        return {
+            "status": "NOT_FOUND",
+            "match": None,
+            "candidates": [],
+            "requested_account_id": requested_account_id,
+        }
 
 
 class V61CanonicalIdentityHardeningMixin:
@@ -163,6 +300,9 @@ class V61CanonicalIdentityHardeningMixin:
             "alias_resolution_requirement": "EXACT_CANONICAL_ACCOUNT_ID_AFTER_EVIDENCE_REVIEW",
             "address_only_match_allowed": False,
             "address_is_supporting_evidence_only": True,
+            "requested_account_id_is_exact_constraint": True,
+            "requested_id_fuzzy_substitution_allowed": False,
+            "contradictory_tax_ids_fail_closed": True,
             "automatic_match_authorities": [
                 "EXACT_ACCOUNT_ID",
                 "TAX_ID",
