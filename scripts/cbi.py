@@ -21,6 +21,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -194,6 +195,24 @@ CUSTOMS_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "conveyance": ("conveyance", "Conveyance"),
 }
 
+US_DESTINATION_ALIASES = {
+    "united states",
+    "united states of america",
+    "usa",
+    "u.s.a.",
+    "us",
+    "u.s.",
+}
+US_IMPORT_SOURCE_KEYS = {
+    "美国进口",
+    "美国进口数据",
+    "usimport",
+    "usaimport",
+    "unitedstatesimport",
+    "unitedstatesimportdata",
+}
+US_POSTAL_SIGNAL = re.compile(r"(?<!\d)\d{5}(?:-\d{4})?(?!\d)")
+
 
 def emit(value: object) -> int:
     print(json.dumps(value, ensure_ascii=False, indent=2, default=str))
@@ -279,6 +298,50 @@ def _raw_customs_input(record: dict[str, Any]) -> dict[str, Any]:
     return raw
 
 
+def _compact_country_signal(value: Any) -> str:
+    return re.sub(
+        r"[^a-z0-9\u4e00-\u9fff]+",
+        "",
+        str(value or "").casefold(),
+    )
+
+
+def _resolve_buyer_country(normalized: dict[str, Any]) -> dict[str, Any]:
+    explicit_country = str(normalized.get("buyer_country") or "").strip()
+    if explicit_country:
+        return {
+            "country": explicit_country,
+            "basis": "EXPLICIT_BUYER_COUNTRY",
+            "inferred": False,
+        }
+
+    destination = str(normalized.get("destination") or "").strip()
+    if destination.casefold() in US_DESTINATION_ALIASES:
+        return {
+            "country": "United States",
+            "basis": "EXPLICIT_US_DESTINATION",
+            "inferred": True,
+        }
+
+    source_key = _compact_country_signal(normalized.get("data_source"))
+    buyer_address = str(normalized.get("buyer_address") or "").strip()
+    if (
+        source_key in US_IMPORT_SOURCE_KEYS
+        and bool(US_POSTAL_SIGNAL.search(buyer_address))
+    ):
+        return {
+            "country": "United States",
+            "basis": "US_IMPORT_SOURCE_PLUS_POSTAL_SIGNAL",
+            "inferred": True,
+        }
+
+    raise ValueError(
+        "customs input requires buyer_country/country, an explicit United "
+        "States destination, or a recognized US-import data source plus a "
+        "5-digit postal signal in buyer_address"
+    )
+
+
 def normalize_customs_record(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("customs input must be one JSON object")
@@ -300,23 +363,8 @@ def normalize_customs_record(value: Any) -> dict[str, Any]:
     if buyer_address:
         normalized["buyer_address"] = buyer_address
 
-    explicit_country = str(normalized.get("buyer_country") or "").strip()
-    destination = str(normalized.get("destination") or "").strip()
-    if not explicit_country and destination.casefold() in {
-        "united states",
-        "united states of america",
-        "usa",
-        "u.s.a.",
-        "us",
-        "u.s.",
-    }:
-        explicit_country = "United States"
-    if not explicit_country:
-        raise ValueError(
-            "customs input requires buyer_country/country, or an explicit "
-            "destination equal to United States"
-        )
-    normalized["buyer_country"] = explicit_country
+    country_resolution = _resolve_buyer_country(normalized)
+    normalized["buyer_country"] = country_resolution["country"]
 
     for numeric_key in ("weight_kg", "teu"):
         if numeric_key not in normalized:
@@ -335,6 +383,7 @@ def normalize_customs_record(value: Any) -> dict[str, Any]:
         canonical_json(raw_input).encode("utf-8")
     ).hexdigest()
     normalized["_raw_input"] = raw_input
+    normalized["_buyer_country_resolution"] = country_resolution
     normalized["_raw_flattened_field_count"] = len(flattened)
     normalized["_normalized_field_count"] = len(
         [key for key in normalized if not key.startswith("_")]
@@ -400,6 +449,7 @@ def customs_observations(
     locator = f"user-input://customs-record/{input_hash}"
     raw_input = _raw_customs_input(record)
     normalized_view = _normalized_customs_view(record)
+    country_resolution = dict(record["_buyer_country_resolution"])
     source = {
         "source_family": "user_customs_record",
         "source_type": "USER_INPUT",
@@ -410,6 +460,7 @@ def customs_observations(
             "schema": "cbi.customs-source-preserved.v1",
             "raw_input": raw_input,
             "normalized": normalized_view,
+            "buyer_country_resolution": country_resolution,
         },
         "authority_level": "D1_USER_SUPPLIED_UNVERIFIED",
         "freshness": _customs_freshness(record),
@@ -425,6 +476,7 @@ def customs_observations(
                 "customs_record": {
                     "normalized": normalized_view,
                     "raw_input": raw_input,
+                    "buyer_country_resolution": country_resolution,
                 },
                 "verification_status": "USER_SUPPLIED_UNVERIFIED",
             },
@@ -434,7 +486,8 @@ def customs_observations(
                 "declared shipment fact for research triage, but does not by "
                 "itself prove Ultimate Buyer, repeat demand, annual volume, "
                 "warehouse/channel capability, specifications, end use or "
-                "commercial grade."
+                "commercial grade. A derived buyer country is an identity-routing "
+                "hint only and is not independent legal-entity proof."
             ),
         }
     ]
@@ -474,6 +527,7 @@ def host_lookup_request(record: dict[str, Any]) -> dict[str, Any]:
         "runtime_persistence_requested": False,
         "buyer": record["buyer"],
         "country": record["buyer_country"],
+        "buyer_country_resolution": record["_buyer_country_resolution"],
         "customs_record": normalized_view,
         "normalized_customs_record": normalized_view,
         "raw_customs_record": raw_input,
@@ -491,7 +545,9 @@ def host_lookup_request(record: dict[str, Any]) -> dict[str, Any]:
             "product/trade context, current contacts and routes with concrete "
             "public sources; report conflicts and boundaries; then produce the "
             "tailored development email and instant-chat drafts. Do not create "
-            "Runtime history, CRM writeback, Closure or executable send action."
+            "Runtime history, CRM writeback, Closure or executable send action. "
+            "If buyer_country_resolution.inferred is true, verify country/legal "
+            "identity independently before treating it as confirmed."
         ),
     }
 
@@ -503,6 +559,7 @@ def audit_preview(record: dict[str, Any]) -> dict[str, Any]:
         "mode": "FULL_AUDIT",
         "runtime_mutation_performed": False,
         "candidate": candidate_from_customs(record),
+        "buyer_country_resolution": record["_buyer_country_resolution"],
         "customs_input_sha256": record["_input_sha256"],
         "raw_input_preserved": True,
         "raw_flattened_field_count": record["_raw_flattened_field_count"],
@@ -515,8 +572,10 @@ def audit_preview(record: dict[str, Any]) -> dict[str, Any]:
         ],
         "boundary": (
             "Preview validates and normalizes input while preserving the exact "
-            "raw JSON object. No canonical account, Investigation, Evidence, "
-            "Pivot, Peer, CRM or outreach state is written."
+            "raw JSON object. A derived buyer country is disclosed as an "
+            "identity-routing inference, not legal-entity proof. No canonical "
+            "account, Investigation, Evidence, Pivot, Peer, CRM or outreach "
+            "state is written."
         ),
         "next_command": "repeat with --commit to bootstrap the durable FULL_AUDIT",
     }
@@ -535,6 +594,7 @@ def bootstrap_audit(
     candidate_hash = digest(candidate)
     normalized_view = _normalized_customs_view(record)
     raw_input = _raw_customs_input(record)
+    country_resolution = dict(record["_buyer_country_resolution"])
 
     with ProductionMcpClient(session_root) as client:
         resolution = client.tool(
@@ -569,6 +629,7 @@ def bootstrap_audit(
                 "normalized_customs_record": normalized_view,
                 "raw_customs_record": raw_input,
                 "raw_input_preserved": True,
+                "buyer_country_resolution": country_resolution,
             },
             "mode": "EXHAUSTIVE",
             "history": {"events": []},
@@ -640,6 +701,7 @@ def bootstrap_audit(
         "investigation_resumed_existing": start.get("resumed_existing") is True,
         "research_priority_grade": priority_grade,
         "customs_input_sha256": input_hash,
+        "buyer_country_resolution": country_resolution,
         "raw_input_preserved": True,
         "raw_flattened_field_count": record["_raw_flattened_field_count"],
         "normalized_field_count": record["_normalized_field_count"],
@@ -662,7 +724,8 @@ def bootstrap_audit(
             "branches for every Anchor; preserve conflicts; and continue until "
             "Decision Saturation or a truthful PAUSED_RESOURCE_LIMIT. Do not "
             "treat the input shipment as proof of Ultimate Buyer, repeat demand "
-            "or product specifications."
+            "or product specifications. If buyer country was inferred, verify "
+            "legal country independently before treating it as confirmed."
         ),
         "crm_writeback_performed": False,
         "outreach_send_performed": False,
