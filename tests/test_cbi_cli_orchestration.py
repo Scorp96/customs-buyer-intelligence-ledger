@@ -89,6 +89,14 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertFalse(payload["runtime_persistence_requested"])
         self.assertTrue(payload["host_execution_required"])
         self.assertEqual(payload["buyer"], "Synthetic Import Buyer LLC")
+        self.assertEqual(
+            payload["buyer_country_resolution"],
+            {
+                "country": "United States",
+                "basis": "EXPLICIT_BUYER_COUNTRY",
+                "inferred": False,
+            },
+        )
         self.assertTrue(payload["raw_input_preserved"])
         self.assertEqual(payload["raw_customs_record"], self.input_record)
         self.assertEqual(
@@ -108,6 +116,7 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertEqual(payload["status"], "PREVIEW")
         self.assertFalse(payload["runtime_mutation_performed"])
         self.assertTrue(payload["raw_input_preserved"])
+        self.assertFalse(payload["buyer_country_resolution"]["inferred"])
         self.assertGreater(
             payload["raw_flattened_field_count"],
             payload["normalized_field_count"],
@@ -123,6 +132,75 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         )
         self.assertFalse(self.session_root.exists())
 
+    def test_us_import_source_plus_postal_signal_infers_country_read_only(self) -> None:
+        path = self.root / "synthetic-us-import-raw-shape.json"
+        raw_record = {
+            "数据源": "美国(进口)",
+            "日期": "2026-08-17",
+            "主单号": "SYNTH-US-MBL-001",
+            "分单号": "SYNTH-US-HBL-001",
+            "供应商": "Synthetic China Supplier Ltd",
+            "采购商": "Synthetic US Importer LLC",
+            "采购商地址": "1111 Bayhill Dr Ste 260 San Bruno,c A 94066",
+            "数量": "16 PKG",
+            "重量（kg）": 23820,
+            "TEU": 2,
+            "产品": "PVC Foam Sheet",
+        }
+        path.write_text(
+            json.dumps(raw_record, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        code, payload = self.run_cli("audit-file", str(path))
+        self.assertEqual(code, 0, payload)
+        self.assertFalse(payload["runtime_mutation_performed"])
+        self.assertEqual(payload["raw_customs_record"], raw_record)
+        self.assertEqual(
+            payload["candidate"],
+            {
+                "name": "Synthetic US Importer LLC",
+                "country": "United States",
+                "address": "1111 Bayhill Dr Ste 260 San Bruno,c A 94066",
+            },
+        )
+        self.assertEqual(
+            payload["buyer_country_resolution"],
+            {
+                "country": "United States",
+                "basis": "US_IMPORT_SOURCE_PLUS_POSTAL_SIGNAL",
+                "inferred": True,
+            },
+        )
+        self.assertEqual(
+            payload["normalized_customs_record"]["buyer_country"],
+            "United States",
+        )
+        self.assertEqual(
+            payload["proposed_initial_claims"],
+            ["trade.import_activity", "relationship.supply_chain"],
+        )
+        self.assertFalse(self.session_root.exists())
+
+    def test_us_import_source_without_postal_signal_still_fails_closed(self) -> None:
+        path = self.root / "ambiguous-us-import.json"
+        raw_record = {
+            "数据源": "美国(进口)",
+            "采购商": "Synthetic Ambiguous Importer",
+            "采购商地址": "Unknown Industrial Zone",
+            "产品": "PVC Foam Sheet",
+        }
+        path.write_text(
+            json.dumps(raw_record, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+        code, payload = self.run_cli("audit-file", str(path))
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["status"], "ERROR")
+        self.assertIn("postal signal", payload["error"])
+        self.assertFalse(self.session_root.exists())
+
     def test_audit_commit_uses_production_wal_and_is_idempotent(self) -> None:
         code, first = self.run_cli(
             "audit-file",
@@ -136,6 +214,10 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertEqual(first["mutation_path"], "V6_1_PRODUCTION_MCP_WAL")
         self.assertTrue(first["runtime_mutation_performed"])
         self.assertTrue(first["raw_input_preserved"])
+        self.assertEqual(
+            first["buyer_country_resolution"]["basis"],
+            "EXPLICIT_BUYER_COUNTRY",
+        )
         self.assertFalse(first["decision_saturation"]["decision_saturated"])
         self.assertFalse(first["crm_writeback_performed"])
         self.assertFalse(first["outreach_send_performed"])
@@ -182,11 +264,22 @@ class CbiCliOrchestrationTests(unittest.TestCase):
             durable_customs["normalized"]["update_date"],
             "20260818",
         )
+        self.assertEqual(
+            durable_customs["buyer_country_resolution"],
+            {
+                "country": "United States",
+                "basis": "EXPLICIT_BUYER_COUNTRY",
+                "inferred": False,
+            },
+        )
 
         expected_source_proof = {
             "schema": "cbi.customs-source-preserved.v1",
             "raw_input": durable_customs["raw_input"],
             "normalized": durable_customs["normalized"],
+            "buyer_country_resolution": durable_customs[
+                "buyer_country_resolution"
+            ],
         }
         expected_source_hash = hashlib.sha256(
             canonical_json(expected_source_proof).encode("utf-8")
