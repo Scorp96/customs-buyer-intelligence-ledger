@@ -110,11 +110,17 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertFalse(self.session_root.exists())
 
     def test_audit_preview_is_read_only(self) -> None:
-        code, payload = self.run_cli("audit-file", str(self.input_path))
+        code, payload = self.run_cli(
+            "audit-file",
+            str(self.input_path),
+            "--requested-account-id",
+            "C157",
+        )
         self.assertEqual(code, 0)
         self.assertEqual(payload["schema"], "cbi.cli-audit-preview.v1")
         self.assertEqual(payload["status"], "PREVIEW")
         self.assertFalse(payload["runtime_mutation_performed"])
+        self.assertEqual(payload["requested_account_id"], "C157")
         self.assertTrue(payload["raw_input_preserved"])
         self.assertFalse(payload["buyer_country_resolution"]["inferred"])
         self.assertGreater(
@@ -130,6 +136,7 @@ class CbiCliOrchestrationTests(unittest.TestCase):
             payload["proposed_initial_claims"],
             ["trade.import_activity", "relationship.supply_chain"],
         )
+        self.assertIn("--requested-account-id C157", payload["next_command"])
         self.assertFalse(self.session_root.exists())
 
     def test_us_import_source_plus_postal_signal_infers_country_read_only(self) -> None:
@@ -212,6 +219,7 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         self.assertEqual(code, 0, first)
         self.assertEqual(first["status"], "AUDIT_BOOTSTRAPPED")
         self.assertEqual(first["mutation_path"], "V6_1_PRODUCTION_MCP_WAL")
+        self.assertIsNone(first["requested_account_id"])
         self.assertTrue(first["runtime_mutation_performed"])
         self.assertTrue(first["raw_input_preserved"])
         self.assertEqual(
@@ -312,6 +320,91 @@ class CbiCliOrchestrationTests(unittest.TestCase):
         )
         replay_state = runtime._v6_state(investigation_id)
         self.assertEqual(len(replay_state["observations"]), 2)
+
+    def test_requested_account_id_commit_binds_exact_existing_account(self) -> None:
+        runtime = UnifiedRuntime(self.session_root)
+        created = runtime.resolve_or_create_account(
+            {
+                "candidate": {
+                    "name": self.input_record["buyer"],
+                    "country": self.input_record["buyer_country"],
+                    "address": self.input_record["buyer_address"],
+                },
+                "requested_account_id": "C157",
+                "create_if_missing": True,
+            }
+        )
+        self.assertEqual(created["status"], "CREATED")
+        self.assertEqual(created["match"]["account_id"], "C157")
+
+        code, payload = self.run_cli(
+            "audit-file",
+            str(self.input_path),
+            "--requested-account-id",
+            "C157",
+            "--commit",
+        )
+        self.assertEqual(code, 0, payload)
+        self.assertEqual(payload["status"], "AUDIT_BOOTSTRAPPED")
+        self.assertEqual(payload["requested_account_id"], "C157")
+        self.assertEqual(payload["account_id"], "C157")
+        self.assertEqual(
+            payload["account_resolution"]["match"]["account_id"],
+            "C157",
+        )
+        self.assertIn(
+            "EXACT_ACCOUNT_ID",
+            payload["account_resolution"]["match"]["reasons"],
+        )
+        self.assertEqual(
+            payload["investigation_start"]["account_id"],
+            "C157",
+        )
+        entries = runtime.canonical_registry.entries()
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["account_id"], "C157")
+        state = runtime._v6_state(payload["investigation_id"])
+        self.assertEqual(state["account"]["account_id"], "C157")
+        self.assertEqual(
+            state["investigation"]["input"]["requested_account_id"],
+            "C157",
+        )
+
+    def test_requested_account_id_collision_blocks_before_investigation(self) -> None:
+        runtime = UnifiedRuntime(self.session_root)
+        created = runtime.resolve_or_create_account(
+            {
+                "candidate": {
+                    "name": self.input_record["buyer"],
+                    "country": self.input_record["buyer_country"],
+                    "address": self.input_record["buyer_address"],
+                },
+                "requested_account_id": "C001",
+                "create_if_missing": True,
+            }
+        )
+        self.assertEqual(created["status"], "CREATED")
+        self.assertEqual(created["match"]["account_id"], "C001")
+        self.assertEqual(list(self.session_root.glob("INV-*.jsonl")), [])
+
+        code, payload = self.run_cli(
+            "audit-file",
+            str(self.input_path),
+            "--requested-account-id",
+            "C157",
+            "--commit",
+        )
+        self.assertEqual(code, 2, payload)
+        self.assertEqual(payload["status"], "ERROR")
+        self.assertIn(
+            "REQUESTED_ACCOUNT_ID_NOT_FOUND_IDENTITY_COLLISION",
+            payload["error"],
+        )
+        self.assertTrue(payload["runtime_mutation_may_have_started"])
+        self.assertEqual(list(self.session_root.glob("INV-*.jsonl")), [])
+        entries = runtime.canonical_registry.entries()
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["account_id"], "C001")
 
     def test_batch_preview_never_persists(self) -> None:
         batch_path = self.root / "synthetic-batch.json"
