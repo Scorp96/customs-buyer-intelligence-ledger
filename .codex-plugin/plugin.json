@@ -1,7 +1,7 @@
 {
   "name": "customs-buyer-intelligence",
-  "version": "6.1.0+codex.20260829235000",
-  "description": "Answer-first public buyer research plus a v6.1 claim-driven Runtime with evidence-bound monotonic Peers, exactly-once batch compilation, EIV Decision Saturation, crash-safe durability, verified migration, guarded legacy-Evidence reconciliation, Git-controlled customs audit bootstrap, byte-read-only Canonical preflight, exact requested-Account binding, safe CRM writeback and guarded draft-only actions.",
+  "version": "6.1.0+codex.20260830031500",
+  "description": "Answer-first public buyer research plus historical customs backfill and cloud new-record monitoring, with a v6.1 claim-driven Runtime, evidence-bound monotonic Peers, exactly-once batch compilation, EIV Decision Saturation, crash-safe durability, verified migration, guarded legacy-Evidence reconciliation, optional engineering CLI bootstrap, byte-read-only Canonical preflight, exact requested-Account binding, safe CRM writeback and guarded draft-only actions.",
   "author": {
     "name": "Xinghuai Sales Intelligence"
   },
@@ -11,6 +11,8 @@
     "import export",
     "trade intelligence",
     "buyer research",
+    "customs monitoring",
+    "bill of lading monitoring",
     "contact research",
     "decision makers",
     "public sources",
@@ -19,6 +21,7 @@
     "contact enrichment",
     "CRM safety",
     "海关买家",
+    "海关监控",
     "外贸客户开发",
     "决策人调查"
   ],
@@ -26,8 +29,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Customs Buyer Intelligence",
-    "shortDescription": "先查先答；Git受控CLI可安全接入真实海关行",
-    "longDescription": "普通买家、联系人、邮箱和电话查询默认只搜索并立即回答最新可验证内容，附具体来源与边界，同时生成一封定制开发邮件和一条定制即时聊天草稿；不创建 Runtime 历史、审计文档、Closure、Excel 写回或可执行发送入口。累计多家也不会自动入库；只有用户明确要求新增到表格、批量写回、正式审核或一键发送时，才进入相应的去重、历史保留、审计或安全发送流程。Git-controlled CLI 可对本地海关 JSON 做只读预览，完整保留原始 JSON 并同时生成 canonical normalized view；对于缺少独立国家列的美国进口行，仅在美国进口数据源与5位邮编地址信号同时存在时推导 United States，并显式返回 buyer_country_resolution，推导国家仅是 identity-routing hint 而不是法律实体证明。正式写入前可使用独立 byte-read-only Canonical preflight：不构造 UnifiedRuntime、不调用 mutation MCP、不创建 lock/WAL，并复用 CountryAware Canonical resolve 语义检查已有 Account；Runtime NOT_FOUND 不等于外部 CRM 没有客户。单客户 audit-file 可携带 --requested-account-id；预览阶段只展示约束，显式 --commit 后该 ID 才成为 production Canonical resolver 的硬约束，并进入 resolver idempotency material。若请求 C 号与另一已有 Canonical identity 冲突则在 start_investigation 前阻断；resolver 若返回不同 C 号还会被 CLI 二次 fail-closed。批量模式不允许把一个 requested Account ID 套到整批。显式 --commit 后才通过 v6.1 production MCP/WAL 安全创建/复用 Account 与 FULL_AUDIT Investigation、写入仅为 D1 的用户海关证据并输出 EIV 研究目标。未知或尚未分类的原始字段不会在规范化时被丢弃，但原始保留、国家推导和 requested Account ID 都不提高证据等级。CLI 本身不伪装成网页研究代理，真实 web/browser/registry/maps 调查仍由有相应工具的 Host 执行。原有十二模块、六方向网络、Evidence/Pivot、10 项商业结果、恢复与草稿外联能力继续保留给显式全量审计流程。",
+    "shortDescription": "先查先答；历史回溯后云端监控新海关记录",
+    "longDescription": "普通买家、联系人、邮箱、电话和海关查询默认由当前 Host 直接搜索公开来源并立即回答最新可验证内容。对海关监控请求，正常用户路径是：先回溯并去重已有历史，以 Master/House BOL、container、日期、买卖双方、产品、重量数量和港口建立基线；随后由 Host/云端按来源更新节奏持续检查，只有出现真正新增的海关/提单记录或具有商业意义的修正时才通知用户，不要求用户保持 Windows 开机，也不要求用户手动运行 Git、CMD、PowerShell、Python 或本机 MCP。Git 与 local CLI 仅用于开发、验收、诊断、灾备、显式 production bootstrap 和 Canonical preflight，不是日常海关监控入口。普通查询不自动创建 Runtime 历史、Closure、Excel 写回或发送动作；用户明确要求正式审核、批量写回或外联时，才进入相应的持久化安全流程。FULL_AUDIT 仍保留十二模块、六方向网络、Evidence/Pivot、Commercial Value、Research Confidence、Decision Saturation、CRM 与草稿外联能力。持续监控不等于 Runtime 自己联网；每次计划运行仍由有真实 web/search/browser/provider 工具的 Host 执行搜索，并按已知历史做去重。",
     "developerName": "Xinghuai Sales Intelligence",
     "category": "Business",
     "capabilities": [
@@ -35,7 +38,8 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "使用 $investigate-customs-buyers 默认只查公开来源并立即回答最新联系人、邮箱、电话、人物与路线；附具体来源和边界，并生成一封深度定制开发邮件和一条即时聊天草稿。不写 Runtime 历史、不生成审计文档、不修改 CRM/Excel、不生成一键发送入口。等我明确说新增到表格或批量写回时，再统一去重并入最新生产表。",
+      "使用 $investigate-customs-buyers 默认只查公开来源并立即回答最新联系人、邮箱、电话、人物、海关与路线；附具体来源和边界，并生成一封深度定制开发邮件和一条即时聊天草稿。不写 Runtime 历史、不生成审计文档、不修改 CRM/Excel、不生成一键发送入口。等我明确说新增到表格或批量写回时，再统一去重并入最新生产表。",
+      "使用 $investigate-customs-buyers 对这个客户先完整回溯现有海关/提单历史并去重建立基线，然后在云端持续监控新记录；以后只有发现新的 Master/House BOL、container 或可确认的新 shipment 时才通知我，没有新增就不要发消息。不要求我开电脑或运行本地脚本。",
       "使用 $investigate-customs-buyers 将当前任务中我选定的多家调查结果批量写回最新生产 CRM：Canonical 去重、历史保留、一次追加、一次导出、一次验证，不为每家重复生成完整审计包。",
       "使用 $investigate-customs-buyers 审核海关字段、解析法律实体与 Ultimate Buyer、验证产品/贸易/供应商/Buying Group/联系方式，并对所有提升 Anchor 运行六分支，直到关键 Claim、物质 Pivot、Anchor 扩展与剩余 EIV 达到 Decision Saturation；不得以固定队列、固定深度或 Source Family 覆盖率作为 Closure。",
       "Use $investigate-customs-buyers to orchestrate connected data-provider tools only after explicit authorization, and append real ProviderReceipt records without installing, paying, logging in, or fabricating provider data.",
