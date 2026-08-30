@@ -43,9 +43,9 @@
       "Interactive"
     ],
     "defaultPrompt": [
+      "使用 $investigate-customs-buyers 默认只查公开来源并立即回答最新联系人、邮箱、电话、人物与路线；附具体来源和边界，并生成一封深度定制开发邮件和一条即时聊天草稿。不写 Runtime 历史、不生成审计文档、不修改 CRM/Excel、不生成一键发送入口。等我明确说新增到表格或批量写回时，再统一去重并入最新生产表。",
       "使用 $customs-buyer-one-shot 调查我提供的这票海关数据：不要分段问我要不要继续；一次性回溯并去重历史海关，判断真实 Buyer/IOR/Ultimate Buyer，完成产品、公司、供应商、Buying Group、联系人调查，对所有重要 Anchor 跑 regional / industry / scale / same-supplier buyer / same-product-HS-application buyer / competing-supplier 六分支，并继续验证高价值裂变客户，最后一次性给完整中文 dossier、商业评级、开发邮件和即时聊天草稿。正常路径不要让我开电脑或运行本地脚本。",
       "使用 $customs-buyer-one-shot 对这个客户先完整回溯现有海关/提单历史并去重建立基线，同时完成真实买家判断、公司信息、供应商、Buying Group 和六分支裂变；然后在云端持续监控新记录，以后只有发现新的 Master/House BOL、container 或可确认的新 shipment/重大修正时才通知我，没有新增就不要发消息。不要求我开电脑或运行本地脚本。",
-      "使用 $investigate-customs-buyers 默认只查公开来源并立即回答最新联系人、邮箱、电话、人物与路线；附具体来源和边界，并生成一封深度定制开发邮件和一条即时聊天草稿。不写 Runtime 历史、不生成审计文档、不修改 CRM/Excel、不生成一键发送入口。等我明确说新增到表格或批量写回时，再统一去重并入最新生产表。",
       "使用 $investigate-customs-buyers 将当前任务中我选定的多家调查结果批量写回最新生产 CRM：Canonical 去重、历史保留、一次追加、一次导出、一次验证，不为每家重复生成完整审计包。",
       "使用 $investigate-customs-buyers 执行正式 FULL_AUDIT：审核海关字段、解析法律实体与 Ultimate Buyer、验证产品/贸易/供应商/Buying Group/联系方式，并对所有提升 Anchor 运行六分支，直到关键 Claim、物质 Pivot、Anchor 扩展与剩余 EIV 达到 Decision Saturation；不得以固定队列、固定深度或 Source Family 覆盖率作为 Closure。",
       "Use $investigate-customs-buyers to orchestrate connected data-provider tools only after explicit authorization, and append real ProviderReceipt records without installing, paying, logging in, or fabricating provider data.",
