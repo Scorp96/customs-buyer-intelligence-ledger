@@ -1,7 +1,7 @@
 {
   "name": "customs-buyer-intelligence",
-  "version": "6.1.0+codex.20260830031500",
-  "description": "Answer-first public buyer research plus historical customs backfill and cloud new-record monitoring, with a v6.1 claim-driven Runtime, evidence-bound monotonic Peers, exactly-once batch compilation, EIV Decision Saturation, crash-safe durability, verified migration, guarded legacy-Evidence reconciliation, optional engineering CLI bootstrap, byte-read-only Canonical preflight, exact requested-Account binding, safe CRM writeback and guarded draft-only actions.",
+  "version": "6.1.0+codex.20260830031600",
+  "description": "One-shot customs buyer intelligence with historical customs backfill, validated six-branch network fission and cloud new-record monitoring, plus answer-first contact lookup and a v6.1 claim-driven Runtime with evidence-bound monotonic Peers, exactly-once batch compilation, EIV Decision Saturation, crash-safe durability, verified migration, guarded legacy-Evidence reconciliation, optional engineering CLI bootstrap, byte-read-only Canonical preflight, exact requested-Account binding, safe CRM writeback and guarded draft-only actions.",
   "author": {
     "name": "Xinghuai Sales Intelligence"
   },
@@ -11,8 +11,11 @@
     "import export",
     "trade intelligence",
     "buyer research",
+    "one-shot buyer audit",
     "customs monitoring",
     "bill of lading monitoring",
+    "network fission",
+    "six branch buyer expansion",
     "contact research",
     "decision makers",
     "public sources",
@@ -22,6 +25,8 @@
     "CRM safety",
     "海关买家",
     "海关监控",
+    "买家裂变",
+    "穷尽搜索",
     "外贸客户开发",
     "决策人调查"
   ],
@@ -29,8 +34,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Customs Buyer Intelligence",
-    "shortDescription": "先查先答；历史回溯后云端监控新海关记录",
-    "longDescription": "普通买家、联系人、邮箱、电话和海关查询默认由当前 Host 直接搜索公开来源并立即回答最新可验证内容。对海关监控请求，正常用户路径是：先回溯并去重已有历史，以 Master/House BOL、container、日期、买卖双方、产品、重量数量和港口建立基线；随后由 Host/云端按来源更新节奏持续检查，只有出现真正新增的海关/提单记录或具有商业意义的修正时才通知用户，不要求用户保持 Windows 开机，也不要求用户手动运行 Git、CMD、PowerShell、Python 或本机 MCP。Git 与 local CLI 仅用于开发、验收、诊断、灾备、显式 production bootstrap 和 Canonical preflight，不是日常海关监控入口。普通查询不自动创建 Runtime 历史、Closure、Excel 写回或发送动作；用户明确要求正式审核、批量写回或外联时，才进入相应的持久化安全流程。FULL_AUDIT 仍保留十二模块、六方向网络、Evidence/Pivot、Commercial Value、Research Confidence、Decision Saturation、CRM 与草稿外联能力。持续监控不等于 Runtime 自己联网；每次计划运行仍由有真实 web/search/browser/provider 工具的 Host 执行搜索，并按已知历史做去重。",
+    "shortDescription": "海关买家一次查完；六分支裂变；云端只推新增",
+    "longDescription": "用户提供海关/提单/进口记录或要求判断真实买家、裂变、深度调查时，默认使用 one-shot customs route：由当前 Host 一次性完成历史海关回溯与去重、法律实体/Importer/Consignee/Ultimate Buyer 判断、产品与需求结构、公司画像、供应商与竞争结构、Buying Group 与 Buyer-owned 联系路线，并强制运行 regional、industry、scale、same-supplier buyer、same-product/HS/application buyer、competing-supplier 六分支；高价值裂变对象不能只列名字，还要继续验证其真实买家身份、相关产品/贸易活动和商业价值，最后一次性返回完整 dossier。正常用户路径不要求 Windows 开机，不要求用户运行 Git、CMD、PowerShell、Python 或本机 MCP；Git 与 local CLI 仅用于开发、验收、诊断、灾备和显式持久化工程操作。若当前 Host 没有暴露 CBI Runtime/MCP，公开研究仍继续由 Host 完成，不得退回要求用户开电脑。普通联系人/邮箱/电话窄查询仍可使用 answer-first 路由。若用户要求旧数据做完历史、发现新数据再通知，则先建立 shipment baseline，再用 Host/云端计划任务持续检查，只有真正新增 Master/House BOL、container 或可确认新 shipment/重大修正时才通知，没有新增不发消息。正式 CRM 写回、Closure 或可执行外联仍需用户明确授权，并继续遵守 v6.1 Evidence/Pivot/Peer/Decision Saturation 安全边界。",
     "developerName": "Xinghuai Sales Intelligence",
     "category": "Business",
     "capabilities": [
@@ -38,10 +43,11 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "使用 $investigate-customs-buyers 默认只查公开来源并立即回答最新联系人、邮箱、电话、人物、海关与路线；附具体来源和边界，并生成一封深度定制开发邮件和一条即时聊天草稿。不写 Runtime 历史、不生成审计文档、不修改 CRM/Excel、不生成一键发送入口。等我明确说新增到表格或批量写回时，再统一去重并入最新生产表。",
-      "使用 $investigate-customs-buyers 对这个客户先完整回溯现有海关/提单历史并去重建立基线，然后在云端持续监控新记录；以后只有发现新的 Master/House BOL、container 或可确认的新 shipment 时才通知我，没有新增就不要发消息。不要求我开电脑或运行本地脚本。",
+      "使用 $customs-buyer-one-shot 调查我提供的这票海关数据：不要分段问我要不要继续；一次性回溯并去重历史海关，判断真实 Buyer/IOR/Ultimate Buyer，完成产品、公司、供应商、Buying Group、联系人调查，对所有重要 Anchor 跑 regional / industry / scale / same-supplier buyer / same-product-HS-application buyer / competing-supplier 六分支，并继续验证高价值裂变客户，最后一次性给完整中文 dossier、商业评级、开发邮件和即时聊天草稿。正常路径不要让我开电脑或运行本地脚本。",
+      "使用 $customs-buyer-one-shot 对这个客户先完整回溯现有海关/提单历史并去重建立基线，同时完成真实买家判断、公司信息、供应商、Buying Group 和六分支裂变；然后在云端持续监控新记录，以后只有发现新的 Master/House BOL、container 或可确认的新 shipment/重大修正时才通知我，没有新增就不要发消息。不要求我开电脑或运行本地脚本。",
+      "使用 $investigate-customs-buyers 默认只查公开来源并立即回答最新联系人、邮箱、电话、人物与路线；附具体来源和边界，并生成一封深度定制开发邮件和一条即时聊天草稿。不写 Runtime 历史、不生成审计文档、不修改 CRM/Excel、不生成一键发送入口。等我明确说新增到表格或批量写回时，再统一去重并入最新生产表。",
       "使用 $investigate-customs-buyers 将当前任务中我选定的多家调查结果批量写回最新生产 CRM：Canonical 去重、历史保留、一次追加、一次导出、一次验证，不为每家重复生成完整审计包。",
-      "使用 $investigate-customs-buyers 审核海关字段、解析法律实体与 Ultimate Buyer、验证产品/贸易/供应商/Buying Group/联系方式，并对所有提升 Anchor 运行六分支，直到关键 Claim、物质 Pivot、Anchor 扩展与剩余 EIV 达到 Decision Saturation；不得以固定队列、固定深度或 Source Family 覆盖率作为 Closure。",
+      "使用 $investigate-customs-buyers 执行正式 FULL_AUDIT：审核海关字段、解析法律实体与 Ultimate Buyer、验证产品/贸易/供应商/Buying Group/联系方式，并对所有提升 Anchor 运行六分支，直到关键 Claim、物质 Pivot、Anchor 扩展与剩余 EIV 达到 Decision Saturation；不得以固定队列、固定深度或 Source Family 覆盖率作为 Closure。",
       "Use $investigate-customs-buyers to orchestrate connected data-provider tools only after explicit authorization, and append real ProviderReceipt records without installing, paying, logging in, or fabricating provider data.",
       "使用 $investigate-customs-buyers 仅在有效 Closure、买家自有 Route、历史与权限检查通过后准备草稿外联；永不自动发送。"
     ],
