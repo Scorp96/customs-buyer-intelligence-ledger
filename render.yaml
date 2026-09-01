@@ -22,8 +22,10 @@ services:
       - key: CBI_REMOTE_HOST
         value: 0.0.0.0
       - key: CBI_REMOTE_AUTH_MODE
-        value: bearer
+        value: mixed
       - key: CBI_REMOTE_BEARER_TOKEN
         sync: false
+      - key: CBI_REMOTE_GITHUB_ALLOWED_LOGINS
+        value: Scorp96
       - key: CBI_REMOTE_MAX_BODY_BYTES
         value: "8388608"
