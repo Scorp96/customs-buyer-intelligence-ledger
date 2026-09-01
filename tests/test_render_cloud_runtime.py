@@ -60,7 +60,7 @@ class RenderCloudRuntimeTests(unittest.TestCase):
             "CBI_BACKUP_ROOT",
             "value: /var/lib/cbi/live/backups-v61",
             "CBI_REMOTE_AUTH_MODE",
-            "value: mixed",
+            "value: bearer",
             "CBI_REMOTE_BEARER_TOKEN",
             "sync: false",
             "CBI_REMOTE_GITHUB_ALLOWED_LOGINS",
