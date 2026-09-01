@@ -22,7 +22,7 @@ services:
       - key: CBI_REMOTE_HOST
         value: 0.0.0.0
       - key: CBI_REMOTE_AUTH_MODE
-        value: mixed
+        value: bearer
       - key: CBI_REMOTE_BEARER_TOKEN
         sync: false
       - key: CBI_REMOTE_GITHUB_ALLOWED_LOGINS
