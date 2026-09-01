@@ -1,11 +1,11 @@
 services:
   - type: web
-    name: cbi-v61-runtime
+    name: cbi-v61-preview
     runtime: docker
     repo: https://github.com/Scorp96/customs-buyer-intelligence-ledger
     branch: cbi-v6-cloud-runtime-20260901
     region: singapore
-    plan: 1c-2g
+    plan: free
     dockerfilePath: ./deploy/cloud/Dockerfile
     dockerContext: .
     dockerCommand: python -B -Xutf8 mcp/render_bootstrap.py
@@ -27,7 +27,3 @@ services:
         sync: false
       - key: CBI_REMOTE_MAX_BODY_BYTES
         value: "8388608"
-    disk:
-      name: cbi-data
-      mountPath: /var/lib/cbi
-      sizeGB: 5
