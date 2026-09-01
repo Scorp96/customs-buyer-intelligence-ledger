@@ -66,6 +66,107 @@ jobs:
       - name: Run MCP v6.1 production-adapter protocol test
         run: python mcp/v61_hardening_protocol_test.py
 
+      - name: Build and smoke-test cloud Runtime container
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="cbi-cloud-runtime:${GITHUB_SHA}"
+          name="cbi-cloud-smoke-${GITHUB_RUN_ID}"
+          docker build -f deploy/cloud/Dockerfile -t "$image" .
+          cleanup() {
+            docker logs "$name" 2>/dev/null || true
+            docker rm -f "$name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run -d \
+            --name "$name" \
+            --read-only \
+            --tmpfs /tmp:size=64m,mode=1777 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            -e CBI_REMOTE_AUTH_MODE=none \
+            -p 127.0.0.1:18787:8787 \
+            "$image"
+          python - <<'PY'
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = "http://127.0.0.1:18787"
+          last = None
+          for _ in range(60):
+              try:
+                  with urllib.request.urlopen(base + "/healthz", timeout=1) as response:
+                      health = json.load(response)
+                  if health.get("status") == "ok" and health.get("durable_root_bound") is True:
+                      break
+              except Exception as exc:
+                  last = exc
+              time.sleep(0.25)
+          else:
+              raise SystemExit(f"cloud Runtime health did not become ready: {last}")
+
+          def post(method, request_id, params, extra_headers=None):
+              body = json.dumps({
+                  "jsonrpc": "2.0",
+                  "id": request_id,
+                  "method": method,
+                  "params": params,
+              }).encode("utf-8")
+              headers = {
+                  "Content-Type": "application/json",
+                  "Accept": "application/json, text/event-stream",
+                  "MCP-Protocol-Version": "2026-07-28",
+                  "Mcp-Method": method,
+              }
+              headers.update(extra_headers or {})
+              request = urllib.request.Request(base + "/mcp", data=body, headers=headers, method="POST")
+              with urllib.request.urlopen(request, timeout=5) as response:
+                  payload = json.load(response)
+              if "error" in payload:
+                  raise SystemExit(f"{method} returned error: {payload['error']}")
+              return payload["result"]
+
+          discover = post(
+              "server/discover",
+              "discover-1",
+              {"_meta": {
+                  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                  "io.modelcontextprotocol/clientCapabilities": {},
+              }},
+          )
+          assert discover["resultType"] == "complete", discover
+          assert "2026-07-28" in discover["supportedVersions"], discover
+          assert "tools" in discover["capabilities"], discover
+
+          tools = post(
+              "tools/list",
+              "tools-1",
+              {"_meta": {
+                  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                  "io.modelcontextprotocol/clientCapabilities": {},
+              }},
+          )
+          names = {row.get("name") for row in tools.get("tools", [])}
+          for required in {
+              "get_runtime_health",
+              "start_investigation",
+              "compile_and_append_research_bundle",
+          }:
+              assert required in names, (required, sorted(names))
+
+          health_call = post(
+              "tools/call",
+              "health-1",
+              {"name": "get_runtime_health", "arguments": {}},
+              {"Mcp-Name": "get_runtime_health"},
+          )
+          assert "content" in health_call, health_call
+          print("Cloud Runtime Docker HTTP smoke: PASS")
+          PY
+
       - name: Run privacy scan
         run: python tests/privacy_scan.py
 
