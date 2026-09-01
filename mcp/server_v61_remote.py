@@ -43,7 +43,7 @@ _EXPECTED_ROOT = _require_explicit_durable_root()
 # Import only after the explicit-root guard. The production module creates the
 # UnifiedRuntime at import time and therefore must observe CBI_SESSION_ROOT.
 from mcp import server_v61_backup_recovery as _production  # noqa: E402
-from mcp.remote_transport import serve  # noqa: E402
+from mcp.remote_transport import main as _remote_transport_main  # noqa: E402
 
 
 _RUNTIME = _production._RUNTIME
@@ -64,7 +64,9 @@ def _health() -> dict[str, Any]:
 
 
 def main() -> int:
-    return serve(_DISPATCH, health=_health)
+    # Delegate CLI parsing to remote_transport.main so --host/--port are not
+    # decorative: Docker/operator command-line arguments override env defaults.
+    return _remote_transport_main(_DISPATCH, health=_health)
 
 
 if __name__ == "__main__":
