@@ -8,8 +8,9 @@ restored payload, then archives the isolated payload for transfer to the cloud.
 
 A quiescence guard snapshots the durable source again before and after archive
 creation. Any durable change during the export window deletes the archive and
-fails closed. The operator must also keep the Windows Runtime quiescent after a
-successful export until cloud cutover is complete.
+fails closed. Snapshot warnings are never bypassed. The operator must also keep
+the Windows Runtime quiescent after a successful export until cloud cutover is
+complete.
 """
 
 from __future__ import annotations
@@ -99,7 +100,6 @@ def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Export validated CBI v6 durable state for cloud migration")
     p.add_argument("--source-root", type=Path, default=None, help="V6 root containing sessions/")
     p.add_argument("--output", type=Path, default=None, help="Output .tar.gz path")
-    p.add_argument("--allow-snapshot-warnings", action="store_true")
     return p
 
 
@@ -146,9 +146,9 @@ def main() -> int:
 
             snapshot = production._BACKUP.create_snapshot(["CLOUD_MIGRATION_EXPORT"])
             warnings = list(snapshot.get("warnings") or [])
-            if warnings and not args.allow_snapshot_warnings:
+            if warnings:
                 raise SystemExit(
-                    "snapshot has warnings; refusing cloud export without --allow-snapshot-warnings: "
+                    "snapshot has warnings; cloud export is fail-closed: "
                     + json.dumps(warnings, ensure_ascii=False)
                 )
             initial_manifest = _snapshot_manifest(backup_root, str(snapshot["snapshot_id"]))
@@ -165,6 +165,8 @@ def main() -> int:
             # Detect writes that happened while the isolated restore was prepared.
             pre_archive = production._BACKUP.create_snapshot(["CLOUD_MIGRATION_EXPORT_PRE_ARCHIVE_CHECK"])
             pre_manifest = _snapshot_manifest(backup_root, str(pre_archive["snapshot_id"]))
+            if list(pre_manifest.get("warnings") or []):
+                raise SystemExit("pre-archive quiescence snapshot contains warnings")
             _assert_same_source_state(initial_manifest, pre_manifest, phase="pre-archive check")
 
             payload_hashes: dict[str, str] = {}
@@ -205,6 +207,8 @@ def main() -> int:
             post_archive = production._BACKUP.create_snapshot(["CLOUD_MIGRATION_EXPORT_POST_ARCHIVE_CHECK"])
             post_archive_snapshot_id = str(post_archive["snapshot_id"])
             post_manifest = _snapshot_manifest(backup_root, post_archive_snapshot_id)
+            if list(post_manifest.get("warnings") or []):
+                raise SystemExit("post-archive quiescence snapshot contains warnings")
             _assert_same_source_state(initial_manifest, post_manifest, phase="post-archive check")
     except BaseException:
         if output.exists():
