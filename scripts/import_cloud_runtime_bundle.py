@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Import a validated CBI cloud-runtime bundle into a new durable data root.
+
+The importer is fail-closed: no path traversal, links, devices, overwrite of a
+non-empty target, missing/extra payload files, or hash mismatches are allowed.
+After atomic activation it imports the real production MCP stack against the new
+session root so hash-chain/runtime health is checked before deployment proceeds.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import sys
+import tarfile
+import tempfile
+from pathlib import Path, PurePosixPath
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _safe_relative(name: str) -> PurePosixPath:
+    value = PurePosixPath(name)
+    if value.is_absolute() or not value.parts or any(part in {"", ".", ".."} for part in value.parts):
+        raise ValueError(f"unsafe archive member: {name}")
+    if value.parts[0] != "cbi-cloud-runtime":
+        raise ValueError(f"unexpected archive root: {name}")
+    return value
+
+
+def _extract_safely(archive: Path, staging: Path) -> Path:
+    with tarfile.open(archive, "r:gz") as tf:
+        members = tf.getmembers()
+        if not members:
+            raise ValueError("cloud runtime archive is empty")
+        for member in members:
+            relative = _safe_relative(member.name)
+            if member.issym() or member.islnk() or member.isdev() or member.isfifo():
+                raise ValueError(f"archive links/devices are forbidden: {member.name}")
+            destination = staging.joinpath(*relative.parts)
+            if member.isdir():
+                destination.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                raise ValueError(f"unsupported archive member type: {member.name}")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source = tf.extractfile(member)
+            if source is None:
+                raise ValueError(f"archive member unreadable: {member.name}")
+            with source, destination.open("wb") as out:
+                shutil.copyfileobj(source, out, length=1024 * 1024)
+    return staging / "cbi-cloud-runtime"
+
+
+def _verify_payload(root: Path) -> dict:
+    manifest_path = root / "export-manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid export-manifest.json") from exc
+    if manifest.get("schema") != "cbi.cloud-runtime-export.v1":
+        raise ValueError("unexpected cloud export schema")
+    if manifest.get("hash_chains_valid") is not True or manifest.get("activation_ready") is not True:
+        raise ValueError("cloud export was not activation-ready")
+    expected = manifest.get("payload_files")
+    if not isinstance(expected, dict):
+        raise ValueError("payload file hash manifest missing")
+    actual_files = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and path.name != "export-manifest.json"
+    }
+    if actual_files != set(expected):
+        missing = sorted(set(expected) - actual_files)
+        extra = sorted(actual_files - set(expected))
+        raise ValueError(f"payload inventory mismatch; missing={missing}; extra={extra}")
+    for relative, expected_hash in expected.items():
+        path = root / str(relative)
+        if _sha256(path) != str(expected_hash):
+            raise ValueError(f"payload hash mismatch: {relative}")
+    sessions = root / "sessions"
+    if not sessions.is_dir():
+        raise ValueError("sessions/ missing from cloud runtime bundle")
+    return manifest
+
+
+def _parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Import a validated CBI cloud runtime bundle")
+    p.add_argument("archive", type=Path)
+    p.add_argument("--target-root", type=Path, default=Path("/srv/cbi-data"))
+    p.add_argument("--skip-runtime-health", action="store_true")
+    return p
+
+
+def main() -> int:
+    args = _parser().parse_args()
+    archive = args.archive.expanduser().resolve()
+    target = args.target_root.expanduser().resolve()
+    if not archive.is_file():
+        raise SystemExit(f"archive not found: {archive}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        if not target.is_dir() or any(target.iterdir()):
+            raise SystemExit(f"target must not exist or must be an empty directory: {target}")
+        target.rmdir()
+
+    archive_hash = _sha256(archive)
+    staging_parent = Path(tempfile.mkdtemp(prefix=f".{target.name}.import-", dir=target.parent))
+    activated = False
+    try:
+        extracted = _extract_safely(archive, staging_parent)
+        manifest = _verify_payload(extracted)
+        os.replace(extracted, target)
+        activated = True
+
+        if not args.skip_runtime_health:
+            os.environ["CBI_SESSION_ROOT"] = str(target / "sessions")
+            os.environ["CBI_BACKUP_ROOT"] = str(target / "backups-v61")
+            # This imports the exact accepted production stack against the newly
+            # activated cloud root. Any chain/runtime integrity failure aborts.
+            from mcp import server_v61_backup_recovery as production  # noqa: WPS433
+
+            observed = Path(production._RUNTIME.store.root).expanduser().resolve()
+            if observed != (target / "sessions").resolve():
+                raise RuntimeError("production Runtime did not bind imported cloud session root")
+            production._TOOL_HANDLERS["get_runtime_health"]({})
+
+        print(json.dumps({
+            "status": "PASS",
+            "archive": str(archive),
+            "archive_sha256": archive_hash,
+            "target_root": str(target),
+            "session_root": str(target / "sessions"),
+            "snapshot_id": manifest.get("snapshot_id"),
+            "source_git_head": manifest.get("git_head"),
+            "runtime_health_checked": not args.skip_runtime_health,
+            "next": "chown the target to uid/gid 10001, then start deploy/cloud/docker-compose.yml",
+        }, ensure_ascii=False, indent=2))
+        return 0
+    except Exception:
+        if activated and target.exists():
+            # Initial import has no pre-existing target. On a failed post-activate
+            # health check, remove only the just-imported target instead of leaving
+            # a questionable durable root available to Docker.
+            shutil.rmtree(target, ignore_errors=True)
+        raise
+    finally:
+        shutil.rmtree(staging_parent, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
