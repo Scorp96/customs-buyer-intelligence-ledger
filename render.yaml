@@ -25,7 +25,7 @@ services:
       - key: CBI_REMOTE_AUTH_MODE
         value: bearer
       - key: CBI_REMOTE_BEARER_TOKEN
-        generateValue: true
+        sync: false
       - key: CBI_REMOTE_MAX_BODY_BYTES
         value: "8388608"
     disk:
