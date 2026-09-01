@@ -53,7 +53,7 @@ jobs:
 
       - name: Validate Render Blueprint
         run: >-
-          python -c "import pathlib,yaml; d=yaml.safe_load(pathlib.Path('render.yaml').read_text(encoding='utf-8-sig')); s=d['services'][0]; assert s['type']=='web' and s['runtime']=='docker' and s['region']=='singapore' and s['plan']=='1c-2g'; assert s['healthCheckPath']=='/healthz' and s['autoDeployTrigger']=='checksPass'; assert s['disk']['mountPath']=='/var/lib/cbi' and int(s['disk']['sizeGB'])>=1; env={x['key']:x for x in s['envVars']}; assert env['CBI_REMOTE_AUTH_MODE']['value']=='bearer' and env['CBI_REMOTE_BEARER_TOKEN']['sync'] is False; print('Render Blueprint: PASS')"
+          python -c "import pathlib,yaml; d=yaml.safe_load(pathlib.Path('render.yaml').read_text(encoding='utf-8-sig')); s=d['services'][0]; assert s['type']=='web' and s['runtime']=='docker' and s['region']=='singapore' and s['plan']=='free'; assert s['healthCheckPath']=='/healthz' and s['autoDeployTrigger']=='checksPass'; assert 'disk' not in s; env={x['key']:x for x in s['envVars']}; assert env['CBI_REMOTE_AUTH_MODE']['value']=='bearer' and env['CBI_REMOTE_BEARER_TOKEN']['sync'] is False; print('Render Free Preview Blueprint: PASS')"
 
       - name: Run unittest regression suite
         run: python -m unittest discover -s tests -p "test_*.py" -v
