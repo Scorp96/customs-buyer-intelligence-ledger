@@ -1,28 +1,17 @@
 #!/usr/bin/env python3
-"""Fail-closed S3-compatible persistence for ephemeral cloud runtimes.
+"""Fail-closed S3-compatible persistence for ephemeral CBI cloud runtimes.
 
-The production CBI Runtime remains file-backed and append-only.  This module adds
-an object-store durability layer for hosts such as Render Free whose local file
-system disappears on spin-down/restart/redeploy.
+The accepted CBI Runtime remains file-backed.  Ephemeral hosts persist complete,
+immutable session generations to an S3-compatible private bucket and advance one
+small ``current.json`` pointer with conditional PutObject.  The pointer CAS is
+the split-brain guard: a stale writer receives HTTP 412 and fails closed.
 
-Design:
-- the object store never becomes a second writable Runtime;
-- a complete validated state archive is immutable per generation;
-- a small ``current.json`` pointer is the only mutable object;
-- pointer replacement uses If-Match/If-None-Match CAS so stale/concurrent writers
-  fail closed instead of creating silent split brain;
-- startup restores the pointed generation before importing the production Runtime;
-- post-dispatch sync uploads only when the durable sessions fingerprint changed;
-- private credentials are environment-only and never written to Git or state.
-
-The S3 client is dependency-free SigV4 so the 512 MiB image does not need boto3.
-It is intentionally limited to the operations needed here: GET/HEAD/PUT/DELETE
-and ListObjectsV2.
+The client is stdlib-only AWS SigV4 so the Render Free image does not need boto3.
 """
 
 from __future__ import annotations
 
-import datetime as _dt
+import datetime as dt
 import hashlib
 import hmac
 import json
@@ -38,7 +27,6 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
-
 
 STATE_SCHEMA = "cbi.object-store-state.v1"
 POINTER_SCHEMA = "cbi.object-store-pointer.v1"
@@ -69,9 +57,9 @@ def _sha256_file(path: Path) -> str:
 def _normalize_etag(value: str | None) -> str:
     raw = str(value or "").strip()
     if raw.startswith('W/"') and raw.endswith('"'):
-        raw = raw[3:-1]
-    elif raw.startswith('"') and raw.endswith('"'):
-        raw = raw[1:-1]
+        return raw[3:-1]
+    if raw.startswith('"') and raw.endswith('"'):
+        return raw[1:-1]
     return raw
 
 
@@ -83,10 +71,8 @@ def _sessions_fingerprint(session_root: Path) -> str:
     for path in sorted(session_root.rglob("*")):
         if not path.is_file():
             continue
-        relative = path.relative_to(session_root).as_posix()
-        digest = _sha256_file(path)
-        encoded = f"{relative}\0{path.stat().st_size}\0{digest}\n".encode("utf-8")
-        h.update(encoded)
+        rel = path.relative_to(session_root).as_posix()
+        h.update(f"{rel}\0{path.stat().st_size}\0{_sha256_file(path)}\n".encode("utf-8"))
         count += 1
     h.update(f"files={count}\n".encode("ascii"))
     return h.hexdigest()
@@ -94,7 +80,7 @@ def _sessions_fingerprint(session_root: Path) -> str:
 
 def _safe_relative(name: str, expected_root: str) -> PurePosixPath:
     value = PurePosixPath(name)
-    if value.is_absolute() or not value.parts or any(part in {"", ".", ".."} for part in value.parts):
+    if value.is_absolute() or not value.parts or any(p in {"", ".", ".."} for p in value.parts):
         raise ObjectStorePersistenceError(f"unsafe archive member: {name}")
     if value.parts[0] != expected_root:
         raise ObjectStorePersistenceError(f"unexpected archive root: {name}")
@@ -108,19 +94,18 @@ def _extract_tar_safely(archive: Path, staging: Path, expected_root: str) -> Pat
             raise ObjectStorePersistenceError("state archive is empty")
         if len(members) > MAX_ARCHIVE_MEMBERS:
             raise ObjectStorePersistenceError("state archive contains too many members")
-        total_size = sum(max(0, int(member.size)) for member in members)
-        if total_size > MAX_UNCOMPRESSED_BYTES:
+        if sum(max(0, int(m.size)) for m in members) > MAX_UNCOMPRESSED_BYTES:
             raise ObjectStorePersistenceError("state archive exceeds uncompressed size limit")
         seen: set[str] = set()
         for member in members:
-            relative = _safe_relative(member.name, expected_root)
-            canonical = relative.as_posix()
+            rel = _safe_relative(member.name, expected_root)
+            canonical = rel.as_posix()
             if canonical in seen:
                 raise ObjectStorePersistenceError(f"duplicate archive member forbidden: {member.name}")
             seen.add(canonical)
             if member.issym() or member.islnk() or member.isdev() or member.isfifo():
                 raise ObjectStorePersistenceError(f"archive links/devices are forbidden: {member.name}")
-            destination = staging.joinpath(*relative.parts)
+            destination = staging.joinpath(*rel.parts)
             if member.isdir():
                 destination.mkdir(parents=True, exist_ok=True)
                 continue
@@ -135,10 +120,24 @@ def _extract_tar_safely(archive: Path, staging: Path, expected_root: str) -> Pat
     return staging / expected_root
 
 
+def _verify_payload(root: Path, manifest_name: str, expected: Any) -> None:
+    if not isinstance(expected, dict):
+        raise ObjectStorePersistenceError("payload hash manifest missing")
+    actual = {
+        p.relative_to(root).as_posix()
+        for p in root.rglob("*")
+        if p.is_file() and p.name != manifest_name
+    }
+    if actual != set(expected):
+        raise ObjectStorePersistenceError("payload inventory mismatch")
+    for relative, expected_hash in expected.items():
+        if _sha256_file(root / str(relative)) != str(expected_hash):
+            raise ObjectStorePersistenceError(f"payload hash mismatch: {relative}")
+
+
 def _verify_migration_v1(root: Path) -> dict[str, Any]:
-    manifest_path = root / "export-manifest.json"
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        manifest = json.loads((root / "export-manifest.json").read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ObjectStorePersistenceError("invalid migration export-manifest.json") from exc
     if manifest.get("schema") != "cbi.cloud-runtime-export.v1":
@@ -147,71 +146,47 @@ def _verify_migration_v1(root: Path) -> dict[str, Any]:
         raise ObjectStorePersistenceError("migration export was not activation-ready")
     if manifest.get("pre_archive_quiescence_check") is not True:
         raise ObjectStorePersistenceError("migration export lacks quiescence proof")
-    expected = manifest.get("payload_files")
-    if not isinstance(expected, dict):
-        raise ObjectStorePersistenceError("migration payload hash manifest missing")
-    actual = {
-        p.relative_to(root).as_posix()
-        for p in root.rglob("*")
-        if p.is_file() and p.name != "export-manifest.json"
-    }
-    if actual != set(expected):
-        raise ObjectStorePersistenceError("migration payload inventory mismatch")
-    for relative, expected_hash in expected.items():
-        if _sha256_file(root / str(relative)) != str(expected_hash):
-            raise ObjectStorePersistenceError(f"migration payload hash mismatch: {relative}")
+    _verify_payload(root, "export-manifest.json", manifest.get("payload_files"))
     if not (root / "sessions").is_dir():
         raise ObjectStorePersistenceError("migration sessions/ missing")
     return manifest
 
 
 def _verify_state_v1(root: Path) -> dict[str, Any]:
-    manifest_path = root / "state-manifest.json"
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        manifest = json.loads((root / "state-manifest.json").read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ObjectStorePersistenceError("invalid state-manifest.json") from exc
     if manifest.get("schema") != STATE_SCHEMA:
         raise ObjectStorePersistenceError("unexpected object-state schema")
-    expected = manifest.get("payload_files")
-    if not isinstance(expected, dict):
-        raise ObjectStorePersistenceError("object-state payload hash manifest missing")
-    actual = {
-        p.relative_to(root).as_posix()
-        for p in root.rglob("*")
-        if p.is_file() and p.name != "state-manifest.json"
-    }
-    if actual != set(expected):
-        raise ObjectStorePersistenceError("object-state payload inventory mismatch")
-    for relative, expected_hash in expected.items():
-        if _sha256_file(root / str(relative)) != str(expected_hash):
-            raise ObjectStorePersistenceError(f"object-state payload hash mismatch: {relative}")
+    _verify_payload(root, "state-manifest.json", manifest.get("payload_files"))
     sessions = root / "sessions"
     if not sessions.is_dir():
         raise ObjectStorePersistenceError("object-state sessions/ missing")
-    observed = _sessions_fingerprint(sessions)
-    if observed != str(manifest.get("sessions_fingerprint_sha256") or ""):
+    if _sessions_fingerprint(sessions) != str(manifest.get("sessions_fingerprint_sha256") or ""):
         raise ObjectStorePersistenceError("object-state sessions fingerprint mismatch")
     return manifest
 
 
 def _build_state_archive(session_root: Path, generation: int, output: Path) -> tuple[str, str]:
+    if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+        raise ObjectStorePersistenceError("generation must be a non-negative integer")
     fingerprint = _sessions_fingerprint(session_root)
     with tempfile.TemporaryDirectory(prefix="cbi-object-state-build-") as tmp_name:
-        tmp = Path(tmp_name)
-        root = tmp / "cbi-object-state"
-        copied_sessions = root / "sessions"
-        shutil.copytree(session_root, copied_sessions)
-        payload_files: dict[str, str] = {}
-        for path in sorted(copied_sessions.rglob("*")):
-            if path.is_file():
-                payload_files[path.relative_to(root).as_posix()] = _sha256_file(path)
+        root = Path(tmp_name) / "cbi-object-state"
+        copied = root / "sessions"
+        shutil.copytree(session_root, copied)
+        payload = {
+            p.relative_to(root).as_posix(): _sha256_file(p)
+            for p in sorted(copied.rglob("*"))
+            if p.is_file()
+        }
         manifest = {
             "schema": STATE_SCHEMA,
-            "generation": int(generation),
-            "created_at": _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+            "generation": generation,
+            "created_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
             "sessions_fingerprint_sha256": fingerprint,
-            "payload_files": payload_files,
+            "payload_files": payload,
         }
         (root / "state-manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
@@ -244,11 +219,11 @@ class S3CompatibleClient:
             raise ObjectStorePersistenceError("CBI object-store credentials are required")
         self.config = config
         self.endpoint = endpoint
-        self._parsed_endpoint = parsed
+        self.parsed = parsed
         self.timeout = float(timeout)
 
     @staticmethod
-    def _quote_path(value: str) -> str:
+    def _quote(value: str) -> str:
         return "/".join(urllib.parse.quote(part, safe="-_.~") for part in value.split("/"))
 
     def _request(
@@ -261,49 +236,35 @@ class S3CompatibleClient:
         headers: dict[str, str] | None = None,
         allow: Iterable[int] = (),
     ) -> tuple[int, bytes, dict[str, str]]:
-        bucket_path = self._quote_path(self.config.bucket)
-        path = f"/{bucket_path}"
+        path = "/" + self._quote(self.config.bucket)
         if key is not None:
-            key = str(key).lstrip("/")
-            if not key:
+            clean = str(key).lstrip("/")
+            if not clean:
                 raise ObjectStorePersistenceError("object key must not be empty")
-            path += "/" + self._quote_path(key)
+            path += "/" + self._quote(clean)
         query = dict(query or {})
         canonical_query = urllib.parse.urlencode(
             sorted(query.items()), quote_via=urllib.parse.quote, safe="-_.~"
         )
         url = self.endpoint + path + ("?" + canonical_query if canonical_query else "")
-
-        now = _dt.datetime.now(_dt.timezone.utc)
+        now = dt.datetime.now(dt.timezone.utc)
         amz_date = now.strftime("%Y%m%dT%H%M%SZ")
         date_stamp = now.strftime("%Y%m%d")
         payload_hash = _sha256_bytes(body)
-        host = self._parsed_endpoint.netloc
-        signed = {
-            "host": host,
-            "x-amz-content-sha256": payload_hash,
-            "x-amz-date": amz_date,
-        }
+        host = self.parsed.netloc
+        signed = {"host": host, "x-amz-content-sha256": payload_hash, "x-amz-date": amz_date}
         canonical_headers = "".join(f"{name}:{signed[name]}\n" for name in sorted(signed))
         signed_headers = ";".join(sorted(signed))
-        canonical_request = "\n".join([
-            method.upper(),
-            path,
-            canonical_query,
-            canonical_headers,
-            signed_headers,
-            payload_hash,
-        ])
+        canonical_request = "\n".join(
+            [method.upper(), path, canonical_query, canonical_headers, signed_headers, payload_hash]
+        )
         scope = f"{date_stamp}/{self.config.region}/s3/aws4_request"
-        string_to_sign = "\n".join([
-            "AWS4-HMAC-SHA256",
-            amz_date,
-            scope,
-            _sha256_bytes(canonical_request.encode("utf-8")),
-        ])
+        string_to_sign = "\n".join(
+            ["AWS4-HMAC-SHA256", amz_date, scope, _sha256_bytes(canonical_request.encode("utf-8"))]
+        )
 
-        def sign(key_bytes: bytes, msg: str) -> bytes:
-            return hmac.new(key_bytes, msg.encode("utf-8"), hashlib.sha256).digest()
+        def sign(key_bytes: bytes, text: str) -> bytes:
+            return hmac.new(key_bytes, text.encode("utf-8"), hashlib.sha256).digest()
 
         k_date = sign(("AWS4" + self.config.secret_access_key).encode("utf-8"), date_stamp)
         k_region = sign(k_date, self.config.region)
@@ -328,7 +289,7 @@ class S3CompatibleClient:
             headers=request_headers,
             method=method.upper(),
         )
-        allowed = set(int(value) for value in allow)
+        allowed = {int(value) for value in allow}
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 return int(response.status), response.read(), {k.lower(): v for k, v in response.headers.items()}
@@ -345,9 +306,7 @@ class S3CompatibleClient:
 
     def get(self, key: str) -> tuple[bytes | None, str]:
         status, body, headers = self._request("GET", key=key, allow={404})
-        if status == 404:
-            return None, ""
-        return body, _normalize_etag(headers.get("etag"))
+        return (None, "") if status == 404 else (body, _normalize_etag(headers.get("etag")))
 
     def head(self, key: str) -> tuple[bool, str]:
         status, _body, headers = self._request("HEAD", key=key, allow={404})
@@ -359,14 +318,13 @@ class S3CompatibleClient:
             headers["If-Match"] = f'"{_normalize_etag(if_match)}"'
         if if_none_match:
             headers["If-None-Match"] = "*"
-        status, _response, response_headers = self._request(
+        status, _body, response_headers = self._request(
             "PUT", key=key, body=body, headers=headers, allow={412}
         )
         if status == 412:
             raise ObjectStoreConflict(f"conditional write conflict for {key}")
         etag = _normalize_etag(response_headers.get("etag"))
         if not etag:
-            # R2 normally returns ETag; if omitted, HEAD establishes the CAS token.
             exists, etag = self.head(key)
             if not exists or not etag:
                 raise ObjectStorePersistenceError(f"object-store did not return ETag for {key}")
@@ -387,19 +345,16 @@ class S3CompatibleClient:
                 root = ET.fromstring(body)
             except ET.ParseError as exc:
                 raise ObjectStorePersistenceError("invalid ListObjectsV2 response") from exc
-            namespace = ""
-            if root.tag.startswith("{"):
-                namespace = root.tag.split("}", 1)[0] + "}"
-            for content in root.findall(f"{namespace}Contents"):
-                key_node = content.find(f"{namespace}Key")
-                if key_node is not None and key_node.text:
-                    keys.append(key_node.text)
-            truncated = (root.findtext(f"{namespace}IsTruncated") or "false").lower() == "true"
-            if not truncated:
+            ns = root.tag.split("}", 1)[0] + "}" if root.tag.startswith("{") else ""
+            for content in root.findall(f"{ns}Contents"):
+                node = content.find(f"{ns}Key")
+                if node is not None and node.text:
+                    keys.append(node.text)
+            if (root.findtext(f"{ns}IsTruncated") or "false").lower() != "true":
                 break
-            token = root.findtext(f"{namespace}NextContinuationToken") or ""
+            token = root.findtext(f"{ns}NextContinuationToken") or ""
             if not token:
-                raise ObjectStorePersistenceError("truncated ListObjectsV2 response lacks continuation token")
+                raise ObjectStorePersistenceError("truncated listing lacks continuation token")
         return keys
 
 
@@ -415,12 +370,12 @@ class ObjectStorePointer:
     def to_bytes(self) -> bytes:
         value = {
             "schema": POINTER_SCHEMA,
-            "generation": int(self.generation),
+            "generation": self.generation,
             "archive_key": self.archive_key,
             "archive_sha256": self.archive_sha256,
             "sessions_fingerprint_sha256": self.sessions_fingerprint_sha256,
             "archive_format": self.archive_format,
-            "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+            "updated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
         }
         return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
@@ -432,7 +387,10 @@ class ObjectStorePointer:
             raise ObjectStorePersistenceError("invalid object-store current pointer") from exc
         if not isinstance(row, dict) or row.get("schema") != POINTER_SCHEMA:
             raise ObjectStorePersistenceError("unexpected object-store pointer schema")
-        generation = int(row.get("generation") or -1)
+        raw_generation = row.get("generation")
+        if isinstance(raw_generation, bool) or not isinstance(raw_generation, int):
+            raise ObjectStorePersistenceError("object-store pointer generation must be an integer")
+        generation = raw_generation
         archive_key = str(row.get("archive_key") or "").strip()
         archive_sha = str(row.get("archive_sha256") or "").strip().lower()
         fingerprint = str(row.get("sessions_fingerprint_sha256") or "").strip().lower()
@@ -449,13 +407,7 @@ class ObjectStorePointer:
 
 
 class ObjectStoreStateManager:
-    def __init__(
-        self,
-        client: S3CompatibleClient,
-        *,
-        prefix: str = "cbi-v61",
-        retention: int = 20,
-    ):
+    def __init__(self, client: S3CompatibleClient, *, prefix: str = "cbi-v61", retention: int = 20):
         prefix = str(prefix or "").strip().strip("/")
         if not prefix or ".." in PurePosixPath(prefix).parts:
             raise ObjectStorePersistenceError("CBI object-store prefix is invalid")
@@ -483,9 +435,11 @@ class ObjectStoreStateManager:
             secret_access_key=str(os.environ.get("CBI_OBJECT_STORE_SECRET_ACCESS_KEY") or "").strip(),
             region=str(os.environ.get("CBI_OBJECT_STORE_REGION") or "auto").strip() or "auto",
         )
-        prefix = str(os.environ.get("CBI_OBJECT_STORE_PREFIX") or "cbi-v61")
-        retention = int(os.environ.get("CBI_OBJECT_STORE_RETENTION") or "20")
-        return cls(S3CompatibleClient(config), prefix=prefix, retention=retention)
+        return cls(
+            S3CompatibleClient(config),
+            prefix=str(os.environ.get("CBI_OBJECT_STORE_PREFIX") or "cbi-v61"),
+            retention=int(os.environ.get("CBI_OBJECT_STORE_RETENTION") or "20"),
+        )
 
     def read_pointer(self, *, required: bool = False) -> ObjectStorePointer | None:
         body, etag = self.client.get(self.pointer_key)
@@ -505,69 +459,63 @@ class ObjectStoreStateManager:
             live_root = live_root.expanduser().resolve()
             if live_root.exists() and (not live_root.is_dir() or any(live_root.iterdir())):
                 raise ObjectStorePersistenceError(f"restore target must be empty: {live_root}")
-            archive_bytes, _archive_etag = self.client.get(pointer.archive_key)
+            archive_bytes, _ = self.client.get(pointer.archive_key)
             if archive_bytes is None:
-                raise ObjectStorePersistenceError("object-store pointer references a missing state archive")
-            observed_archive_hash = _sha256_bytes(archive_bytes)
-            if not hmac.compare_digest(observed_archive_hash, pointer.archive_sha256):
+                raise ObjectStorePersistenceError("current pointer references a missing state archive")
+            if not hmac.compare_digest(_sha256_bytes(archive_bytes), pointer.archive_sha256):
                 raise ObjectStorePersistenceError("object-store state archive SHA-256 mismatch")
             live_root.parent.mkdir(parents=True, exist_ok=True)
             if live_root.exists():
                 live_root.rmdir()
-            staging_parent = Path(tempfile.mkdtemp(prefix=f".{live_root.name}.object-restore-", dir=live_root.parent))
+            staging = Path(tempfile.mkdtemp(prefix=f".{live_root.name}.restore-", dir=live_root.parent))
             try:
-                archive = staging_parent / "state.tar.gz"
+                archive = staging / "state.tar.gz"
                 archive.write_bytes(archive_bytes)
                 if pointer.archive_format == "migration_v1":
-                    extracted = _extract_tar_safely(archive, staging_parent, "cbi-cloud-runtime")
+                    extracted = _extract_tar_safely(archive, staging, "cbi-cloud-runtime")
                     _verify_migration_v1(extracted)
                 else:
-                    extracted = _extract_tar_safely(archive, staging_parent, "cbi-object-state")
+                    extracted = _extract_tar_safely(archive, staging, "cbi-object-state")
                     _verify_state_v1(extracted)
-                    # render_bootstrap expects an import marker next to sessions.
                     (extracted / "export-manifest.json").write_text(
                         json.dumps({"schema": STATE_SCHEMA, "restored_generation": pointer.generation}) + "\n",
                         encoding="utf-8",
                     )
-                observed_fingerprint = _sessions_fingerprint(extracted / "sessions")
-                if observed_fingerprint != pointer.sessions_fingerprint_sha256:
-                    raise ObjectStorePersistenceError("restored sessions fingerprint does not match current pointer")
+                if _sessions_fingerprint(extracted / "sessions") != pointer.sessions_fingerprint_sha256:
+                    raise ObjectStorePersistenceError("restored sessions fingerprint mismatch")
                 (extracted / "backups-v61").mkdir(exist_ok=True)
                 os.replace(extracted, live_root)
                 return True
             finally:
-                shutil.rmtree(staging_parent, ignore_errors=True)
+                shutil.rmtree(staging, ignore_errors=True)
 
     def attach_existing(self, live_root: Path) -> None:
-        with self._lock:
-            pointer = self.read_pointer(required=True)
-            assert pointer is not None
-            observed = _sessions_fingerprint(live_root.expanduser().resolve() / "sessions")
-            if observed != pointer.sessions_fingerprint_sha256:
-                raise ObjectStorePersistenceError(
-                    "local durable state does not match object-store current pointer at startup"
-                )
-            self.last_error = ""
+        pointer = self.read_pointer(required=True)
+        assert pointer is not None
+        if _sessions_fingerprint(live_root.expanduser().resolve() / "sessions") != pointer.sessions_fingerprint_sha256:
+            raise ObjectStorePersistenceError("local durable state does not match current object-store pointer")
+        self.last_error = ""
+
+    def _put_immutable(self, key: str, body: bytes) -> None:
+        try:
+            self.client.put(key, body, if_none_match=True)
+        except ObjectStoreConflict:
+            existing, _ = self.client.get(key)
+            if existing is None or not hmac.compare_digest(existing, body):
+                raise
 
     def _prune(self) -> None:
         try:
             keys = sorted(self.client.list_keys(self.state_prefix))
-            if len(keys) <= self.retention:
-                return
-            for key in keys[: len(keys) - self.retention]:
-                if self.pointer is not None and key == self.pointer.archive_key:
-                    continue
-                self.client.delete(key)
+            for key in keys[: max(0, len(keys) - self.retention)]:
+                if self.pointer is None or key != self.pointer.archive_key:
+                    self.client.delete(key)
         except Exception:
-            # Retention cleanup is best effort; current state durability has already
-            # committed. Health does not degrade solely because old generations could
-            # not be removed.
             return
 
     def sync_if_changed(self, live_root: Path) -> bool:
         with self._lock:
-            live_root = live_root.expanduser().resolve()
-            session_root = live_root / "sessions"
+            session_root = live_root.expanduser().resolve() / "sessions"
             observed = _sessions_fingerprint(session_root)
             if self.pointer is None:
                 self.read_pointer(required=True)
@@ -576,29 +524,23 @@ class ObjectStoreStateManager:
                 self.last_sync_changed = False
                 self.last_error = ""
                 return False
-            next_generation = self.pointer.generation + 1
-            with tempfile.TemporaryDirectory(prefix="cbi-object-state-sync-") as tmp_name:
+            generation = self.pointer.generation + 1
+            with tempfile.TemporaryDirectory(prefix="cbi-object-sync-") as tmp_name:
                 archive = Path(tmp_name) / "state.tar.gz"
-                archive_sha, fingerprint = _build_state_archive(session_root, next_generation, archive)
-                key = f"{self.state_prefix}{next_generation:020d}-{archive_sha}.tar.gz"
-                self.client.put(key, archive.read_bytes(), if_none_match=True)
+                archive_sha, fingerprint = _build_state_archive(session_root, generation, archive)
+                body = archive.read_bytes()
+                key = f"{self.state_prefix}{generation:020d}-{archive_sha}.tar.gz"
+                self._put_immutable(key, body)
                 next_pointer = ObjectStorePointer(
-                    generation=next_generation,
-                    archive_key=key,
-                    archive_sha256=archive_sha,
-                    sessions_fingerprint_sha256=fingerprint,
-                    archive_format="object_state_v1",
+                    generation, key, archive_sha, fingerprint, "object_state_v1"
                 )
                 try:
-                    pointer_etag = self.client.put(
-                        self.pointer_key,
-                        next_pointer.to_bytes(),
-                        if_match=self.pointer.etag,
+                    next_pointer.etag = self.client.put(
+                        self.pointer_key, next_pointer.to_bytes(), if_match=self.pointer.etag
                     )
                 except ObjectStoreConflict:
                     self.last_error = "OBJECT_STORE_CAS_CONFLICT"
                     raise
-                next_pointer.etag = pointer_etag
                 self.pointer = next_pointer
                 self.last_sync_changed = True
                 self.last_error = ""
@@ -611,8 +553,8 @@ class ObjectStoreStateManager:
             "enabled": True,
             "mode": "s3-compatible",
             "prefix": self.prefix,
-            "generation": pointer.generation if pointer else None,
-            "archive_format": pointer.archive_format if pointer else None,
+            "generation": pointer.generation if pointer is not None else None,
+            "archive_format": pointer.archive_format if pointer is not None else None,
             "last_sync_changed": self.last_sync_changed,
             "last_error": self.last_error or None,
             "cas_fail_closed": True,
@@ -620,7 +562,6 @@ class ObjectStoreStateManager:
         }
 
     def seed_migration_archive(self, archive: Path, expected_sha256: str) -> ObjectStorePointer:
-        """Create generation zero from the trusted Windows migration export."""
         with self._lock:
             if self.read_pointer(required=False) is not None:
                 raise ObjectStorePersistenceError("object store is already seeded")
@@ -629,24 +570,18 @@ class ObjectStoreStateManager:
                 raise ObjectStorePersistenceError(f"migration archive not found: {archive}")
             expected = str(expected_sha256 or "").strip().lower()
             if len(expected) != 64 or any(ch not in "0123456789abcdef" for ch in expected):
-                raise ObjectStorePersistenceError("trusted migration SHA-256 must be 64 lowercase hex characters")
+                raise ObjectStorePersistenceError("trusted migration SHA-256 must be 64 hex characters")
             observed = _sha256_file(archive)
             if not hmac.compare_digest(expected, observed):
                 raise ObjectStorePersistenceError("trusted migration archive SHA-256 mismatch")
             with tempfile.TemporaryDirectory(prefix="cbi-object-seed-") as tmp_name:
-                staging = Path(tmp_name)
-                extracted = _extract_tar_safely(archive, staging, "cbi-cloud-runtime")
+                extracted = _extract_tar_safely(archive, Path(tmp_name), "cbi-cloud-runtime")
                 _verify_migration_v1(extracted)
                 fingerprint = _sessions_fingerprint(extracted / "sessions")
+            body = archive.read_bytes()
             key = f"{self.state_prefix}{0:020d}-migration-{observed}.tar.gz"
-            self.client.put(key, archive.read_bytes(), if_none_match=True)
-            pointer = ObjectStorePointer(
-                generation=0,
-                archive_key=key,
-                archive_sha256=observed,
-                sessions_fingerprint_sha256=fingerprint,
-                archive_format="migration_v1",
-            )
+            self._put_immutable(key, body)
+            pointer = ObjectStorePointer(0, key, observed, fingerprint, "migration_v1")
             pointer.etag = self.client.put(self.pointer_key, pointer.to_bytes(), if_none_match=True)
             self.pointer = pointer
             return pointer
