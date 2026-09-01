@@ -137,10 +137,14 @@ def _is_chatgpt_redirect_uri(value: str) -> bool:
         parsed = urllib.parse.urlsplit(value)
     except Exception:
         return False
+    path_allowed = (
+        parsed.path.startswith("/connector/oauth/")
+        or parsed.path == "/connector_platform_oauth_redirect"
+    )
     return (
         parsed.scheme == "https"
         and parsed.hostname == "chatgpt.com"
-        and parsed.path.startswith("/connector/oauth/")
+        and path_allowed
         and not parsed.fragment
     )
 
