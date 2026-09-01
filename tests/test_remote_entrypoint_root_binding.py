@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "mcp" / "server_v61_remote.py"
 COMPOSE = ROOT / "deploy" / "cloud" / "docker-compose.yml"
 DOCKERIGNORE = ROOT / ".dockerignore"
+EXPORTER = ROOT / "scripts" / "export_cloud_runtime_bundle.py"
+IMPORTER = ROOT / "scripts" / "import_cloud_runtime_bundle.py"
 
 
 class RemoteEntrypointRootBindingTests(unittest.TestCase):
@@ -51,6 +53,24 @@ class RemoteEntrypointRootBindingTests(unittest.TestCase):
         }
         actual = {line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")}
         self.assertTrue(required.issubset(actual), sorted(required - actual))
+
+    def test_export_has_no_warning_bypass_and_checks_source_quiescence(self) -> None:
+        text = EXPORTER.read_text(encoding="utf-8-sig")
+        self.assertNotIn("allow-snapshot-warnings", text)
+        self.assertIn("CLOUD_MIGRATION_EXPORT_PRE_ARCHIVE_CHECK", text)
+        self.assertIn("CLOUD_MIGRATION_EXPORT_POST_ARCHIVE_CHECK", text)
+        self.assertIn("source_stable_through_export", text)
+        self.assertIn("output.unlink()", text)
+
+    def test_import_requires_trusted_archive_hash_and_has_no_health_bypass(self) -> None:
+        text = IMPORTER.read_text(encoding="utf-8-sig")
+        self.assertIn('"--expected-sha256"', text)
+        self.assertIn("required=True", text)
+        self.assertIn("hmac.compare_digest", text)
+        self.assertNotIn("skip-runtime-health", text)
+        self.assertIn("CLOUD_IMPORT_BASELINE", text)
+        self.assertIn("validate_snapshot", text)
+        self.assertIn("duplicate archive member forbidden", text)
 
 
 if __name__ == "__main__":
