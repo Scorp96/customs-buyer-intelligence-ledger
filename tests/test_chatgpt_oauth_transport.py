@@ -21,6 +21,27 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
             auth.authorize({"Authorization": f"Bearer {token}"})
             verify.assert_not_called()
 
+    def test_bearer_mode_accepts_allowlisted_github_oauth_fallback(self) -> None:
+        auth = ChatGPTRemoteAuthConfig(
+            mode="bearer",
+            bearer_token="a" * 48,
+            github_allowed_logins=("Scorp96",),
+        )
+        with mock.patch(
+            "mcp.chatgpt_oauth_transport.GitHubOAuthVerifier.verify",
+            return_value="Scorp96",
+        ) as verify:
+            auth.authorize({"Authorization": "Bearer gho_test_oauth_token"})
+            verify.assert_called_once_with("gho_test_oauth_token")
+
+    def test_bearer_mode_without_github_allowlist_rejects_fallback(self) -> None:
+        auth = ChatGPTRemoteAuthConfig(mode="bearer", bearer_token="a" * 48)
+        with mock.patch("mcp.chatgpt_oauth_transport.GitHubOAuthVerifier.verify") as verify:
+            with self.assertRaises(remote_transport.RemoteTransportError) as ctx:
+                auth.authorize({"Authorization": "Bearer gho_test_oauth_token"})
+        self.assertEqual(401, ctx.exception.http_status)
+        verify.assert_not_called()
+
     def test_mixed_mode_accepts_allowlisted_github_oauth(self) -> None:
         auth = ChatGPTRemoteAuthConfig(
             mode="mixed",
@@ -60,7 +81,7 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
                 auth.authorize({"Authorization": "Bearer bad"})
         self.assertEqual(401, ctx.exception.http_status)
 
-    def test_from_env_requires_allowlist_for_github_modes(self) -> None:
+    def test_from_env_requires_allowlist_for_explicit_github_modes(self) -> None:
         with mock.patch.dict(
             os.environ,
             {
@@ -72,18 +93,18 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 ChatGPTRemoteAuthConfig.from_env()
 
-    def test_from_env_accepts_render_mixed_configuration(self) -> None:
+    def test_from_env_accepts_render_bearer_with_github_allowlist(self) -> None:
         with mock.patch.dict(
             os.environ,
             {
-                "CBI_REMOTE_AUTH_MODE": "mixed",
+                "CBI_REMOTE_AUTH_MODE": "bearer",
                 "CBI_REMOTE_BEARER_TOKEN": "a" * 48,
                 "CBI_REMOTE_GITHUB_ALLOWED_LOGINS": "Scorp96",
             },
             clear=True,
         ):
             auth = ChatGPTRemoteAuthConfig.from_env()
-        self.assertEqual("mixed", auth.mode)
+        self.assertEqual("bearer", auth.mode)
         self.assertEqual(("Scorp96",), auth.github_allowed_logins)
 
 
