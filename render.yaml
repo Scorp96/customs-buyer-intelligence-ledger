@@ -21,6 +21,8 @@ services:
         value: /var/lib/cbi/live/backups-v61
       - key: CBI_REMOTE_HOST
         value: 0.0.0.0
+      - key: CBI_REMOTE_PUBLIC_BASE_URL
+        value: https://cbi-v61-preview.onrender.com
       - key: CBI_REMOTE_AUTH_MODE
         value: bearer
       - key: CBI_REMOTE_BEARER_TOKEN
