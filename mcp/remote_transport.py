@@ -96,8 +96,6 @@ class RemoteMcpApplication:
         self._auth = auth
         self._health = health or (lambda: {"status": "ok"})
         self._max_body_bytes = max(1024, int(max_body_bytes))
-        # The durable Runtime is append-only and uses file locks internally, but a
-        # process-wide lock also prevents interleaved multi-file tool mutations.
         self._dispatch_lock = threading.RLock()
 
     @property
@@ -112,11 +110,7 @@ class RemoteMcpApplication:
 
     @staticmethod
     def _error_payload(request_id: Any, code: int, message: str) -> dict[str, Any]:
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {"code": int(code), "message": str(message)},
-        }
+        return {"jsonrpc": "2.0", "id": request_id, "error": {"code": int(code), "message": str(message)}}
 
     @staticmethod
     def _response_payload(request_id: Any, result: Any) -> dict[str, Any]:
@@ -132,19 +126,13 @@ class RemoteMcpApplication:
 
     @staticmethod
     def _protocol_header(headers: Mapping[str, str]) -> str:
-        return str(
-            headers.get("MCP-Protocol-Version")
-            or headers.get("mcp-protocol-version")
-            or ""
-        ).strip()
+        return str(headers.get("MCP-Protocol-Version") or headers.get("mcp-protocol-version") or "").strip()
 
     def _validate_protocol_headers(self, request: dict[str, Any], headers: Mapping[str, str]) -> None:
         protocol = self._protocol_header(headers)
         if protocol and protocol not in SUPPORTED_PROTOCOL_VERSIONS:
             raise RemoteTransportError(
-                f"Unsupported MCP protocol version: {protocol}",
-                http_status=400,
-                rpc_code=-32022,
+                f"Unsupported MCP protocol version: {protocol}", http_status=400, rpc_code=-32022
             )
         method = str(request.get("method") or "")
         method_header = self._method_header(headers)
@@ -157,8 +145,6 @@ class RemoteMcpApplication:
                 raise RemoteTransportError("Mcp-Name header/body mismatch", rpc_code=-32600)
 
     def _discover(self) -> dict[str, Any]:
-        # Reuse the existing production instructions/capabilities so the remote
-        # transport cannot silently diverge from stdio behavior.
         legacy = self._dispatch(
             "initialize",
             {
@@ -180,11 +166,7 @@ class RemoteMcpApplication:
             "cacheScope": "private",
         }
 
-    def dispatch_jsonrpc(
-        self,
-        request: Any,
-        headers: Mapping[str, str],
-    ) -> tuple[int, dict[str, Any] | None]:
+    def dispatch_jsonrpc(self, request: Any, headers: Mapping[str, str]) -> tuple[int, dict[str, Any] | None]:
         self._auth.authorize(headers)
         if not isinstance(request, dict):
             raise RemoteTransportError("JSON-RPC object required", rpc_code=-32600)
@@ -196,18 +178,11 @@ class RemoteMcpApplication:
             raise RemoteTransportError("method required", rpc_code=-32600)
         request_id = request.get("id")
         params = request.get("params") if isinstance(request.get("params"), dict) else {}
-
-        # Notifications never receive JSON-RPC responses. They are accepted so
-        # legacy clients may send notifications/initialized after initialize.
         if "id" not in request:
             return HTTPStatus.ACCEPTED, None
-
         try:
             with self._dispatch_lock:
-                if method == "server/discover":
-                    result = self._discover()
-                else:
-                    result = self._dispatch(method, params)
+                result = self._discover() if method == "server/discover" else self._dispatch(method, params)
             return HTTPStatus.OK, self._response_payload(request_id, result)
         except RemoteTransportError:
             raise
@@ -229,8 +204,6 @@ class RemoteMcpRequestHandler(BaseHTTPRequestHandler):
         return self.server.app  # type: ignore[attr-defined]
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
-        # Avoid logging Authorization headers or request bodies. Standard access
-        # logs remain useful and contain only peer/method/path/status metadata.
         super().log_message(format, *args)
 
     def _send_json(self, status: int, value: Any, *, extra_headers: Mapping[str, str] | None = None) -> None:
@@ -269,10 +242,7 @@ class RemoteMcpRequestHandler(BaseHTTPRequestHandler):
         self._send_empty(HTTPStatus.NOT_FOUND)
 
     def do_DELETE(self) -> None:  # noqa: N802
-        if self._path() == "/mcp":
-            self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED)
-        else:
-            self._send_empty(HTTPStatus.NOT_FOUND)
+        self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED if self._path() == "/mcp" else HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:  # noqa: N802
         if self._path() != "/mcp":
@@ -320,6 +290,15 @@ class RemoteMcpRequestHandler(BaseHTTPRequestHandler):
             )
 
 
+def _resolved_port(port: int | None = None) -> int:
+    """Resolve explicit CLI port, CBI override, platform PORT, then local default."""
+    raw = port or os.environ.get("CBI_REMOTE_PORT") or os.environ.get("PORT") or "8787"
+    value = int(raw)
+    if value < 1 or value > 65535:
+        raise RuntimeError("remote MCP port must be between 1 and 65535")
+    return value
+
+
 def serve(
     dispatch: JsonHandler,
     *,
@@ -329,7 +308,7 @@ def serve(
 ) -> int:
     auth = RemoteAuthConfig.from_env()
     bind_host = host or str(os.environ.get("CBI_REMOTE_HOST") or "127.0.0.1")
-    bind_port = int(port or os.environ.get("CBI_REMOTE_PORT") or "8787")
+    bind_port = _resolved_port(port)
     max_body = int(os.environ.get("CBI_REMOTE_MAX_BODY_BYTES") or DEFAULT_MAX_BODY_BYTES)
     app = RemoteMcpApplication(dispatch, auth=auth, health=health, max_body_bytes=max_body)
     server = _ReusableThreadingHTTPServer((bind_host, bind_port), RemoteMcpRequestHandler)
