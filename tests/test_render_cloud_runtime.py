@@ -60,9 +60,11 @@ class RenderCloudRuntimeTests(unittest.TestCase):
             "CBI_BACKUP_ROOT",
             "value: /var/lib/cbi/live/backups-v61",
             "CBI_REMOTE_AUTH_MODE",
-            "value: bearer",
+            "value: mixed",
             "CBI_REMOTE_BEARER_TOKEN",
             "sync: false",
+            "CBI_REMOTE_GITHUB_ALLOWED_LOGINS",
+            "value: Scorp96",
         ):
             self.assertIn(required, text)
         self.assertNotIn("disk:", text)
