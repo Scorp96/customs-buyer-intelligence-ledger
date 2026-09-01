@@ -135,12 +135,15 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"CBI_REMOTE_BEARER_TOKEN": "k" * 48}, clear=False):
             token = _pack_oauth_state(
                 client_state="chatgpt-state",
-                redirect_uri="https://chatgpt.com/connector/oauth/test",
+                redirect_uri="https://chatgpt.com/connector_platform_oauth_redirect",
                 now=1000,
             )
             payload = _unpack_oauth_state(token, now=1001)
             self.assertEqual("chatgpt-state", payload["state"])
-            self.assertEqual("https://chatgpt.com/connector/oauth/test", payload["redirect_uri"])
+            self.assertEqual(
+                "https://chatgpt.com/connector_platform_oauth_redirect",
+                payload["redirect_uri"],
+            )
             with self.assertRaises(ValueError):
                 _unpack_oauth_state(token + "x", now=1001)
             with self.assertRaises(ValueError):
@@ -148,7 +151,9 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
 
     def test_oauth_redirect_and_scope_are_fail_closed(self) -> None:
         self.assertTrue(_is_chatgpt_redirect_uri("https://chatgpt.com/connector/oauth/abc"))
+        self.assertTrue(_is_chatgpt_redirect_uri("https://chatgpt.com/connector_platform_oauth_redirect"))
         self.assertFalse(_is_chatgpt_redirect_uri("https://evil.example/connector/oauth/abc"))
+        self.assertFalse(_is_chatgpt_redirect_uri("https://chatgpt.com/connector_platform_oauth_redirect/evil"))
         self.assertEqual("read:user offline_access", _validated_scope("offline_access read:user"))
         with self.assertRaises(ValueError):
             _validated_scope("repo")
