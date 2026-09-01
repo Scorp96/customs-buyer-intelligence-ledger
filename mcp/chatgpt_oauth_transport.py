@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 import os
 from dataclasses import dataclass
-from typing import Callable, Mapping, Any
+from typing import Any, Callable, Mapping
 
 from mcp import remote_transport as base
 from mcp.github_oauth import (
@@ -72,9 +72,13 @@ class ChatGPTRemoteAuthConfig:
         if not supplied:
             raise base.RemoteTransportError("Bearer authentication required", http_status=401, rpc_code=-32001)
 
+        # Preserve the existing private admin bearer exactly. When a GitHub
+        # allowlist is configured, a non-matching bearer can additionally be a
+        # ChatGPT-acquired GitHub OAuth token. The fallback remains fail-closed
+        # to the explicit GitHub login allowlist.
         if self.mode in {"bearer", "mixed"} and hmac.compare_digest(supplied, self.bearer_token):
             return
-        if self.mode == "bearer":
+        if self.mode == "bearer" and not self.github_allowed_logins:
             raise base.RemoteTransportError("Invalid bearer credential", http_status=401, rpc_code=-32001)
 
         verifier = GitHubOAuthVerifier(
