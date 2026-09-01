@@ -59,6 +59,8 @@ class RenderCloudRuntimeTests(unittest.TestCase):
             "value: /var/lib/cbi/live/sessions",
             "CBI_BACKUP_ROOT",
             "value: /var/lib/cbi/live/backups-v61",
+            "CBI_REMOTE_PUBLIC_BASE_URL",
+            "value: https://cbi-v61-preview.onrender.com",
             "CBI_REMOTE_AUTH_MODE",
             "value: bearer",
             "CBI_REMOTE_BEARER_TOKEN",
