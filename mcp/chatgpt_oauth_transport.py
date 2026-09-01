@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
@@ -12,6 +13,21 @@ from mcp.github_oauth import (
     GitHubOAuthUnavailable,
     GitHubOAuthVerifier,
 )
+
+
+_VERIFIER_LOCK = threading.RLock()
+_VERIFIERS: dict[tuple[tuple[str, ...], str], GitHubOAuthVerifier] = {}
+
+
+def _shared_github_verifier(logins: tuple[str, ...], api_url: str) -> GitHubOAuthVerifier:
+    normalized = tuple(sorted({value.strip().lower() for value in logins if value.strip()}))
+    key = (normalized, api_url)
+    with _VERIFIER_LOCK:
+        verifier = _VERIFIERS.get(key)
+        if verifier is None:
+            verifier = GitHubOAuthVerifier(allowed_logins=normalized, api_url=api_url)
+            _VERIFIERS[key] = verifier
+        return verifier
 
 
 @dataclass(frozen=True)
@@ -81,10 +97,7 @@ class ChatGPTRemoteAuthConfig:
         if self.mode == "bearer" and not self.github_allowed_logins:
             raise base.RemoteTransportError("Invalid bearer credential", http_status=401, rpc_code=-32001)
 
-        verifier = GitHubOAuthVerifier(
-            allowed_logins=self.github_allowed_logins,
-            api_url=self.github_api_url,
-        )
+        verifier = _shared_github_verifier(self.github_allowed_logins, self.github_api_url)
         try:
             verifier.verify(supplied)
         except GitHubOAuthInvalid as exc:
