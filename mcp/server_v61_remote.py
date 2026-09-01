@@ -49,8 +49,8 @@ _LIVE_ROOT = _EXPECTED_ROOT.parent
 # Import only after the explicit-root guard. The production module creates the
 # UnifiedRuntime at import time and therefore must observe CBI_SESSION_ROOT.
 from mcp import server_v61_backup_recovery as _production  # noqa: E402
+from mcp.chatgpt_oauth_transport import main as _remote_transport_main  # noqa: E402
 from mcp.object_store_persistence import ObjectStoreStateManager  # noqa: E402
-from mcp.remote_transport import main as _remote_transport_main  # noqa: E402
 
 
 _RUNTIME = _production._RUNTIME
@@ -106,8 +106,9 @@ def _health() -> dict[str, Any]:
 
 
 def main() -> int:
-    # Delegate CLI parsing to remote_transport.main so --host/--port are not
-    # decorative: Docker/operator command-line arguments override env defaults.
+    # Delegate CLI parsing to the ChatGPT-aware remote transport so --host/--port
+    # remain operator overrides while auth can accept static admin bearer and
+    # explicitly allowlisted GitHub OAuth identities.
     return _remote_transport_main(_dispatch, health=_health)
 
 
