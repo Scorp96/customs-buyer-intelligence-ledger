@@ -7,6 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "mcp" / "server_v61_remote.py"
 COMPOSE = ROOT / "deploy" / "cloud" / "docker-compose.yml"
+DOCKERIGNORE = ROOT / ".dockerignore"
 
 
 class RemoteEntrypointRootBindingTests(unittest.TestCase):
@@ -34,6 +35,22 @@ class RemoteEntrypointRootBindingTests(unittest.TestCase):
         self.assertIn("read_only: true", text)
         self.assertIn("no-new-privileges:true", text)
         self.assertIn("cap_drop:", text)
+
+    def test_docker_context_excludes_private_runtime_material(self) -> None:
+        text = DOCKERIGNORE.read_text(encoding="utf-8-sig")
+        required = {
+            "private-golden/",
+            "private-acceptance/",
+            ".cbi-private-golden*.json",
+            "CBI_Cloud_Runtime_Export_*.tar.gz",
+            "cbi-cloud-runtime/",
+            ".env",
+            "*.pem",
+            "*.key",
+            ".git",
+        }
+        actual = {line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")}
+        self.assertTrue(required.issubset(actual), sorted(required - actual))
 
 
 if __name__ == "__main__":
