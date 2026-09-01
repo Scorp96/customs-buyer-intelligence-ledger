@@ -41,13 +41,14 @@ class RenderCloudRuntimeTests(unittest.TestCase):
             (root / "export-manifest.json").write_text("{}\n", encoding="utf-8")
             self.assertEqual(render_bootstrap._state(root), "live")
 
-    def test_render_blueprint_requires_paid_single_disk_backed_runtime(self) -> None:
+    def test_render_blueprint_is_free_fail_closed_preview(self) -> None:
         text = BLUEPRINT.read_text(encoding="utf-8-sig")
         for required in (
             "type: web",
+            "name: cbi-v61-preview",
             "runtime: docker",
             "region: singapore",
-            "plan: 1c-2g",
+            "plan: free",
             "dockerfilePath: ./deploy/cloud/Dockerfile",
             "dockerCommand: python -B -Xutf8 mcp/render_bootstrap.py",
             "autoDeployTrigger: checksPass",
@@ -62,11 +63,11 @@ class RenderCloudRuntimeTests(unittest.TestCase):
             "value: bearer",
             "CBI_REMOTE_BEARER_TOKEN",
             "sync: false",
-            "mountPath: /var/lib/cbi",
-            "sizeGB: 5",
         ):
             self.assertIn(required, text)
-        self.assertNotIn("plan: free", text)
+        self.assertNotIn("disk:", text)
+        self.assertNotIn("mountPath:", text)
+        self.assertNotIn("sizeGB:", text)
         self.assertNotIn("generateValue: true", text)
         self.assertNotIn("CBI_REMOTE_AUTH_MODE\n        value: none", text)
 
