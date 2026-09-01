@@ -77,7 +77,10 @@ The Docker service:
 - uses `no-new-privileges`;
 - runs with a read-only container filesystem;
 - mounts only `/var/lib/cbi` writable;
-- binds its host port to `127.0.0.1` by default.
+- binds its host port to `127.0.0.1` by default;
+- uses `.dockerignore` so private acceptance data, local secrets, cloud export
+  archives, keys, logs, and Git metadata cannot be accidentally copied into the
+  image build context.
 
 ## Recommended cloud host
 
@@ -97,11 +100,10 @@ Install Git and Docker Engine / Docker Compose using the distribution-supported
 or Docker-supported procedure, then clone this repository and checkout the cloud
 branch or the later merged main branch.
 
-Create the durable host directory:
+Ensure the target parent exists. The importer itself creates `/srv/cbi-data`:
 
 ```bash
-sudo mkdir -p /srv/cbi-data
-sudo chown 10001:10001 /srv/cbi-data
+sudo mkdir -p /srv
 ```
 
 Create a deployment environment file from the committed template:
@@ -120,6 +122,10 @@ Put the generated value into `CBI_REMOTE_BEARER_TOKEN`. Never commit
 ## Phase 2 — one-time validated export from Windows
 
 The old workstation must be powered on for this **one migration step only**.
+Before the export, stop/avoid every workflow that can persist new CBI Runtime
+state. Do not run a buyer full-audit, CRM writeback, receipt sync, or other
+persistent CBI action during the migration window.
+
 Run from the accepted repository checkout:
 
 ```powershell
@@ -130,44 +136,70 @@ The exporter does not tar the live mutable tree directly. It:
 
 1. binds the real production session root explicitly;
 2. creates a normal `ProductionBackupRecoveryManager` snapshot;
-3. validates that snapshot;
-4. restores it into an isolated activation-ready session root without replaying
+3. refuses any snapshot warning;
+4. validates that snapshot;
+5. restores it into an isolated activation-ready session root without replaying
    later live writes;
-5. hashes every exported payload file;
-6. creates `CBI_Cloud_Runtime_Export_<UTC>.tar.gz`.
+6. creates a second source snapshot and confirms no durable source change before
+   archive creation;
+7. hashes every exported payload file;
+8. creates `CBI_Cloud_Runtime_Export_<UTC>.tar.gz`;
+9. creates a third source snapshot after archive creation and deletes the archive
+   if the source changed at any point during the export window.
+
+A successful result includes:
+
+```text
+status = PASS
+source_stable_through_export = true
+archive_sha256 = <64 hex characters>
+```
+
+After a successful export, **do not allow any additional durable writes on the
+Windows Runtime** until either cloud cutover succeeds or the migration is
+explicitly abandoned. This prevents a post-export split brain.
 
 The archive contains private durable buyer intelligence. **Never upload it to
 GitHub, chat, email, or a public file host.** Transfer it directly to the
 controlled cloud VM (for example with SCP/SFTP over an authenticated SSH
 connection).
 
-Record the SHA-256 printed by the exporter and compare it after transfer.
+Copy the exact `archive_sha256` from the trusted Windows exporter output. The
+cloud importer requires it; there is no hash-check bypass.
 
 ## Phase 3 — fail-closed import on the cloud VM
 
-From the repository checkout on the VM:
+From the repository checkout on the VM, run the importer with elevated
+filesystem permission because `/srv` is a system path:
 
 ```bash
-python3 scripts/import_cloud_runtime_bundle.py \
+sudo python3 scripts/import_cloud_runtime_bundle.py \
   /path/to/CBI_Cloud_Runtime_Export_<UTC>.tar.gz \
+  --expected-sha256 '<EXACT_SHA256_FROM_WINDOWS_EXPORT>' \
   --target-root /srv/cbi-data
 ```
 
 The importer rejects:
 
+- archive SHA-256 that differs from the trusted Windows export result;
 - path traversal;
+- duplicate archive members;
 - symbolic/hard links;
 - devices/FIFOs;
+- excessive archive member count or uncompressed size;
 - non-empty destination roots;
 - missing or extra payload files;
-- any file hash mismatch;
-- a bundle not marked hash-chain-valid and activation-ready.
+- any payload file hash mismatch;
+- a bundle not marked hash-chain-valid and activation-ready;
+- a bundle without the export quiescence proof.
 
-After activation it imports the real production backup/recovery stack against
-`/srv/cbi-data/sessions` to verify the Runtime binds the imported root and that
-Runtime health can be read.
+After atomic activation it imports the real production backup/recovery stack
+against `/srv/cbi-data/sessions`, verifies the Runtime bound the exact imported
+root, calls real Runtime health, creates a `CLOUD_IMPORT_BASELINE` backup inside
+`/srv/cbi-data/backups-v61`, and validates that baseline snapshot. There is no
+production health-check bypass.
 
-Then normalize ownership:
+Only after the importer returns `PASS`, normalize container ownership:
 
 ```bash
 sudo chown -R 10001:10001 /srv/cbi-data
@@ -217,6 +249,16 @@ http://127.0.0.1:8787/mcp
 
 This is the preferred design because the CBI server stays loopback/private and
 the workstation is no longer part of the availability chain.
+
+Keep bearer authentication if the selected tunnel configuration supports adding
+the Authorization header. If the current tunnel product does not support that,
+`CBI_REMOTE_AUTH_MODE=none` is acceptable **only** when all of the following are
+true:
+
+- the container port remains bound to `127.0.0.1`;
+- the optional public-HTTPS Caddy profile is disabled;
+- the Secure MCP Tunnel is the only remote exposure path;
+- host access is restricted to trusted administrators.
 
 Do not invent tunnel CLI commands from this repository; use the current OpenAI
 product instructions shown when the tunnel is provisioned because the tunnel
@@ -268,7 +310,8 @@ The response must advertise tools/resources and `supportedVersions` containing
 ## Cutover rule
 
 Do not let Windows and cloud both accept durable write traffic after cutover.
-Once cloud import and remote MCP validation pass:
+Once cloud import, baseline backup, remote health, MCP discovery, and tool scan
+pass:
 
 1. mark cloud as authoritative;
 2. leave the Windows production root read-only/rollback-only;
@@ -284,6 +327,14 @@ Cloud migration does not delete or rewrite the old Windows Runtime. If the cloud
 cutover fails before new cloud writes occur, reconnect the old known-good path.
 If the cloud Runtime has accepted new durable writes, rollback requires explicit
 reconciliation; never overwrite those writes with an older directory snapshot.
+
+## Product eligibility is a separate gate
+
+Cloud hosting removes the Windows-PC availability dependency. It does **not**
+override whatever custom-MCP capabilities the current ChatGPT plan/workspace
+exposes. Before declaring end-to-end cutover complete, verify the current OpenAI
+product UI can create/connect the intended custom MCP app and can use the needed
+read/write tools. Product availability can change independently of this repo.
 
 ## What this change does not do
 
