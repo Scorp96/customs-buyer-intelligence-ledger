@@ -61,12 +61,13 @@ class RenderCloudRuntimeTests(unittest.TestCase):
             "CBI_REMOTE_AUTH_MODE",
             "value: bearer",
             "CBI_REMOTE_BEARER_TOKEN",
-            "generateValue: true",
+            "sync: false",
             "mountPath: /var/lib/cbi",
             "sizeGB: 5",
         ):
             self.assertIn(required, text)
         self.assertNotIn("plan: free", text)
+        self.assertNotIn("generateValue: true", text)
         self.assertNotIn("CBI_REMOTE_AUTH_MODE\n        value: none", text)
 
     def test_docker_image_supports_render_ssh_without_root_runtime(self) -> None:
