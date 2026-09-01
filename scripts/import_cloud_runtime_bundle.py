@@ -5,6 +5,8 @@ The importer is fail-closed: no path traversal, links, devices, overwrite of a
 non-empty target, missing/extra payload files, or hash mismatches are allowed.
 After atomic activation it imports the real production MCP stack against the new
 session root so hash-chain/runtime health is checked before deployment proceeds.
+A validated CLOUD_IMPORT_BASELINE snapshot is then created inside the cloud
+backup root before the service is allowed to start.
 """
 
 from __future__ import annotations
@@ -75,6 +77,8 @@ def _verify_payload(root: Path) -> dict:
         raise ValueError("unexpected cloud export schema")
     if manifest.get("hash_chains_valid") is not True or manifest.get("activation_ready") is not True:
         raise ValueError("cloud export was not activation-ready")
+    if manifest.get("pre_archive_quiescence_check") is not True:
+        raise ValueError("cloud export lacks source quiescence proof")
     expected = manifest.get("payload_files")
     if not isinstance(expected, dict):
         raise ValueError("payload file hash manifest missing")
@@ -120,6 +124,7 @@ def main() -> int:
     archive_hash = _sha256(archive)
     staging_parent = Path(tempfile.mkdtemp(prefix=f".{target.name}.import-", dir=target.parent))
     activated = False
+    baseline_snapshot: dict | None = None
     try:
         extracted = _extract_safely(archive, staging_parent)
         manifest = _verify_payload(extracted)
@@ -136,7 +141,19 @@ def main() -> int:
             observed = Path(production._RUNTIME.store.root).expanduser().resolve()
             if observed != (target / "sessions").resolve():
                 raise RuntimeError("production Runtime did not bind imported cloud session root")
-            production._TOOL_HANDLERS["get_runtime_health"]({})
+            health = production._TOOL_HANDLERS["get_runtime_health"]({})
+            if not isinstance(health, dict):
+                raise RuntimeError("production Runtime health did not return an object")
+
+            baseline_snapshot = production._BACKUP.create_snapshot(["CLOUD_IMPORT_BASELINE"])
+            if list(baseline_snapshot.get("warnings") or []):
+                raise RuntimeError(
+                    "cloud import baseline snapshot contains warnings: "
+                    + json.dumps(baseline_snapshot.get("warnings"), ensure_ascii=False)
+                )
+            validation = production._BACKUP.validate_snapshot(str(baseline_snapshot["snapshot_id"]))
+            if validation.get("valid") is not True:
+                raise RuntimeError("cloud import baseline backup did not validate")
 
         print(json.dumps({
             "status": "PASS",
@@ -144,17 +161,22 @@ def main() -> int:
             "archive_sha256": archive_hash,
             "target_root": str(target),
             "session_root": str(target / "sessions"),
-            "snapshot_id": manifest.get("snapshot_id"),
+            "source_snapshot_id": manifest.get("snapshot_id"),
             "source_git_head": manifest.get("git_head"),
+            "source_durable_fingerprint_sha256": manifest.get("source_durable_fingerprint_sha256"),
             "runtime_health_checked": not args.skip_runtime_health,
+            "cloud_baseline_snapshot_id": (
+                baseline_snapshot.get("snapshot_id") if isinstance(baseline_snapshot, dict) else None
+            ),
+            "cloud_baseline_snapshot_validated": baseline_snapshot is not None,
             "next": "chown the target to uid/gid 10001, then start deploy/cloud/docker-compose.yml",
         }, ensure_ascii=False, indent=2))
         return 0
     except Exception:
         if activated and target.exists():
             # Initial import has no pre-existing target. On a failed post-activate
-            # health check, remove only the just-imported target instead of leaving
-            # a questionable durable root available to Docker.
+            # health or baseline-backup check, remove only the just-imported target
+            # instead of leaving a questionable durable root available to Docker.
             shutil.rmtree(target, ignore_errors=True)
         raise
     finally:
