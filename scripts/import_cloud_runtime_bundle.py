@@ -6,7 +6,8 @@ non-empty target, missing/extra payload files, or hash mismatches are allowed.
 After atomic activation it imports the real production MCP stack against the new
 session root so hash-chain/runtime health is checked before deployment proceeds.
 A validated CLOUD_IMPORT_BASELINE snapshot is then created inside the cloud
-backup root before the service is allowed to start.
+backup root before the service is allowed to start. There is no production
+health-check bypass.
 """
 
 from __future__ import annotations
@@ -105,7 +106,6 @@ def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Import a validated CBI cloud runtime bundle")
     p.add_argument("archive", type=Path)
     p.add_argument("--target-root", type=Path, default=Path("/srv/cbi-data"))
-    p.add_argument("--skip-runtime-health", action="store_true")
     return p
 
 
@@ -131,29 +131,28 @@ def main() -> int:
         os.replace(extracted, target)
         activated = True
 
-        if not args.skip_runtime_health:
-            os.environ["CBI_SESSION_ROOT"] = str(target / "sessions")
-            os.environ["CBI_BACKUP_ROOT"] = str(target / "backups-v61")
-            # This imports the exact accepted production stack against the newly
-            # activated cloud root. Any chain/runtime integrity failure aborts.
-            from mcp import server_v61_backup_recovery as production  # noqa: WPS433
+        os.environ["CBI_SESSION_ROOT"] = str(target / "sessions")
+        os.environ["CBI_BACKUP_ROOT"] = str(target / "backups-v61")
+        # This imports the exact accepted production stack against the newly
+        # activated cloud root. Any chain/runtime integrity failure aborts.
+        from mcp import server_v61_backup_recovery as production  # noqa: WPS433
 
-            observed = Path(production._RUNTIME.store.root).expanduser().resolve()
-            if observed != (target / "sessions").resolve():
-                raise RuntimeError("production Runtime did not bind imported cloud session root")
-            health = production._TOOL_HANDLERS["get_runtime_health"]({})
-            if not isinstance(health, dict):
-                raise RuntimeError("production Runtime health did not return an object")
+        observed = Path(production._RUNTIME.store.root).expanduser().resolve()
+        if observed != (target / "sessions").resolve():
+            raise RuntimeError("production Runtime did not bind imported cloud session root")
+        health = production._TOOL_HANDLERS["get_runtime_health"]({})
+        if not isinstance(health, dict):
+            raise RuntimeError("production Runtime health did not return an object")
 
-            baseline_snapshot = production._BACKUP.create_snapshot(["CLOUD_IMPORT_BASELINE"])
-            if list(baseline_snapshot.get("warnings") or []):
-                raise RuntimeError(
-                    "cloud import baseline snapshot contains warnings: "
-                    + json.dumps(baseline_snapshot.get("warnings"), ensure_ascii=False)
-                )
-            validation = production._BACKUP.validate_snapshot(str(baseline_snapshot["snapshot_id"]))
-            if validation.get("valid") is not True:
-                raise RuntimeError("cloud import baseline backup did not validate")
+        baseline_snapshot = production._BACKUP.create_snapshot(["CLOUD_IMPORT_BASELINE"])
+        if list(baseline_snapshot.get("warnings") or []):
+            raise RuntimeError(
+                "cloud import baseline snapshot contains warnings: "
+                + json.dumps(baseline_snapshot.get("warnings"), ensure_ascii=False)
+            )
+        validation = production._BACKUP.validate_snapshot(str(baseline_snapshot["snapshot_id"]))
+        if validation.get("valid") is not True:
+            raise RuntimeError("cloud import baseline backup did not validate")
 
         print(json.dumps({
             "status": "PASS",
@@ -164,11 +163,9 @@ def main() -> int:
             "source_snapshot_id": manifest.get("snapshot_id"),
             "source_git_head": manifest.get("git_head"),
             "source_durable_fingerprint_sha256": manifest.get("source_durable_fingerprint_sha256"),
-            "runtime_health_checked": not args.skip_runtime_health,
-            "cloud_baseline_snapshot_id": (
-                baseline_snapshot.get("snapshot_id") if isinstance(baseline_snapshot, dict) else None
-            ),
-            "cloud_baseline_snapshot_validated": baseline_snapshot is not None,
+            "runtime_health_checked": True,
+            "cloud_baseline_snapshot_id": baseline_snapshot.get("snapshot_id"),
+            "cloud_baseline_snapshot_validated": True,
             "next": "chown the target to uid/gid 10001, then start deploy/cloud/docker-compose.yml",
         }, ensure_ascii=False, indent=2))
         return 0
