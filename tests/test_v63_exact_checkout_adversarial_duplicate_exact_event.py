@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = "unified_runtime.exact_checkout_adversarial_scenarios_v63"
+MODULE = "unified_runtime.exact_checkout_adversarial_duplicate_v63"
 TOOL = "append_candidate_discovery"
 
 
