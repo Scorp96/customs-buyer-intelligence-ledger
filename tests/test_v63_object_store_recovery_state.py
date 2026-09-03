@@ -81,19 +81,24 @@ def _migration_archive(directory: Path) -> Path:
     return archive
 
 
+def _seed_and_restore(tmp: Path, client: _FakeObjectClient, prefix: str):
+    migration = _migration_archive(tmp / f"source-{prefix}")
+    seed = RecoveryObjectStoreStateManagerV63(client, prefix=prefix)
+    seed.seed_migration_archive(migration, _sha256_file(migration))
+    live = tmp / f"live-{prefix}"
+    writer = RecoveryObjectStoreStateManagerV63(client, prefix=prefix)
+    if not writer.restore_into(live):
+        raise AssertionError("migration restore unexpectedly absent")
+    writer.attach_existing(live)
+    return live, writer
+
+
 class V63ObjectStoreRecoveryStateTests(unittest.TestCase):
     def test_next_generation_restores_sessions_and_prepared_mutation_wal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_name:
             tmp = Path(tmp_name)
-            migration = _migration_archive(tmp / "source")
             client = _FakeObjectClient()
-            seed = RecoveryObjectStoreStateManagerV63(client, prefix="cbi-v63-r2-test")
-            seed.seed_migration_archive(migration, _sha256_file(migration))
-
-            live_a = tmp / "live-a"
-            writer = RecoveryObjectStoreStateManagerV63(client, prefix="cbi-v63-r2-test")
-            self.assertTrue(writer.restore_into(live_a))
-            writer.attach_existing(live_a)
+            live_a, writer = _seed_and_restore(tmp, client, "cbi-v63-r2-test")
 
             session_path = live_a / "sessions" / "INV-V63-R2.jsonl"
             with session_path.open("a", encoding="utf-8") as handle:
@@ -136,6 +141,50 @@ class V63ObjectStoreRecoveryStateTests(unittest.TestCase):
             restored_wal = live_b / "mcp-idempotency-v61" / wal_path.name
             self.assertTrue(restored_wal.is_file(), "R2 recovery generation omitted mutation WAL")
             self.assertEqual(restored_wal.read_bytes(), wal_bytes)
+
+    def test_wal_only_change_advances_v2_generation_without_session_change(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            client = _FakeObjectClient()
+            live, writer = _seed_and_restore(tmp, client, "cbi-v63-r2-wal-only")
+
+            wal_dir = live / "mcp-idempotency-v61"
+            wal_dir.mkdir()
+            wal_path = wal_dir / "create_product_opportunity-test.json"
+            wal_path.write_text(
+                json.dumps(
+                    {
+                        "schema": "cbi.mutation-wal.v6.1",
+                        "status": "PREPARED",
+                        "tool": "create_product_opportunity",
+                        "request_sha256": "b" * 64,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.assertTrue(writer.sync_if_changed(live))
+            assert writer.pointer is not None
+            generation_before = writer.pointer.generation
+            session_fingerprint_before = writer.pointer.sessions_fingerprint_sha256
+            recovery_fingerprint_before = writer.pointer.recovery_fingerprint_sha256
+            session_bytes_before = (live / "sessions" / "INV-V63-R2.jsonl").read_bytes()
+
+            row = json.loads(wal_path.read_text(encoding="utf-8"))
+            row["status"] = "COMMITTED"
+            row["state_version_after"] = 2
+            wal_path.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
+
+            self.assertTrue(writer.sync_if_changed(live))
+            assert writer.pointer is not None
+            self.assertEqual(writer.pointer.generation, generation_before + 1)
+            self.assertEqual(writer.pointer.sessions_fingerprint_sha256, session_fingerprint_before)
+            self.assertNotEqual(writer.pointer.recovery_fingerprint_sha256, recovery_fingerprint_before)
+            self.assertEqual(
+                (live / "sessions" / "INV-V63-R2.jsonl").read_bytes(),
+                session_bytes_before,
+            )
 
 
 if __name__ == "__main__":
