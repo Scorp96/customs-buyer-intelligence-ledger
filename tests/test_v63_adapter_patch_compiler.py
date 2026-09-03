@@ -41,7 +41,8 @@ class V63AdapterPatchCompilerTests(unittest.TestCase):
         matches = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name]
         if len(matches) != 1:
             raise AssertionError(f"expected one {name}")
-        return ast.get_source_segment(source, matches[0]) or ""
+        segment = ast.get_source_segment(source, matches[0]) or ""
+        return segment.replace("\r\n", "\n").replace("\r", "\n")
 
     def test_compiler_generates_candidate_without_modifying_checkout(self):
         from unified_runtime.adapter_patch_compiler_v63 import compile_v63_adapter_patch_candidate
