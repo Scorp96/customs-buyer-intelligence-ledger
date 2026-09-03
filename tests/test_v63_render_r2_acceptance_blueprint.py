@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
 import unittest
 
 
@@ -19,13 +18,21 @@ class V63RenderR2AcceptanceBlueprintTests(unittest.TestCase):
 
     @staticmethod
     def _env_fragment(source: str, key: str) -> str:
-        match = re.search(
-            rf"(?ms)^\s*- key: {re.escape(key)}\s*$\n(?P<body>(?:\s{{8,}}.*\n?)*)",
-            source,
-        )
-        if match is None:
+        lines = source.splitlines()
+        marker = f"- key: {key}"
+        start = None
+        for index, line in enumerate(lines):
+            if line.strip() == marker:
+                start = index
+                break
+        if start is None:
             raise AssertionError(f"Blueprint environment key missing: {key}")
-        return match.group(0)
+        collected = [lines[start]]
+        for line in lines[start + 1 :]:
+            if line.strip().startswith("- key:"):
+                break
+            collected.append(line)
+        return "\n".join(collected)
 
     def test_blueprint_is_feature_only_manual_and_uses_real_bootstrap(self) -> None:
         source = self._source()
