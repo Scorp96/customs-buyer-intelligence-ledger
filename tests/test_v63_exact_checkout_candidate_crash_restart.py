@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = "unified_runtime.exact_checkout_live_acceptance_producer_v63"
+MODULE = "unified_runtime.exact_checkout_crash_scenarios_v63"
 TOOL = "append_candidate_discovery"
 EVENT = "V63_CANDIDATE_DISCOVERED"
 SECRET = "v63-exact-candidate-crash-0001"
@@ -17,7 +17,7 @@ class V63ExactCheckoutCandidateCrashRestartTests(unittest.TestCase):
     def test_candidate_crash_after_handler_recovers_without_duplicate_event(self):
         module = importlib.import_module(MODULE)
         with tempfile.TemporaryDirectory() as td:
-            result = module._run_candidate_crash_restart_scenario(ROOT, Path(td))
+            result = module.run_candidate_crash_restart_scenario(ROOT, Path(td))
 
         self.assertEqual(result["scenario"], "candidate_crash_restart")
         self.assertEqual(result["tool"], TOOL)
