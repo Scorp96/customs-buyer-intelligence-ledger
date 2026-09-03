@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 import types
 import unittest
 
 from mcp.remote_durability_checkpoint_v63 import install_remote_durability_checkpoint
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class _ColdExit(BaseException):
@@ -112,6 +116,20 @@ class V63RemoteDurabilityCheckpointTests(unittest.TestCase):
         self.assertIs(first, second)
         adapter._invoke_mutation("append_candidate_discovery", lambda _args: {}, {})
         self.assertEqual(calls, ["checkpoint"])
+
+    def test_remote_entrypoint_wires_v2_recovery_manager_and_checkpoint(self) -> None:
+        source = (ROOT / "mcp" / "server_v61_remote.py").read_text(encoding="utf-8")
+        self.assertIn("RecoveryObjectStoreStateManagerV63", source)
+        self.assertIn(
+            "_PERSISTENCE = RecoveryObjectStoreStateManagerV63.from_env()",
+            source,
+        )
+        self.assertIn("install_remote_durability_checkpoint", source)
+        self.assertIn(
+            "install_remote_durability_checkpoint(_production._v61, _sync_after_handler)",
+            source,
+        )
+        self.assertNotIn("ObjectStoreStateManager.from_env()", source)
 
 
 if __name__ == "__main__":
