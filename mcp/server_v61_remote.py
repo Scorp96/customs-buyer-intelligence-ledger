@@ -6,10 +6,12 @@ stack. Only the transport changes from child-process stdio to stateless HTTP.
 The durable session root must be explicit so a cloud process can never fall back
 to a developer-machine default location.
 
-On ephemeral hosts an optional S3-compatible state manager attaches to the
-restored object-store generation. Every MCP tool call then performs a cheap
-sessions fingerprint check; a changed durable state is archived and committed
-through a conditional current-pointer update. CAS conflicts fail closed.
+On ephemeral hosts the optional S3-compatible v6.3 recovery manager binds both
+sessions and mutation WAL into one CAS-protected generation. A post-handler
+checkpoint mirrors the handler side effect together with its PREPARED WAL before
+the adapter can take a crash-injected cold exit; the ordinary post-call sync then
+persists the terminal WAL receipt. CAS conflicts and checkpoint failures fail
+closed.
 """
 
 from __future__ import annotations
@@ -50,29 +52,47 @@ _LIVE_ROOT = _EXPECTED_ROOT.parent
 # UnifiedRuntime at import time and therefore must observe CBI_SESSION_ROOT.
 from mcp import server_v61_backup_recovery as _production  # noqa: E402
 from mcp.chatgpt_oauth_transport import main as _remote_transport_main  # noqa: E402
-from mcp.object_store_persistence import ObjectStoreStateManager  # noqa: E402
+from mcp.object_store_recovery_v63 import (  # noqa: E402
+    RecoveryObjectStoreStateManagerV63,
+)
+from mcp.remote_durability_checkpoint_v63 import (  # noqa: E402
+    install_remote_durability_checkpoint,
+)
 
 
 _RUNTIME = _production._RUNTIME
 _BASE_DISPATCH = _production._v61._server.handle
-_PERSISTENCE = ObjectStoreStateManager.from_env()
+_PERSISTENCE = RecoveryObjectStoreStateManagerV63.from_env()
 if _PERSISTENCE is not None:
     _PERSISTENCE.attach_existing(_LIVE_ROOT)
 
 
-def _sync_after_tool_call() -> None:
+def _sync_after_handler() -> None:
+    """Persist side effect + PREPARED WAL before mutation control can cold-exit."""
+
     if _PERSISTENCE is not None:
         _PERSISTENCE.sync_if_changed(_LIVE_ROOT)
+
+
+def _sync_after_tool_call() -> None:
+    """Persist terminal WAL state after a normal or exception-returning tool call."""
+
+    if _PERSISTENCE is not None:
+        _PERSISTENCE.sync_if_changed(_LIVE_ROOT)
+
+
+if _PERSISTENCE is not None:
+    install_remote_durability_checkpoint(_production._v61, _sync_after_handler)
 
 
 def _dispatch(method: str, params: dict[str, Any]) -> Any:
     """Dispatch one MCP method and persist any resulting durable state change.
 
-    We inspect after every tools/call rather than maintaining a second hard-coded
-    mutating-tool list here. Fingerprinting makes read-only calls a no-op, and
-    this automatically covers future durable tools. If the underlying handler
-    raises after writing WAL/partial recovery state, we still attempt to mirror
-    that changed durable tree before re-raising.
+    Read-only calls remain fingerprint no-ops. Mutations receive an earlier
+    post-handler checkpoint from ``install_remote_durability_checkpoint`` so a
+    crash after the handler cannot strand the only recovery evidence on an
+    ephemeral instance. This post-call sync remains necessary to mirror the
+    terminal COMMITTED/COMMITTED_ERROR receipt after ordinary completion.
     """
     if method != "tools/call":
         return _BASE_DISPATCH(method, params)
@@ -96,6 +116,7 @@ def _health() -> dict[str, Any]:
         "durable_root_bound": True,
         "backup_recovery_enabled": True,
         "object_store_persistence_enabled": _PERSISTENCE is not None,
+        "remote_post_handler_checkpoint_enabled": _PERSISTENCE is not None,
     }
     if _PERSISTENCE is not None:
         persistence_health = _PERSISTENCE.health()
