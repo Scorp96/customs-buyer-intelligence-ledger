@@ -1,0 +1,62 @@
+name: CBI v6.3 exact-checkout live acceptance TDD
+
+on:
+  push:
+    branches:
+      - cbi-v6-3-demand-expansion
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v63-live-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tdd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Run exact-checkout producer targeted tests when present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f tests/test_v63_exact_checkout_live_acceptance_producer.py ]; then
+            python -m unittest -v tests.test_v63_exact_checkout_live_acceptance_producer
+          else
+            echo 'producer TDD test file not present yet; workflow bootstrap pass'
+          fi
+
+      - name: Run v6.3 regression
+        run: python -m unittest discover -s tests -p 'test_v63_*.py' -q
+
+      - name: Syntax-check current exact-checkout modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=()
+          for f in \
+            unified_runtime/exact_checkout_live_acceptance_producer_v63.py \
+            unified_runtime/exact_checkout_mcp_harness_v63.py \
+            scripts/run_v63_exact_checkout_live_acceptance.py; do
+            if [ -f "$f" ]; then files+=("$f"); fi
+          done
+          if [ "${#files[@]}" -gt 0 ]; then
+            python -m py_compile "${files[@]}"
+          fi
+
+      - name: Confirm no deployment occurs in this workflow
+        run: |
+          python - <<'PY'
+          print('EXACT_CHECKOUT_TDD_ONLY: no production branch update, no Render deploy, no R2 mutation')
+          PY
