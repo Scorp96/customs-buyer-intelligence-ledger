@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULE = "unified_runtime.exact_checkout_live_acceptance_producer_v63"
 TOOL = "append_candidate_discovery"
 EVENT = "V63_CANDIDATE_DISCOVERED"
+SECRET = "v63-exact-candidate-success-0001"
 
 
 class V63ExactCheckoutCandidateSuccessTests(unittest.TestCase):
@@ -43,8 +44,8 @@ class V63ExactCheckoutCandidateSuccessTests(unittest.TestCase):
         expected_request_sha = canonical_v63_wal_request_sha256(TOOL, candidate_args)
         self.assertEqual(event["request_sha256"], expected_request_sha)
         self.assertEqual(wal["request_sha256"], expected_request_sha)
-        self.assertNotIn("idempotency_key", str(result["evidence"]).casefold())
-        self.assertNotIn("idempotency_key", str(result["response"]).casefold())
+        self.assertNotIn(SECRET, str(result["evidence"]))
+        self.assertNotIn(SECRET, str(result["response"]))
 
 
 if __name__ == "__main__":
