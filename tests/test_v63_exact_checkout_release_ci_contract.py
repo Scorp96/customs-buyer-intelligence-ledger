@@ -11,7 +11,7 @@ UPLOAD_ARTIFACT_SHA = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 
 
 class V63ExactCheckoutReleaseCiContractTests(unittest.TestCase):
-    def test_feature_only_release_gate_runs_full_regression_protocols_cli_and_uploads_only_three_receipts(self):
+    def test_feature_only_release_gate_runs_full_regression_protocols_cli_and_uploads_only_four_receipts(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("cbi-v6-3-demand-expansion", text)
@@ -37,7 +37,9 @@ class V63ExactCheckoutReleaseCiContractTests(unittest.TestCase):
         )
         self.assertIn("V63_EXACT_CHECKOUT_BACKEND_CORRELATION.json", text)
         self.assertIn("V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json", text)
+        self.assertIn("V63_EXACT_CHECKOUT_RECOVERY_OVERLAY.json", text)
         self.assertIn("V63_EXACT_CHECKOUT_ACCEPTANCE.json", text)
+        self.assertIn("recovery_overlay_validation", text)
 
         self.assertIn("cbi-v6-cloud-runtime-20260901", text)
         self.assertIn(PRODUCTION_BASELINE, text)
