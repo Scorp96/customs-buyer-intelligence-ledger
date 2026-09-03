@@ -82,6 +82,30 @@ class V63ExactCheckoutLiveAcceptanceProducerBoundaryTests(unittest.TestCase):
                 module.run_v63_exact_checkout_live_acceptance(config)
         start.assert_not_called()
 
+    def test_source_snapshot_must_be_ready_before_mutation_process_start(self):
+        module = self._module()
+        config = module.ExactCheckoutAcceptanceConfig(
+            repo_root=ROOT,
+            expected_git_sha=module._checkout_git_sha(ROOT),
+            output_dir=ROOT / ".tmp-v63-acceptance-should-not-exist",
+        )
+        blocked_snapshot = {
+            "status": "BLOCKED",
+            "source_pins_complete": False,
+            "snapshot_sha256": "",
+            "blockers": ["SOURCE_PIN_MISSING"],
+        }
+        with mock.patch(
+            "unified_runtime.production_source_snapshot_v63.build_v63_production_source_snapshot",
+            return_value=blocked_snapshot,
+        ):
+            with mock.patch(
+                "unified_runtime.exact_checkout_mcp_harness_v63.ExactCheckoutMcpHarness.start"
+            ) as start:
+                with self.assertRaisesRegex(RuntimeError, "SOURCE_SNAPSHOT_NOT_READY"):
+                    module.run_v63_exact_checkout_live_acceptance(config)
+        start.assert_not_called()
+
 
 class V63ExactCheckoutMcpHarnessContractTests(unittest.TestCase):
     def _module(self):
