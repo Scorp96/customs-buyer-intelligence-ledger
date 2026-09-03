@@ -156,6 +156,40 @@ class V63ExactCheckoutMcpHarnessContractTests(unittest.TestCase):
             self.assertIsInstance(contract, dict)
             self.assertIn("production_adapter_mutation_wal", contract)
 
+    def test_crash_tool_observes_cold_process_exit_after_handler_side_effect(self):
+        module = self._module()
+        with tempfile.TemporaryDirectory() as td:
+            persistence_root = Path(td)
+            harness = module.ExactCheckoutMcpHarness(ROOT, persistence_root)
+            args = {
+                "candidate": {
+                    "account_id": "C-V63-HARNESS-CRASH",
+                    "country": "Synthetic",
+                    "name": "Synthetic v6.3 Harness Crash Buyer",
+                },
+                "requested_account_id": "C-V63-HARNESS-CRASH",
+                "create_if_missing": True,
+                "idempotency_key": "v63-harness-crash-0001",
+            }
+            harness.start(crash_after_handler="resolve_or_create_account")
+            try:
+                harness.crash_tool(2, "resolve_or_create_account", args)
+            finally:
+                harness.stop()
+
+            canonical_log = (
+                persistence_root
+                / "sessions"
+                / ".runtime"
+                / "canonical"
+                / "accounts.jsonl"
+            )
+            self.assertTrue(canonical_log.is_file())
+            self.assertEqual(
+                len(canonical_log.read_text(encoding="utf-8").splitlines()),
+                1,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
