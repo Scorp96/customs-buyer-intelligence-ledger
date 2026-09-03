@@ -1,12 +1,122 @@
-STAGE ancestry
-STAGE patch-bootstrap-script
-STAGE python-bootstrap
+======================================================================
+FAIL: test_every_guarded_production_mutation_has_automatic_reconciliation (test_v61_wal_inventory_complete.V61WalInventoryCompleteTests.test_every_guarded_production_mutation_has_automatic_reconciliation)
+----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tools/v63_bootstrap_expand.py", line 332, in <module>
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v61_wal_inventory_complete.py", line 64, in test_every_guarded_production_mutation_has_automatic_reconciliation
+    self.assertEqual(len(guarded), 23)
+AssertionError: 26 != 23
+
+======================================================================
+FAIL: test_delegated_sync_pipeline_closes_static_backend_and_recovery_codegen (test_v63_exact_checkout_candidate_builder.V63DelegatedSyncStaticPipelineTests.test_delegated_sync_pipeline_closes_static_backend_and_recovery_codegen)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v63_exact_checkout_candidate_builder.py", line 240, in test_delegated_sync_pipeline_closes_static_backend_and_recovery_codegen
+    self.assertEqual(result['status'],'STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING')
+AssertionError: 'BLOCKED_PHASE_A' != 'STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING'
+- BLOCKED_PHASE_A
++ STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING
+
+
+======================================================================
+FAIL: test_static_pipeline_applies_only_to_disposable_export_and_stops_before_live_binding (test_v63_exact_checkout_candidate_builder.V63DelegatedSyncStaticPipelineTests.test_static_pipeline_applies_only_to_disposable_export_and_stops_before_live_binding)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v63_exact_checkout_candidate_builder.py", line 159, in test_static_pipeline_applies_only_to_disposable_export_and_stops_before_live_binding
+    self.assertEqual(result["status"], "STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING")
+AssertionError: 'BLOCKED_PHASE_A' != 'STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING'
+- BLOCKED_PHASE_A
++ STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING
+
+
+======================================================================
+FAIL: test_end_to_end_offline_git_archive_to_candidate_artifact (test_v63_exact_checkout_candidate_builder.V63ExactCheckoutEndToEndTests.test_end_to_end_offline_git_archive_to_candidate_artifact)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v63_exact_checkout_candidate_builder.py", line 201, in test_end_to_end_offline_git_archive_to_candidate_artifact
+    self.assertEqual(result["pipeline"]["status"], "STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING")
+AssertionError: 'BLOCKED_PHASE_A' != 'STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING'
+- BLOCKED_PHASE_A
++ STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING
+
+
+======================================================================
+FAIL: test_static_pipeline_applies_only_to_disposable_export_and_stops_before_live_binding (test_v63_exact_checkout_candidate_builder.V63ExactCheckoutEndToEndTests.test_static_pipeline_applies_only_to_disposable_export_and_stops_before_live_binding)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v63_exact_checkout_candidate_builder.py", line 159, in test_static_pipeline_applies_only_to_disposable_export_and_stops_before_live_binding
+    self.assertEqual(result["status"], "STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING")
+AssertionError: 'BLOCKED_PHASE_A' != 'STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING'
+- BLOCKED_PHASE_A
++ STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING
+
+
+======================================================================
+FAIL: test_static_pipeline_applies_only_to_disposable_export_and_stops_before_live_binding (test_v63_exact_checkout_candidate_builder.V63ExactCheckoutStaticPipelineTests.test_static_pipeline_applies_only_to_disposable_export_and_stops_before_live_binding)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v63_exact_checkout_candidate_builder.py", line 159, in test_static_pipeline_applies_only_to_disposable_export_and_stops_before_live_binding
+    self.assertEqual(result["status"], "STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING")
+AssertionError: 'BLOCKED_PHASE_A' != 'STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING'
+- BLOCKED_PHASE_A
++ STATIC_CANDIDATE_READY_LIVE_ACCEPTANCE_PENDING
+
+
+======================================================================
+FAIL: test_apply_copies_runtime_and_patches_mro_without_switching_mcp_entrypoint (test_v63_production_integration_runner.V63ProductionIntegrationRunnerTests.test_apply_copies_runtime_and_patches_mro_without_switching_mcp_entrypoint)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v63_production_integration_runner.py", line 54, in test_apply_copies_runtime_and_patches_mro_without_switching_mcp_entrypoint
+    self.assertEqual(result["status"], "RUNTIME_PATCH_APPLIED_ADAPTER_PENDING")
+AssertionError: 'BLOCKED_PREPATCH' != 'RUNTIME_PATCH_APPLIED_ADAPTER_PENDING'
+- BLOCKED_PREPATCH
++ RUNTIME_PATCH_APPLIED_ADAPTER_PENDING
+
+
+======================================================================
+FAIL: test_apply_is_idempotent (test_v63_production_integration_runner.V63ProductionIntegrationRunnerTests.test_apply_is_idempotent)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v63_production_integration_runner.py", line 76, in test_apply_is_idempotent
+    self.assertEqual(first["status"], "RUNTIME_PATCH_APPLIED_ADAPTER_PENDING")
+AssertionError: 'BLOCKED_PREPATCH' != 'RUNTIME_PATCH_APPLIED_ADAPTER_PENDING'
+- BLOCKED_PREPATCH
++ RUNTIME_PATCH_APPLIED_ADAPTER_PENDING
+
+
+======================================================================
+FAIL: test_dry_run_does_not_modify_checkout (test_v63_production_integration_runner.V63ProductionIntegrationRunnerTests.test_dry_run_does_not_modify_checkout)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v63_production_integration_runner.py", line 44, in test_dry_run_does_not_modify_checkout
+    self.assertEqual(result["status"], "READY_TO_APPLY_RUNTIME_PATCH")
+AssertionError: 'BLOCKED_PREPATCH' != 'READY_TO_APPLY_RUNTIME_PATCH'
+- BLOCKED_PREPATCH
++ READY_TO_APPLY_RUNTIME_PATCH
+
+
+======================================================================
+FAIL: test_runtime_phase_never_claims_production_ready (test_v63_production_integration_runner.V63ProductionIntegrationRunnerTests.test_runtime_phase_never_claims_production_ready)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v63_production_integration_runner.py", line 111, in test_runtime_phase_never_claims_production_ready
+    self.assertEqual(result["next_gate"], "BIND_EXISTING_PRODUCTION_WAL_AND_MCP")
+AssertionError: 'RESOLVE_PREPATCH_BLOCKERS' != 'BIND_EXISTING_PRODUCTION_WAL_AND_MCP'
+- RESOLVE_PREPATCH_BLOCKERS
++ BIND_EXISTING_PRODUCTION_WAL_AND_MCP
+
+
+----------------------------------------------------------------------
+Ran 830 tests in 23.184s
+
+FAILED (failures=10, skipped=4)
+BACKUP_DAILY_MUTATION_LATENCY {"first_mutation_seconds": 0.014378316999994922, "second_mutation_seconds": 0.00686526100000151, "snapshot_count": 1}
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tools/v63_bootstrap_expand.py", line 355, in <module>
     raise SystemExit(main())
                      ^^^^^^
-  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tools/v63_bootstrap_expand.py", line 289, in main
-    validate_scope(repo)
-  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tools/v63_bootstrap_expand.py", line 256, in validate_scope
-    raise RuntimeError("V63_UNEXPECTED_GIT_SCOPE:" + ",".join(sorted(set(bad))))
-RuntimeError: V63_UNEXPECTED_GIT_SCOPE:63_BOOTSTRAP_FAILURE.txt
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tools/v63_bootstrap_expand.py", line 315, in main
+    run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-q"], cwd=repo)
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tools/v63_bootstrap_expand.py", line 38, in run
+    raise RuntimeError(
+RuntimeError: COMMAND_FAILED(1): /opt/hostedtoolcache/Python/3.11.16/x64/bin/python -m unittest discover -s tests -p test_*.py -q
+
