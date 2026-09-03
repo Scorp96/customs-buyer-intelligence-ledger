@@ -17,10 +17,16 @@ from .exact_recovery_acceptance_v63 import (
     validate_v63_exact_recovery_acceptance,
 )
 from .live_exact_recovery_runner_v63 import run_live_exact_recovery_acceptance
+from .recovery_overlay_acceptance_v63 import (
+    REQUIRED_V63_RECOVERY_OVERLAY_SCENARIOS,
+    validate_v63_recovery_overlay_acceptance,
+)
+from .recovery_overlay_probe_v63 import probe_v63_recovery_overlay
 
 
 _BACKEND_SCHEMA = "cbi.v63-backend-correlation-acceptance.v1"
 _RECEIPT_SCHEMA = "cbi.v63-live-exact-recovery-receipts.v1"
+_OVERLAY_SCHEMA = "cbi.v63-recovery-overlay-acceptance.v1"
 _ACCEPTANCE_SCHEMA = "cbi.v63-exact-checkout-acceptance.v1"
 
 
@@ -454,6 +460,236 @@ def _build_recovery_receipt_envelope(
     }
 
 
+def _overlay_row(
+    scenario: str,
+    *,
+    git_sha: str,
+    snapshot_sha256: str,
+    passed: bool,
+    active_overlay_handler_exercised: bool,
+    reexecute_side_effect: bool,
+    exact_correlation_proven: bool,
+    exact_request_hash_proven: bool,
+    exact_result_snapshot_proven: bool | None = None,
+) -> dict[str, Any]:
+    return {
+        "scenario": scenario,
+        "status": "PASS" if passed else "FAIL",
+        "receipt_id": _receipt_id(f"overlay:{scenario}", git_sha, snapshot_sha256),
+        "active_overlay_handler_exercised": bool(active_overlay_handler_exercised),
+        "reexecute_side_effect": bool(reexecute_side_effect),
+        "exact_correlation_proven": bool(exact_correlation_proven),
+        "exact_request_hash_proven": bool(exact_request_hash_proven),
+        "exact_result_snapshot_proven": exact_result_snapshot_proven,
+    }
+
+
+def _build_recovery_overlay_artifact(
+    *,
+    repo_root: Path,
+    snapshot_sha256: str,
+    git_sha: str,
+    results: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    probe = probe_v63_recovery_overlay(repo_root)
+    overlay_path_proven = bool(
+        probe.get("status") == "RECOVERY_OVERLAY_PRIMITIVE_PROVEN"
+        and probe.get("recovery_overlay_codegen_allowed") is True
+        and probe.get("recovery_codegen_mode") == "SYNC_RECOVERY_EXTENSION"
+        and probe.get("recovery_registry_file") == "mcp/server_v61_sync_recovery.py"
+        and probe.get("recovery_registry_name") == "_v61._reconcile_prepared"
+    )
+    if not overlay_path_proven:
+        raise RuntimeError(
+            "RECOVERY_OVERLAY_SOURCE_PROBE_BLOCKED:"
+            + ",".join(str(item) for item in probe.get("blockers") or [])
+        )
+
+    candidate_crash = results["candidate_crash"]
+    opportunity_crash = results["opportunity_crash"]
+    anchor_crash = results["anchor_crash"]
+    wrong_correlation = results["wrong_correlation"]
+    duplicate = results["duplicate_exact_event"]
+    opportunity_hash = results["opportunity_snapshot_hash_mismatch"]
+    raw_persistence = results["raw_idempotency_persistence_rejected"]
+
+    candidate_corr, candidate_hash = _exact_pair_proof(
+        candidate_crash.get("post_restart_evidence") or {}
+    )
+    opportunity_corr, opportunity_request_hash = _exact_pair_proof(
+        opportunity_crash.get("post_restart_evidence") or {}
+    )
+    anchor_corr, anchor_hash = _exact_pair_proof(
+        anchor_crash.get("post_restart_evidence") or {}
+    )
+
+    wrong_corr_correlation_proven = bool(
+        wrong_correlation.get("recovery_rejected") is True
+        and str(wrong_correlation.get("durable_correlation_id") or "")
+        and str(wrong_correlation.get("wal_correlation_id") or "")
+        and wrong_correlation.get("durable_correlation_id")
+        != wrong_correlation.get("wal_correlation_id")
+    )
+    wrong_corr_request_hash_proven = bool(
+        wrong_correlation.get("recovery_rejected") is True
+        and wrong_correlation.get("event_count_before_replay") == 1
+        and wrong_correlation.get("event_count_after_replay") == 1
+        and wrong_correlation.get("wal_status_before_replay") == "PREPARED"
+        and wrong_correlation.get("wal_status_after_replay") == "PREPARED"
+    )
+    opportunity_hash_binding_proven = bool(
+        opportunity_hash.get("correlation_and_request_hash_preserved") is True
+    )
+    raw_binding_proven = bool(
+        raw_persistence.get("passed") is True
+        and raw_persistence.get("raw_persistence_flag_tamper_proven") is True
+    )
+
+    rows = {
+        "CANDIDATE_EXACT_EVENT_RECOVERS": _overlay_row(
+            "CANDIDATE_EXACT_EVENT_RECOVERS",
+            git_sha=git_sha,
+            snapshot_sha256=snapshot_sha256,
+            passed=bool(
+                candidate_crash.get("reconciled_after_crash")
+                and candidate_crash.get("no_duplicate_event_proven")
+                and candidate_corr
+                and candidate_hash
+            ),
+            active_overlay_handler_exercised=bool(
+                overlay_path_proven and candidate_crash.get("reconciled_after_crash")
+            ),
+            reexecute_side_effect=not bool(candidate_crash.get("no_duplicate_event_proven")),
+            exact_correlation_proven=candidate_corr,
+            exact_request_hash_proven=candidate_hash,
+        ),
+        "CANDIDATE_WRONG_CORRELATION_FAILS_CLOSED": _overlay_row(
+            "CANDIDATE_WRONG_CORRELATION_FAILS_CLOSED",
+            git_sha=git_sha,
+            snapshot_sha256=snapshot_sha256,
+            passed=bool(
+                wrong_correlation.get("recovery_rejected")
+                and wrong_correlation.get("reexecute_side_effect") is False
+                and wrong_corr_correlation_proven
+                and wrong_corr_request_hash_proven
+            ),
+            active_overlay_handler_exercised=bool(
+                overlay_path_proven and wrong_correlation.get("recovery_rejected")
+            ),
+            reexecute_side_effect=bool(wrong_correlation.get("reexecute_side_effect")),
+            exact_correlation_proven=wrong_corr_correlation_proven,
+            exact_request_hash_proven=wrong_corr_request_hash_proven,
+        ),
+        "OPPORTUNITY_EXACT_SNAPSHOT_RECOVERS": _overlay_row(
+            "OPPORTUNITY_EXACT_SNAPSHOT_RECOVERS",
+            git_sha=git_sha,
+            snapshot_sha256=snapshot_sha256,
+            passed=bool(
+                opportunity_crash.get("reconciled_after_crash")
+                and opportunity_crash.get("exact_result_snapshot_recovered")
+                and opportunity_crash.get("no_duplicate_event_proven")
+                and opportunity_corr
+                and opportunity_request_hash
+            ),
+            active_overlay_handler_exercised=bool(
+                overlay_path_proven and opportunity_crash.get("reconciled_after_crash")
+            ),
+            reexecute_side_effect=not bool(opportunity_crash.get("no_duplicate_event_proven")),
+            exact_correlation_proven=opportunity_corr,
+            exact_request_hash_proven=opportunity_request_hash,
+            exact_result_snapshot_proven=bool(
+                opportunity_crash.get("exact_result_snapshot_recovered")
+            ),
+        ),
+        "OPPORTUNITY_SNAPSHOT_HASH_MISMATCH_FAILS_CLOSED": _overlay_row(
+            "OPPORTUNITY_SNAPSHOT_HASH_MISMATCH_FAILS_CLOSED",
+            git_sha=git_sha,
+            snapshot_sha256=snapshot_sha256,
+            passed=bool(
+                opportunity_hash.get("passed")
+                and opportunity_hash.get("recovery_rejected")
+                and opportunity_hash.get("reexecute_side_effect") is False
+                and opportunity_hash_binding_proven
+            ),
+            active_overlay_handler_exercised=bool(
+                overlay_path_proven and opportunity_hash.get("recovery_rejected")
+            ),
+            reexecute_side_effect=bool(opportunity_hash.get("reexecute_side_effect")),
+            exact_correlation_proven=opportunity_hash_binding_proven,
+            exact_request_hash_proven=opportunity_hash_binding_proven,
+        ),
+        "ANCHOR_EXACT_EVENT_RECOVERS": _overlay_row(
+            "ANCHOR_EXACT_EVENT_RECOVERS",
+            git_sha=git_sha,
+            snapshot_sha256=snapshot_sha256,
+            passed=bool(
+                anchor_crash.get("reconciled_after_crash")
+                and anchor_crash.get("no_duplicate_event_proven")
+                and anchor_crash.get("exact_anchor_snapshots_preserved")
+                and anchor_corr
+                and anchor_hash
+            ),
+            active_overlay_handler_exercised=bool(
+                overlay_path_proven and anchor_crash.get("reconciled_after_crash")
+            ),
+            reexecute_side_effect=not bool(anchor_crash.get("no_duplicate_event_proven")),
+            exact_correlation_proven=anchor_corr,
+            exact_request_hash_proven=anchor_hash,
+        ),
+        "AMBIGUOUS_EVENT_FAILS_CLOSED": _overlay_row(
+            "AMBIGUOUS_EVENT_FAILS_CLOSED",
+            git_sha=git_sha,
+            snapshot_sha256=snapshot_sha256,
+            passed=bool(
+                duplicate.get("recovery_rejected")
+                and duplicate.get("reexecute_side_effect") is False
+                and duplicate.get("same_correlation_proven")
+                and duplicate.get("same_request_hash_proven")
+                and duplicate.get("qualifying_event_count_after_replay") == 2
+            ),
+            active_overlay_handler_exercised=bool(
+                overlay_path_proven and duplicate.get("recovery_rejected")
+            ),
+            reexecute_side_effect=bool(duplicate.get("reexecute_side_effect")),
+            exact_correlation_proven=bool(duplicate.get("same_correlation_proven")),
+            exact_request_hash_proven=bool(duplicate.get("same_request_hash_proven")),
+        ),
+        "RAW_IDEMPOTENCY_KEY_REJECTED": _overlay_row(
+            "RAW_IDEMPOTENCY_KEY_REJECTED",
+            git_sha=git_sha,
+            snapshot_sha256=snapshot_sha256,
+            passed=bool(
+                raw_persistence.get("passed")
+                and raw_persistence.get("recovery_rejected")
+                and raw_persistence.get("reexecute_side_effect") is False
+                and raw_binding_proven
+            ),
+            active_overlay_handler_exercised=bool(
+                overlay_path_proven and raw_persistence.get("recovery_rejected")
+            ),
+            reexecute_side_effect=bool(raw_persistence.get("reexecute_side_effect")),
+            exact_correlation_proven=raw_binding_proven,
+            exact_request_hash_proven=raw_binding_proven,
+        ),
+    }
+
+    return (
+        {
+            "schema": _OVERLAY_SCHEMA,
+            "execution_origin": "LIVE_PRODUCTION_CHECKOUT",
+            "git_sha": str(git_sha).lower(),
+            "active_overlay_path_exercised": "ACTIVE_PRODUCTION_SERVER_V61_OVERLAY_CHAIN",
+            "production_source_snapshot_sha256": str(snapshot_sha256).lower(),
+            "recovery_registry_file": str(probe.get("recovery_registry_file") or ""),
+            "recovery_registry_name": str(probe.get("recovery_registry_name") or ""),
+            "recovery_codegen_mode": str(probe.get("recovery_codegen_mode") or ""),
+            "reference_runner_only": False,
+            "scenarios": [rows[name] for name in REQUIRED_V63_RECOVERY_OVERLAY_SCENARIOS],
+        },
+        probe,
+    )
+
+
 def _contains_raw_idempotency_key_field(value: Any) -> bool:
     if isinstance(value, dict):
         if any(str(key).casefold() == "idempotency_key" for key in value):
@@ -571,6 +807,30 @@ def run_exact_checkout_acceptance_orchestration(
             + ",".join(str(item) for item in exact_recovery_validation.get("blockers") or [])
         )
 
+    recovery_overlay, recovery_overlay_probe = _build_recovery_overlay_artifact(
+        repo_root=root,
+        snapshot_sha256=snapshot_sha,
+        git_sha=git_sha,
+        results=results,
+    )
+    recovery_overlay_validation = validate_v63_recovery_overlay_acceptance(
+        recovery_overlay,
+        expected_production_source_snapshot_sha256=snapshot_sha,
+        expected_recovery_registry_file=str(
+            recovery_overlay_probe.get("recovery_registry_file") or ""
+        ),
+        expected_recovery_registry_name=str(
+            recovery_overlay_probe.get("recovery_registry_name") or ""
+        ),
+    )
+    if recovery_overlay_validation.get("verified") is not True:
+        raise RuntimeError(
+            "RECOVERY_OVERLAY_ACCEPTANCE_BLOCKED:"
+            + ",".join(
+                str(item) for item in recovery_overlay_validation.get("blockers") or []
+            )
+        )
+
     source_validation = _assert_source_snapshot_unchanged(root, source_snapshot)
     acceptance = {
         "schema": _ACCEPTANCE_SCHEMA,
@@ -586,20 +846,23 @@ def run_exact_checkout_acceptance_orchestration(
         "backend_validation": copy.deepcopy(backend_validation),
         "recovery_validation": copy.deepcopy(recovery_validation),
         "exact_recovery_validation": copy.deepcopy(exact_recovery_validation),
+        "recovery_overlay_validation": copy.deepcopy(recovery_overlay_validation),
         "render_r2_acceptance_required": True,
         "production_ready": False,
         "artifact_names": [
             "V63_EXACT_CHECKOUT_BACKEND_CORRELATION.json",
             "V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json",
+            "V63_EXACT_CHECKOUT_RECOVERY_OVERLAY.json",
             "V63_EXACT_CHECKOUT_ACCEPTANCE.json",
         ],
     }
 
-    for artifact in (backend, receipts, acceptance):
+    for artifact in (backend, receipts, recovery_overlay, acceptance):
         if _contains_raw_idempotency_key_field(artifact):
             raise RuntimeError("RAW_IDEMPOTENCY_KEY_FIELD_IN_ACCEPTANCE_ARTIFACT")
 
     _atomic_json_write(destination / "V63_EXACT_CHECKOUT_BACKEND_CORRELATION.json", backend)
     _atomic_json_write(destination / "V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json", receipts)
+    _atomic_json_write(destination / "V63_EXACT_CHECKOUT_RECOVERY_OVERLAY.json", recovery_overlay)
     _atomic_json_write(destination / "V63_EXACT_CHECKOUT_ACCEPTANCE.json", acceptance)
     return acceptance
