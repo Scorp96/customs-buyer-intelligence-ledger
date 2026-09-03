@@ -1,0 +1,35 @@
+name: CBI v6.3 exact feature bootstrap
+
+on:
+  push:
+    branches:
+      - cbi-v6-3-demand-expansion
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cbi-v63-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  expand-test-commit:
+    if: contains(github.event.head_commit.message, '[v63-bootstrap]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout bootstrap feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Harden bootstrap gates, expand exact v6.3 staging, test and commit
+        run: |
+          sed -i 's/if not chunks:/if len(chunks) != 32:/' tools/v63_bootstrap_expand.py
+          sed -i '/".github\/workflows\/cbi-v63-bootstrap.yml",/a\        "V63_FEATURE_ATTESTATION.json",' tools/v63_bootstrap_expand.py
+          python -B -Xutf8 tools/v63_bootstrap_expand.py
