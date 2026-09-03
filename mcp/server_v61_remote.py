@@ -16,7 +16,9 @@ closed.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,38 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+_GIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+_DEPLOYMENT_IDENTITY_SCHEMA = "cbi.remote-deployment-identity.v6.3"
+
+
+def _env_flag(name: str) -> bool:
+    raw = str(os.environ.get(name) or "").strip().lower()
+    if raw in {"", "0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    raise RuntimeError(f"{name} must be a boolean flag")
+
+
+def _resolve_deployment_git_sha(*, pin_required: bool) -> str | None:
+    raw = str(os.environ.get("RENDER_GIT_COMMIT") or "").strip()
+    if _GIT_SHA_RE.fullmatch(raw):
+        return raw.lower()
+    if pin_required:
+        raise RuntimeError("DEPLOYMENT_GIT_SHA_INVALID_OR_MISSING")
+    return None
+
+
+def _safe_object_store_mode() -> str:
+    raw = str(os.environ.get("CBI_OBJECT_STORE_MODE") or "none").strip().lower()
+    if raw in {"", "none", "off", "disabled"}:
+        return "none"
+    if raw in {"s3", "r2"}:
+        return raw
+    # ``from_env`` performs the authoritative startup rejection. Never echo an
+    # arbitrary environment value into health.
+    return "invalid"
 
 
 def _require_explicit_durable_root() -> Path:
@@ -45,11 +79,14 @@ def _require_explicit_durable_root() -> Path:
     return root.resolve()
 
 
+_ACCEPTANCE_PIN_REQUIRED = _env_flag("CBI_V63_ACCEPTANCE_PIN_DEPLOYMENT_SHA")
+_DEPLOYMENT_GIT_SHA = _resolve_deployment_git_sha(pin_required=_ACCEPTANCE_PIN_REQUIRED)
 _EXPECTED_ROOT = _require_explicit_durable_root()
 _LIVE_ROOT = _EXPECTED_ROOT.parent
 
-# Import only after the explicit-root guard. The production module creates the
-# UnifiedRuntime at import time and therefore must observe CBI_SESSION_ROOT.
+# Import only after the explicit-root and deployment-identity guards. The
+# production module creates the UnifiedRuntime at import time and therefore must
+# observe CBI_SESSION_ROOT; acceptance pin failures must occur before it starts.
 from mcp import server_v61_backup_recovery as _production  # noqa: E402
 from mcp.chatgpt_oauth_transport import main as _remote_transport_main  # noqa: E402
 from mcp.object_store_recovery_v63 import (  # noqa: E402
@@ -105,10 +142,64 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
     return result
 
 
+def _restore_lineage() -> tuple[int | None, str | None]:
+    manifest_path = _LIVE_ROOT / "export-manifest.json"
+    try:
+        row = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return None, None
+    if not isinstance(row, dict):
+        return None, None
+    raw_generation = row.get("restored_generation")
+    generation = (
+        raw_generation
+        if isinstance(raw_generation, int) and not isinstance(raw_generation, bool) and raw_generation >= 0
+        else None
+    )
+    schema = str(row.get("schema") or "").strip()
+    safe_sources = {
+        "cbi.object-store-state.v1": "object_state_v1",
+        "cbi.object-store-state.v2": "object_state_v2",
+        "cbi.cloud-runtime-export.v1": "migration_v1",
+    }
+    return generation, safe_sources.get(schema)
+
+
+def _object_state_schema(persistence_health: dict[str, Any]) -> str | None:
+    recovery_schema = str(persistence_health.get("recovery_state_schema") or "").strip()
+    if recovery_schema == "cbi.object-store-state.v2":
+        return recovery_schema
+    archive_format = str(persistence_health.get("archive_format") or "").strip()
+    if archive_format == "object_state_v1":
+        return "cbi.object-store-state.v1"
+    return None
+
+
+def _deployment_identity(persistence_health: dict[str, Any]) -> dict[str, Any]:
+    restore_generation, restore_source = _restore_lineage()
+    generation = persistence_health.get("generation")
+    if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+        generation = None
+    return {
+        "schema": _DEPLOYMENT_IDENTITY_SCHEMA,
+        "git_sha": _DEPLOYMENT_GIT_SHA,
+        "git_sha_source": "RENDER_GIT_COMMIT" if _DEPLOYMENT_GIT_SHA else None,
+        "acceptance_pin_required": _ACCEPTANCE_PIN_REQUIRED,
+        "remote_entrypoint": "mcp/server_v61_remote.py",
+        "runtime_entrypoint": "mcp/server_v61_backup_recovery.py",
+        "object_store_mode": _safe_object_store_mode(),
+        "object_state_schema": _object_state_schema(persistence_health),
+        "object_state_generation": generation,
+        "restore_generation": restore_generation,
+        "restore_source": restore_source,
+    }
+
+
 def _health() -> dict[str, Any]:
     observed = Path(_RUNTIME.store.root).expanduser().resolve()
     if observed != _EXPECTED_ROOT:
         raise RuntimeError("production Runtime is bound to an unexpected durable root")
+    persistence_health = _PERSISTENCE.health() if _PERSISTENCE is not None else {}
     health = {
         "status": "ok",
         "service": "customs-buyer-intelligence",
@@ -117,9 +208,9 @@ def _health() -> dict[str, Any]:
         "backup_recovery_enabled": True,
         "object_store_persistence_enabled": _PERSISTENCE is not None,
         "remote_post_handler_checkpoint_enabled": _PERSISTENCE is not None,
+        "deployment_identity": _deployment_identity(persistence_health),
     }
     if _PERSISTENCE is not None:
-        persistence_health = _PERSISTENCE.health()
         health["object_store_persistence"] = persistence_health
         if persistence_health.get("last_error"):
             health["status"] = "degraded"
