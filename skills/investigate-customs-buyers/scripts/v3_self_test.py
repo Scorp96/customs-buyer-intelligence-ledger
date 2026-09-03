@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 import json
 import tempfile
 import zipfile
@@ -56,10 +57,11 @@ def main() -> int:
     check(accessory["normalized_category"] == "WALL_PANEL_TRIM_ACCESSORY" and accessory["match_level"] == "RELATED", "trim_accessory_not_foam_board", passed)
 
     base_row = {"数据源": "Synthetic Customs", "日期": "2026-06-17", "主单号": "TESTBILL001", "供应商": "Synthetic Supplier Ltd", "采购商": "Synthetic Buyer One Inc", "采购商地址": "100 Test Road, Manila, Philippines", "产品": "PVC Foam Board 1220x2440 17mm 0.65g", "重量（kg）": 394, "N O P A C K A G E S": 6, "T Y P E P K G S": "BG", "目的地": "Philippines"}
+    current_checked_at = (date.today() - timedelta(days=1)).isoformat()
     enrichment = {
         "sources": [
-            {"source_id": "src-web", "url": "https://example.invalid/contact", "source_type": "official_domain", "evidence_grade": "A2", "official": True, "checked_at": "2026-08-03", "quoted_or_visible_text": "General enquiries: info@synthetic.invalid"},
-            {"source_id": "src-dir", "url": "https://www.dnb.com/company/synthetic", "source_type": "third_party_directory", "evidence_grade": "C2", "checked_at": "2026-08-03"},
+            {"source_id": "src-web", "url": "https://example.invalid/contact", "source_type": "official_domain", "evidence_grade": "A2", "official": True, "checked_at": current_checked_at, "quoted_or_visible_text": "General enquiries: info@synthetic.invalid"},
+            {"source_id": "src-dir", "url": "https://www.dnb.com/company/synthetic", "source_type": "third_party_directory", "evidence_grade": "C2", "checked_at": current_checked_at},
         ],
         "contacts": [
             {"email": "info@synthetic.invalid", "source_ids": ["src-web"], "source_type": "official_domain", "verification_status": "official_current", "role": "general company channel"},
