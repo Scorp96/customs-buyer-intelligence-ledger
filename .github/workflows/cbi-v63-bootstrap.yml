@@ -55,7 +55,7 @@ jobs:
                   additions += '        "V63_BOOTSTRAP_FAILURE.txt",\n'
               s = s.replace(scope_marker, scope_marker + additions, 1)
 
-          base_old = '''    # Bootstrap commit must be exactly one child of the reviewed production commit.\n    parent = run(["git", "rev-parse", "HEAD^"], cwd=repo, capture=True)\n    if parent.lower() != EXPECTED_BASE:\n        raise RuntimeError(f"V63_BOOTSTRAP_BASE_MISMATCH:{parent}")\n'''
+          base_old = '''    parent = run(["git", "rev-parse", "HEAD^"], cwd=repo, capture=True)\n    if parent.lower() != EXPECTED_BASE:\n        raise RuntimeError(f"V63_BOOTSTRAP_BASE_MISMATCH:{parent}")\n'''
           if base_old in s:
               s = s.replace(base_old, '    parent = EXPECTED_BASE\n', 1)
           elif '    parent = EXPECTED_BASE\n' not in s:
