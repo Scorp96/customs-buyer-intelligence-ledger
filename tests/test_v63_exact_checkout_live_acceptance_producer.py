@@ -10,8 +10,14 @@ import unittest
 from pathlib import Path
 
 
+ROOT = Path(__file__).resolve().parents[1]
 MODULE = "unified_runtime.exact_checkout_live_acceptance_producer_v63"
 HARNESS_MODULE = "unified_runtime.exact_checkout_mcp_harness_v63"
+V63_MUTATION_TOOLS = {
+    "append_candidate_discovery",
+    "create_product_opportunity",
+    "promote_opportunity_anchor",
+}
 
 
 class V63ExactCheckoutLiveAcceptanceProducerBoundaryTests(unittest.TestCase):
@@ -78,6 +84,7 @@ class V63ExactCheckoutMcpHarnessContractTests(unittest.TestCase):
             "__init__": ("self", "repo_root", "persistence_root"),
             "active_entrypoint": ("self",),
             "start": ("self", "crash_after_handler"),
+            "list_tool_names": ("self", "request_id"),
             "tool": ("self", "request_id", "name", "arguments"),
             "crash_tool": ("self", "request_id", "name", "arguments"),
             "stop": ("self",),
@@ -88,6 +95,10 @@ class V63ExactCheckoutMcpHarnessContractTests(unittest.TestCase):
         self.assertEqual(
             inspect.signature(harness.start).parameters["crash_after_handler"].default,
             "",
+        )
+        self.assertEqual(
+            inspect.signature(harness.list_tool_names).parameters["request_id"].default,
+            2,
         )
 
     def test_active_entrypoint_is_resolved_from_checkout_configuration(self):
@@ -117,6 +128,21 @@ class V63ExactCheckoutMcpHarnessContractTests(unittest.TestCase):
                 harness.active_entrypoint(),
                 "mcp/server_v61_backup_recovery.py",
             )
+
+    def test_real_feature_checkout_launches_active_recovery_entrypoint_and_lists_v63_mutations(self):
+        module = self._module()
+        with tempfile.TemporaryDirectory() as td:
+            harness = module.ExactCheckoutMcpHarness(ROOT, Path(td))
+            self.assertEqual(
+                harness.active_entrypoint(),
+                "mcp/server_v61_backup_recovery.py",
+            )
+            harness.start()
+            try:
+                names = harness.list_tool_names()
+            finally:
+                harness.stop()
+            self.assertTrue(V63_MUTATION_TOOLS <= names)
 
 
 if __name__ == "__main__":
