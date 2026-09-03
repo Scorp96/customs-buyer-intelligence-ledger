@@ -23,6 +23,8 @@ _CANDIDATE_TOOL = "append_candidate_discovery"
 _CANDIDATE_EVENT = "V63_CANDIDATE_DISCOVERED"
 _OPPORTUNITY_TOOL = "create_product_opportunity"
 _OPPORTUNITY_EVENT = "V63_PRODUCT_OPPORTUNITY_CREATED"
+_ANCHOR_TOOL = "promote_opportunity_anchor"
+_ANCHOR_EVENT = "V63_OPPORTUNITY_ANCHOR_PROMOTED"
 
 
 @dataclass(frozen=True)
@@ -168,6 +170,25 @@ def _opportunity_success_arguments(investigation_id: str) -> dict[str, Any]:
             "market_cell_ids": ["SYNTHETIC-EXACT-CELL"],
         },
         "idempotency_key": "v63-exact-opportunity-success-0001",
+    }
+
+
+def _anchor_success_arguments(investigation_id: str) -> dict[str, Any]:
+    return {
+        "investigation_id": investigation_id,
+        "opportunity_id": "OPP-V63-EXACT-ANCHOR-001",
+        "promotion_reason": "Synthetic exact B+ material novelty promotion",
+        "anchor_eligibility": {
+            "anchor_eligible": True,
+            "commercial_value_grade": "B+",
+            "canonical_status": "CONFIRMED",
+            "commercial_evidence_bound": True,
+            "material_novelty_signals": ["STRONG_CURRENT_PROCUREMENT"],
+            "contact_readiness_is_gate": False,
+            "blockers": [],
+        },
+        "cycle_dedup_complete": True,
+        "idempotency_key": "v63-exact-anchor-success-0001",
     }
 
 
@@ -351,6 +372,106 @@ def _run_opportunity_success_scenario(
         "exact_correlation_proven": exact_correlation_proven,
         "exact_request_hash_proven": exact_request_hash_proven,
         "exact_result_snapshot_proven": exact_result_snapshot_proven,
+    }
+
+
+def _run_anchor_success_scenario(
+    repo_root: Path,
+    persistence_root: Path,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    persistence = Path(persistence_root).resolve()
+    harness = ExactCheckoutMcpHarness(root, persistence)
+    harness.start()
+    try:
+        investigation_id = _start_synthetic_investigation(
+            harness,
+            2,
+            account_id="C-V63-EXACT-ANCHOR",
+            name="Synthetic v6.3 Exact Anchor Buyer",
+            idempotency_key="v63-exact-anchor-start-0001",
+        )
+        arguments = _anchor_success_arguments(investigation_id)
+        raw_response = harness.tool(3, _ANCHOR_TOOL, arguments)
+    finally:
+        harness.stop()
+
+    reader = ExactCheckoutPersistenceReader(persistence)
+    evidence = reader.normalize_mutation_evidence(investigation_id, _ANCHOR_TOOL)
+    events = evidence.get("events") or []
+    wal_records = evidence.get("wal_records") or []
+    expected_request_sha = canonical_v63_wal_request_sha256(_ANCHOR_TOOL, arguments)
+
+    event = events[0] if len(events) == 1 else {}
+    wal = wal_records[0] if len(wal_records) == 1 else {}
+    event_correlation = str(event.get("correlation_id") or "").strip()
+    wal_correlation = str(wal.get("correlation_id") or "").strip()
+    exact_correlation_proven = bool(
+        len(events) == 1
+        and len(wal_records) == 1
+        and event.get("event_type") == _ANCHOR_EVENT
+        and wal.get("status") == "COMMITTED"
+        and event_correlation
+        and event_correlation == wal_correlation
+    )
+    exact_request_hash_proven = bool(
+        len(events) == 1
+        and len(wal_records) == 1
+        and event.get("request_sha256") == expected_request_sha
+        and wal.get("request_sha256") == expected_request_sha
+    )
+
+    durable_matches: list[dict[str, Any]] = []
+    for raw_event in reader.read_session_events(investigation_id):
+        correlation = raw_event.get("mutation_correlation")
+        if (
+            raw_event.get("event_type") == _ANCHOR_EVENT
+            and isinstance(correlation, dict)
+            and correlation.get("tool") == _ANCHOR_TOOL
+            and correlation.get("correlation_id") == event_correlation
+        ):
+            durable_matches.append(raw_event)
+    durable_event = durable_matches[0] if len(durable_matches) == 1 else {}
+    payload = durable_event.get("payload") if isinstance(durable_event, dict) else None
+    payload = payload if isinstance(payload, dict) else {}
+    eligibility = _without_idempotency_keys(payload.get("anchor_eligibility_snapshot"))
+    cycle = _without_idempotency_keys(payload.get("cycle_dedup_snapshot"))
+
+    response = _without_idempotency_keys(raw_response)
+    exact_anchor_snapshots_proven = bool(
+        len(durable_matches) == 1
+        and isinstance(eligibility, dict)
+        and eligibility == arguments["anchor_eligibility"]
+        and eligibility.get("anchor_eligible") is True
+        and isinstance(cycle, dict)
+        and cycle == {"cycle_dedup_complete": True}
+        and isinstance(response, dict)
+        and response.get("anchor_eligibility_snapshot") == eligibility
+        and response.get("cycle_dedup_snapshot") == cycle
+    )
+
+    if not exact_correlation_proven:
+        raise RuntimeError("ANCHOR_SUCCESS_EXACT_CORRELATION_NOT_PROVEN")
+    if not exact_request_hash_proven:
+        raise RuntimeError("ANCHOR_SUCCESS_EXACT_REQUEST_HASH_NOT_PROVEN")
+    if not exact_anchor_snapshots_proven:
+        raise RuntimeError("ANCHOR_SUCCESS_EXACT_SNAPSHOTS_NOT_PROVEN")
+    if not isinstance(response, dict) or response.get("status") != "PROMOTED":
+        raise RuntimeError("ANCHOR_SUCCESS_RESPONSE_INVALID")
+
+    return {
+        "scenario": "anchor_success",
+        "tool": _ANCHOR_TOOL,
+        "investigation_id": investigation_id,
+        "response": response,
+        "evidence": evidence,
+        "durable_anchor_snapshots": {
+            "anchor_eligibility_snapshot": copy.deepcopy(eligibility),
+            "cycle_dedup_snapshot": copy.deepcopy(cycle),
+        },
+        "exact_correlation_proven": exact_correlation_proven,
+        "exact_request_hash_proven": exact_request_hash_proven,
+        "exact_anchor_snapshots_proven": exact_anchor_snapshots_proven,
     }
 
 
