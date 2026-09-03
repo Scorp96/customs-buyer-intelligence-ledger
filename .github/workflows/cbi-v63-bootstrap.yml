@@ -30,20 +30,28 @@ jobs:
 
       - name: Harden bootstrap gates, expand exact v6.3 staging, test and commit
         run: |
-          git merge-base --is-ancestor ba3bffdae13cef186b20b50335c3207fb3390ec6 HEAD
-          sed -i 's/if len(chunks) != 16:/if len(chunks) != 32:/' tools/v63_bootstrap_expand.py
-          sed -i '/".github\/workflows\/cbi-v63-bootstrap.yml",/a\        "V63_FEATURE_ATTESTATION.json",' tools/v63_bootstrap_expand.py
-          sed -i '/    # Bootstrap commit must be exactly one child of the reviewed production commit\./,+3c\    parent = EXPECTED_BASE' tools/v63_bootstrap_expand.py
+          run_bootstrap() {
+            echo 'STAGE ancestry'
+            git merge-base --is-ancestor ba3bffdae13cef186b20b50335c3207fb3390ec6 HEAD || return $?
+            echo 'STAGE chunk-gate'
+            sed -i 's/if len(chunks) != 16:/if len(chunks) != 32:/' tools/v63_bootstrap_expand.py || return $?
+            echo 'STAGE attestation-scope'
+            sed -i '/".github\/workflows\/cbi-v63-bootstrap.yml",/a\        "V63_FEATURE_ATTESTATION.json",' tools/v63_bootstrap_expand.py || return $?
+            echo 'STAGE base-gate'
+            sed -i '/    # Bootstrap commit must be exactly one child of the reviewed production commit\./,+3c\    parent = EXPECTED_BASE' tools/v63_bootstrap_expand.py || return $?
+            echo 'STAGE python-bootstrap'
+            python -B -Xutf8 tools/v63_bootstrap_expand.py
+          }
           set +e
-          python -B -Xutf8 tools/v63_bootstrap_expand.py > /tmp/v63-bootstrap.log 2>&1
+          run_bootstrap > /tmp/v63-bootstrap.txt 2>&1
           rc=$?
           set -e
-          cat /tmp/v63-bootstrap.log
+          cat /tmp/v63-bootstrap.txt
           if [ "$rc" -ne 0 ]; then
-            cp /tmp/v63-bootstrap.log V63_BOOTSTRAP_FAILURE.log
+            cp /tmp/v63-bootstrap.txt V63_BOOTSTRAP_FAILURE.txt
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add V63_BOOTSTRAP_FAILURE.log
+            git add -f V63_BOOTSTRAP_FAILURE.txt
             git commit -m 'chore(v63): capture bootstrap failure [skip ci]'
             git push origin HEAD:cbi-v6-3-demand-expansion
             exit "$rc"
