@@ -56,8 +56,8 @@ def sha256_file(path: Path) -> str:
 def reconstruct_payload(root: Path) -> Path:
     chunk_dir = root / "tools" / "v63_payload"
     chunks = sorted(chunk_dir.glob("chunk-*.b64"))
-    if not chunks:
-        raise RuntimeError("V63_PAYLOAD_CHUNKS_MISSING")
+    if len(chunks) != 32:
+        raise RuntimeError(f"V63_PAYLOAD_CHUNK_COUNT_MISMATCH:{len(chunks)}")
     import base64
     encoded = b"".join(path.read_bytes().strip() for path in chunks)
     raw = base64.b64decode(encoded, validate=True)
@@ -225,6 +225,19 @@ def exact_integration(repo: Path) -> dict:
     }
 
 
+def _porcelain_path(row: str) -> str:
+    if len(row) >= 3 and row[2] == " ":
+        raw = row[3:]
+    elif len(row) >= 2 and row[1] == " ":
+        raw = row[2:]
+    else:
+        raise RuntimeError(f"V63_INVALID_GIT_STATUS_ROW:{row}")
+    path = raw.strip().strip('"')
+    if " -> " in path:
+        path = path.split(" -> ", 1)[1]
+    return path
+
+
 def validate_scope(repo: Path) -> list[str]:
     rows = run(["git", "status", "--porcelain", "-uall"], cwd=repo, capture=True).splitlines()
     allowed_exact = {
@@ -232,6 +245,8 @@ def validate_scope(repo: Path) -> list[str]:
         "mcp/server_v61.py",
         "mcp/server_v61_sync_recovery.py",
         ".github/workflows/cbi-v63-bootstrap.yml",
+        "V63_FEATURE_ATTESTATION.json",
+        "V63_BOOTSTRAP_FAILURE.txt",
     }
     allowed_prefixes = (
         "unified_runtime/",
@@ -244,9 +259,7 @@ def validate_scope(repo: Path) -> list[str]:
     )
     bad: list[str] = []
     for row in rows:
-        path = row[3:].strip().strip('"')
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
+        path = _porcelain_path(row)
         if path in allowed_exact or path.startswith(allowed_prefixes):
             continue
         bad.append(path)
@@ -275,9 +288,19 @@ def main() -> int:
     if ref_name != EXPECTED_FEATURE_BRANCH:
         raise RuntimeError(f"V63_FEATURE_BRANCH_MISMATCH:{ref_name}")
     actual = run(["git", "rev-parse", "HEAD"], cwd=repo, capture=True)
-    parent = run(["git", "rev-parse", "HEAD^"], cwd=repo, capture=True)
-    if parent.lower() != EXPECTED_BASE:
-        raise RuntimeError(f"V63_BOOTSTRAP_BASE_MISMATCH:{parent}")
+    ancestry = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", EXPECTED_BASE, "HEAD"],
+        cwd=str(repo), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace", check=False,
+    )
+    if ancestry.returncode != 0:
+        raise RuntimeError(
+            f"V63_BOOTSTRAP_BASE_NOT_ANCESTOR:{EXPECTED_BASE}:{actual}:{ancestry.stdout or ''}"
+        )
+
+    failure_log = repo / "V63_BOOTSTRAP_FAILURE.txt"
+    if failure_log.exists():
+        failure_log.unlink()
 
     payload_transport = reconstruct_payload(repo)
     with tempfile.TemporaryDirectory(prefix="cbi-v63-payload-") as td:
