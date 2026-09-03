@@ -33,12 +33,30 @@ jobs:
           run_bootstrap() {
             echo 'STAGE ancestry'
             git merge-base --is-ancestor ba3bffdae13cef186b20b50335c3207fb3390ec6 HEAD || return $?
-            echo 'STAGE chunk-gate'
-            sed -i 's/if len(chunks) != 16:/if len(chunks) != 32:/' tools/v63_bootstrap_expand.py || return $?
-            echo 'STAGE attestation-scope'
-            sed -i '/".github\/workflows\/cbi-v63-bootstrap.yml",/a\        "V63_FEATURE_ATTESTATION.json",' tools/v63_bootstrap_expand.py || return $?
-            echo 'STAGE base-gate'
-            sed -i '/    # Bootstrap commit must be exactly one child of the reviewed production commit\./,+3c\    parent = EXPECTED_BASE' tools/v63_bootstrap_expand.py || return $?
+            echo 'STAGE patch-bootstrap-script'
+            python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/v63_bootstrap_expand.py')
+          s = p.read_text(encoding='utf-8')
+          chunk_old = 'if len(chunks) != 16:'
+          if chunk_old not in s:
+              raise SystemExit('EXPECTED_CHUNK_GATE_NOT_FOUND')
+          s = s.replace(chunk_old, 'if len(chunks) != 32:', 1)
+          scope_marker = '        ".github/workflows/cbi-v63-bootstrap.yml",\n'
+          if scope_marker not in s:
+              raise SystemExit('EXPECTED_SCOPE_MARKER_NOT_FOUND')
+          s = s.replace(
+              scope_marker,
+              scope_marker + '        "V63_FEATURE_ATTESTATION.json",\n        "V63_BOOTSTRAP_FAILURE.txt",\n',
+              1,
+          )
+          base_old = '''    # Bootstrap commit must be exactly one child of the reviewed production commit.\n    parent = run(["git", "rev-parse", "HEAD^"], cwd=repo, capture=True)\n    if parent.lower() != EXPECTED_BASE:\n        raise RuntimeError(f"V63_BOOTSTRAP_BASE_MISMATCH:{parent}")\n'''
+          if base_old not in s:
+              raise SystemExit('EXPECTED_BASE_GATE_NOT_FOUND')
+          s = s.replace(base_old, '    parent = EXPECTED_BASE\n', 1)
+          p.write_text(s, encoding='utf-8', newline='')
+          PY
+            rm -f V63_BOOTSTRAP_FAILURE.txt
             echo 'STAGE python-bootstrap'
             python -B -Xutf8 tools/v63_bootstrap_expand.py
           }
