@@ -6,8 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import production_source_snapshot_v63
+
 
 _GIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 @dataclass(frozen=True)
@@ -49,10 +52,29 @@ def _assert_expected_git_sha(config: ExactCheckoutAcceptanceConfig) -> str:
     return actual
 
 
+def _build_ready_source_snapshot(repo_root: Path) -> dict[str, Any]:
+    snapshot = production_source_snapshot_v63.build_v63_production_source_snapshot(
+        Path(repo_root).resolve()
+    )
+    if not isinstance(snapshot, dict):
+        raise RuntimeError("SOURCE_SNAPSHOT_NOT_READY: invalid snapshot result")
+    snapshot_sha = str(snapshot.get("snapshot_sha256") or "").strip().lower()
+    if (
+        snapshot.get("status") != "READY"
+        or snapshot.get("source_pins_complete") is not True
+        or not _SHA256_RE.fullmatch(snapshot_sha)
+    ):
+        blockers = ",".join(str(item) for item in snapshot.get("blockers") or [])
+        detail = f":{blockers}" if blockers else ""
+        raise RuntimeError(f"SOURCE_SNAPSHOT_NOT_READY{detail}")
+    return snapshot
+
+
 def run_v63_exact_checkout_live_acceptance(
     config: ExactCheckoutAcceptanceConfig,
 ) -> dict[str, Any]:
     if not isinstance(config, ExactCheckoutAcceptanceConfig):
         raise TypeError("config must be ExactCheckoutAcceptanceConfig")
     _assert_expected_git_sha(config)
+    _build_ready_source_snapshot(config.repo_root)
     raise RuntimeError("ACCEPTANCE_EXECUTION_NOT_IMPLEMENTED")
