@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -9,11 +10,14 @@ from .exact_checkout_live_acceptance_producer_v63 import (
 )
 from .exact_checkout_mcp_harness_v63 import ExactCheckoutMcpHarness
 from .exact_checkout_persistence_reader_v63 import ExactCheckoutPersistenceReader
-from .recovery_semantics_v63 import canonical_v63_wal_request_sha256
+from .product_profiles import get_product_profile
+from .recovery_semantics_v63 import canonical_v63_wal_request_sha256, snapshot_sha256
 
 
 _CANDIDATE_TOOL = "append_candidate_discovery"
 _CANDIDATE_EVENT = "V63_CANDIDATE_DISCOVERED"
+_OPPORTUNITY_TOOL = "create_product_opportunity"
+_OPPORTUNITY_EVENT = "V63_PRODUCT_OPPORTUNITY_CREATED"
 
 
 def candidate_crash_arguments(investigation_id: str) -> dict[str, Any]:
@@ -31,16 +35,55 @@ def candidate_crash_arguments(investigation_id: str) -> dict[str, Any]:
     }
 
 
+def opportunity_crash_arguments(investigation_id: str) -> dict[str, Any]:
+    profile = get_product_profile("PVC")
+    account_id = "C-V63-CRASH-OPPORTUNITY"
+    return {
+        "investigation_id": investigation_id,
+        "canonical_resolution": {
+            "canonical_status": "CONFIRMED",
+            "canonical_account_id": account_id,
+            "resolver_authority": "PRIMARY_LEGAL_NAME_COUNTRY",
+            "resolver_is_existing_production_authority": True,
+            "ambiguous": False,
+            "address_only_match": False,
+            "alias_only_match": False,
+            "tax_conflict": False,
+            "country_conflict": False,
+        },
+        "opportunity": {
+            "opportunity_id": "OPP-V63-CRASH-001",
+            "account_id": account_id,
+            "product_profile_id": profile["profile_id"],
+            "product_profile_version": profile["profile_version"],
+            "product_profile_sha256": profile["profile_sha256"],
+            "application_ids": ["CABINETRY"],
+            "buyer_archetype_ids": ["CABINET_MANUFACTURER"],
+            "market_cell_ids": ["SYNTHETIC-CRASH-CELL"],
+        },
+        "idempotency_key": "v63-exact-opportunity-crash-0001",
+    }
+
+
 def _single_evidence_pair(evidence: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     events = evidence.get("events") or []
     wal_records = evidence.get("wal_records") or []
     if len(events) != 1 or len(wal_records) != 1:
-        raise RuntimeError("CANDIDATE_CRASH_EXACT_EVIDENCE_CARDINALITY_NOT_PROVEN")
+        raise RuntimeError("CRASH_EXACT_EVIDENCE_CARDINALITY_NOT_PROVEN")
     event = events[0]
     wal = wal_records[0]
     if not isinstance(event, dict) or not isinstance(wal, dict):
-        raise RuntimeError("CANDIDATE_CRASH_EVIDENCE_INVALID")
+        raise RuntimeError("CRASH_EVIDENCE_INVALID")
     return event, wal
+
+
+def _reconciled_meta(raw_response: dict[str, Any]) -> bool:
+    mutation_meta = raw_response.get("mutation_meta") if isinstance(raw_response, dict) else None
+    return bool(
+        isinstance(mutation_meta, dict)
+        and mutation_meta.get("reconciled_after_crash") is True
+        and mutation_meta.get("replayed") is True
+    )
 
 
 def run_candidate_crash_restart_scenario(
@@ -85,12 +128,7 @@ def run_candidate_crash_restart_scenario(
     finally:
         restarted.stop()
 
-    mutation_meta = raw_response.get("mutation_meta") if isinstance(raw_response, dict) else None
-    reconciled_after_crash = bool(
-        isinstance(mutation_meta, dict)
-        and mutation_meta.get("reconciled_after_crash") is True
-        and mutation_meta.get("replayed") is True
-    )
+    reconciled_after_crash = _reconciled_meta(raw_response)
     response = _without_idempotency_keys(raw_response)
 
     post_restart = reader.normalize_mutation_evidence(investigation_id, _CANDIDATE_TOOL)
@@ -138,5 +176,104 @@ def run_candidate_crash_restart_scenario(
         "reconciled_after_crash": reconciled_after_crash,
         "exact_correlation_proven": exact_correlation_proven,
         "exact_request_hash_proven": exact_request_hash_proven,
+        "no_duplicate_event_proven": no_duplicate_event_proven,
+    }
+
+
+def run_opportunity_crash_restart_scenario(
+    repo_root: Path,
+    persistence_root: Path,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    persistence = Path(persistence_root).resolve()
+
+    crashing = ExactCheckoutMcpHarness(root, persistence)
+    crashing.start(crash_after_handler=_OPPORTUNITY_TOOL)
+    try:
+        investigation_id = _start_synthetic_investigation(
+            crashing,
+            2,
+            account_id="C-V63-CRASH-OPPORTUNITY",
+            name="Synthetic v6.3 Crash Opportunity Buyer",
+            idempotency_key="v63-exact-opportunity-crash-start-0001",
+        )
+        arguments = opportunity_crash_arguments(investigation_id)
+        crashing.crash_tool(3, _OPPORTUNITY_TOOL, arguments)
+    finally:
+        crashing.stop()
+
+    reader = ExactCheckoutPersistenceReader(persistence)
+    pre_restart = reader.normalize_mutation_evidence(investigation_id, _OPPORTUNITY_TOOL)
+    pre_event, pre_wal = _single_evidence_pair(pre_restart)
+    expected_request_sha = canonical_v63_wal_request_sha256(_OPPORTUNITY_TOOL, arguments)
+    durable_snapshot = copy.deepcopy(pre_event.get("result_snapshot"))
+    durable_snapshot_sha = str(pre_event.get("result_snapshot_sha256") or "").strip().lower()
+
+    if pre_event.get("event_type") != _OPPORTUNITY_EVENT:
+        raise RuntimeError("OPPORTUNITY_CRASH_DURABLE_EVENT_MISSING")
+    if pre_wal.get("status") != "PREPARED":
+        raise RuntimeError("OPPORTUNITY_CRASH_PREPARED_WAL_MISSING")
+    if pre_event.get("request_sha256") != expected_request_sha:
+        raise RuntimeError("OPPORTUNITY_CRASH_PRE_RESTART_EVENT_HASH_MISMATCH")
+    if pre_wal.get("request_sha256") != expected_request_sha:
+        raise RuntimeError("OPPORTUNITY_CRASH_PRE_RESTART_WAL_HASH_MISMATCH")
+    if not isinstance(durable_snapshot, dict):
+        raise RuntimeError("OPPORTUNITY_CRASH_RESULT_SNAPSHOT_MISSING")
+    if snapshot_sha256(durable_snapshot) != durable_snapshot_sha:
+        raise RuntimeError("OPPORTUNITY_CRASH_RESULT_SNAPSHOT_HASH_MISMATCH")
+
+    restarted = ExactCheckoutMcpHarness(root, persistence)
+    restarted.start()
+    try:
+        raw_response = restarted.tool(2, _OPPORTUNITY_TOOL, arguments)
+    finally:
+        restarted.stop()
+
+    reconciled_after_crash = _reconciled_meta(raw_response)
+    response = _without_idempotency_keys(raw_response)
+    recovered_business_result = copy.deepcopy(response)
+    if isinstance(recovered_business_result, dict):
+        recovered_business_result.pop("mutation_meta", None)
+
+    post_restart = reader.normalize_mutation_evidence(investigation_id, _OPPORTUNITY_TOOL)
+    post_event, post_wal = _single_evidence_pair(post_restart)
+    no_duplicate_event_proven = bool(
+        pre_restart.get("event_count") == 1
+        and post_restart.get("event_count") == 1
+        and post_event.get("seq") == pre_event.get("seq")
+        and post_event.get("event_type") == _OPPORTUNITY_EVENT
+    )
+    exact_result_snapshot_recovered = bool(
+        recovered_business_result == durable_snapshot
+        and post_event.get("result_snapshot") == durable_snapshot
+        and post_event.get("result_snapshot_sha256") == durable_snapshot_sha
+        and snapshot_sha256(durable_snapshot) == durable_snapshot_sha
+    )
+
+    if post_wal.get("status") != "COMMITTED":
+        raise RuntimeError("OPPORTUNITY_CRASH_RECOVERY_WAL_NOT_COMMITTED")
+    if post_event.get("request_sha256") != expected_request_sha:
+        raise RuntimeError("OPPORTUNITY_CRASH_POST_RESTART_EVENT_HASH_MISMATCH")
+    if post_wal.get("request_sha256") != expected_request_sha:
+        raise RuntimeError("OPPORTUNITY_CRASH_POST_RESTART_WAL_HASH_MISMATCH")
+    if not reconciled_after_crash:
+        raise RuntimeError("OPPORTUNITY_CRASH_RECONCILIATION_NOT_PROVEN")
+    if not exact_result_snapshot_recovered:
+        raise RuntimeError("OPPORTUNITY_CRASH_EXACT_RESULT_RECOVERY_NOT_PROVEN")
+    if not no_duplicate_event_proven:
+        raise RuntimeError("OPPORTUNITY_CRASH_DUPLICATE_EVENT_DETECTED")
+
+    return {
+        "scenario": "opportunity_crash_restart",
+        "tool": _OPPORTUNITY_TOOL,
+        "investigation_id": investigation_id,
+        "response": response,
+        "recovered_business_result": recovered_business_result,
+        "durable_result_snapshot": durable_snapshot,
+        "durable_result_snapshot_sha256": durable_snapshot_sha,
+        "pre_restart_evidence": pre_restart,
+        "post_restart_evidence": post_restart,
+        "reconciled_after_crash": reconciled_after_crash,
+        "exact_result_snapshot_recovered": exact_result_snapshot_recovered,
         "no_duplicate_event_proven": no_duplicate_event_proven,
     }
