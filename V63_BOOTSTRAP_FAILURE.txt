@@ -106,10 +106,10 @@ AssertionError: 'RESOLVE_PREPATCH_BLOCKERS' != 'BIND_EXISTING_PRODUCTION_WAL_AND
 
 
 ----------------------------------------------------------------------
-Ran 830 tests in 23.184s
+Ran 830 tests in 23.458s
 
 FAILED (failures=10, skipped=4)
-BACKUP_DAILY_MUTATION_LATENCY {"first_mutation_seconds": 0.014378316999994922, "second_mutation_seconds": 0.00686526100000151, "snapshot_count": 1}
+BACKUP_DAILY_MUTATION_LATENCY {"first_mutation_seconds": 0.012723346999990781, "second_mutation_seconds": 0.006254180999974324, "snapshot_count": 1}
 Traceback (most recent call last):
   File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tools/v63_bootstrap_expand.py", line 355, in <module>
     raise SystemExit(main())
@@ -120,3 +120,6 @@ Traceback (most recent call last):
     raise RuntimeError(
 RuntimeError: COMMAND_FAILED(1): /opt/hostedtoolcache/Python/3.11.16/x64/bin/python -m unittest discover -s tests -p test_*.py -q
 
+=== V63 PHASE-A DIAGNOSTICS ===
+INTEGRATION_PROBE={"blockers": ["V63_MUTATION_INVENTORY_INCOMPLETE"], "missing_v63": ["append_candidate_discovery", "create_product_opportunity", "promote_opportunity_anchor"], "phase_blockers": ["V63_RUNTIME_FILE_CONFLICT:research_orchestration_hardening.py", "V63_RUNTIME_FILE_CONFLICT:v6.py"], "plan_status": null, "safe_to_apply": true, "status": "BLOCKED_PREPATCH"}
+STATIC_PIPELINE={"phase_a_blockers": ["V63_RUNTIME_FILE_CONFLICT:research_orchestration_hardening.py", "V63_RUNTIME_FILE_CONFLICT:v6.py"], "phase_a_status": "BLOCKED_PREPATCH", "plan_blockers": null, "plan_status": null, "preflight": null, "remaining_gates": ["V63_RUNTIME_FILE_CONFLICT:research_orchestration_hardening.py", "V63_RUNTIME_FILE_CONFLICT:v6.py"], "status": "BLOCKED_PHASE_A"}
