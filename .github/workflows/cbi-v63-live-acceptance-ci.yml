@@ -127,6 +127,7 @@ jobs:
           expected = {
               "V63_EXACT_CHECKOUT_BACKEND_CORRELATION.json",
               "V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json",
+              "V63_EXACT_CHECKOUT_RECOVERY_OVERLAY.json",
               "V63_EXACT_CHECKOUT_ACCEPTANCE.json",
           }
           actual = {path.name for path in root.iterdir() if path.is_file()}
@@ -141,6 +142,8 @@ jobs:
               raise SystemExit("BACKEND_VALIDATION_NOT_VERIFIED")
           if (acceptance.get("recovery_validation") or {}).get("verified") is not True:
               raise SystemExit("RECOVERY_VALIDATION_NOT_VERIFIED")
+          if (acceptance.get("recovery_overlay_validation") or {}).get("verified") is not True:
+              raise SystemExit("RECOVERY_OVERLAY_VALIDATION_NOT_VERIFIED")
           print("EXACT_CHECKOUT_ARTIFACT_INVENTORY_VERIFIED")
           PY
 
@@ -153,6 +156,7 @@ jobs:
           path: |
             ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_BACKEND_CORRELATION.json
             ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json
+            ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_RECOVERY_OVERLAY.json
             ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_ACCEPTANCE.json
 
       - name: Confirm exact-checkout isolation boundary
