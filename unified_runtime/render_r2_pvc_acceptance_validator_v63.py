@@ -72,6 +72,7 @@ def _validate_health(
     health: Any,
     *,
     label: str,
+    require_v2: bool = True,
 ) -> tuple[str, dict[str, Any]]:
     row = _mapping(health)
     identity = _mapping(row.get("deployment_identity"))
@@ -86,8 +87,14 @@ def _validate_health(
         _append(blockers, f"DEPLOYMENT_SHA_PIN_NOT_REQUIRED:{label}")
     if str(identity.get("object_store_mode") or "").lower() != "r2":
         _append(blockers, f"R2_OBJECT_STORE_MODE_INVALID:{label}")
-    if identity.get("object_state_schema") != _OBJECT_STATE_SCHEMA_V2:
-        _append(blockers, f"R2_OBJECT_STATE_SCHEMA_INVALID:{label}")
+    object_state_schema = identity.get("object_state_schema")
+    if require_v2:
+        if object_state_schema != _OBJECT_STATE_SCHEMA_V2:
+            _append(blockers, f"R2_OBJECT_STATE_SCHEMA_INVALID:{label}")
+    elif object_state_schema != _OBJECT_STATE_SCHEMA_V2:
+        restore_source = str(identity.get("restore_source") or "").strip()
+        if object_state_schema is not None or restore_source != "migration_v1":
+            _append(blockers, f"R2_OBJECT_STATE_SCHEMA_INVALID:{label}")
     generation = identity.get("object_state_generation")
     if not _valid_nonnegative_int(generation):
         persistence = _mapping(row.get("object_store_persistence"))
@@ -251,13 +258,18 @@ def validate_v63_render_r2_pvc_acceptance(receipt: Any) -> dict[str, Any]:
 
     _validate_profile(blockers, row)
     before_sha, before_identity = _validate_health(
-        blockers, row.get("health_before"), label="before"
+        blockers, row.get("health_before"), label="before", require_v2=False
     )
     after_sha, after_identity = _validate_health(
         blockers, row.get("health_after"), label="after"
     )
     if before_sha and after_sha and before_sha != after_sha:
         _append(blockers, "DEPLOYMENT_GIT_SHA_CHANGED_AFTER_RESTORE")
+
+    if before_identity.get("object_state_schema") != _OBJECT_STATE_SCHEMA_V2:
+        evidence_before = _mapping(row.get("evidence_before"))
+        if evidence_before.get("archive_format") != "object_state_v2":
+            _append(blockers, "R2_EVIDENCE_BEFORE_ARCHIVE_FORMAT_INVALID")
 
     _validate_replacement(blockers, row, before_identity, after_identity)
 
