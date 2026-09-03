@@ -1,4 +1,4 @@
-name: CBI v6.3 exact-checkout live acceptance TDD
+name: CBI v6.3 exact-checkout live acceptance release gate
 
 on:
   push:
@@ -13,9 +13,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  tdd:
+  python310-compatibility:
+    name: Python 3.10 exact-checkout compatibility
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.10'
+
+      - name: Run Python 3.10 exact-checkout compatibility
+        run: |
+          python -m unittest -v \
+            tests.test_v63_exact_checkout_live_acceptance_producer \
+            tests.test_v63_exact_checkout_cli_contract
+
+      - name: Compile exact-checkout modules on Python 3.10
+        run: |
+          python -m py_compile \
+            unified_runtime/exact_checkout_live_acceptance_producer_v63.py \
+            unified_runtime/exact_checkout_mcp_harness_v63.py \
+            unified_runtime/exact_checkout_persistence_reader_v63.py \
+            unified_runtime/exact_checkout_acceptance_orchestrator_v63.py \
+            unified_runtime/exact_checkout_live_recovery_extra_v63.py \
+            scripts/run_v63_exact_checkout_live_acceptance.py
+
+  release:
+    name: Linux Python 3.11 exact-checkout release gate
+    needs: python310-compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout feature branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -27,36 +60,103 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run exact-checkout producer targeted tests when present
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -f tests/test_v63_exact_checkout_live_acceptance_producer.py ]; then
-            python -m unittest -v tests.test_v63_exact_checkout_live_acceptance_producer
-          else
-            echo 'producer TDD test file not present yet; workflow bootstrap pass'
-          fi
+      - name: Run exact-checkout producer targeted tests
+        run: python -m unittest -v tests.test_v63_exact_checkout_live_acceptance_producer
 
       - name: Run v6.3 regression
         run: python -m unittest discover -s tests -p 'test_v63_*.py' -q
 
-      - name: Syntax-check current exact-checkout modules
+      - name: Run full repository regression
+        run: python -m unittest discover -s tests -p 'test_*.py' -q
+
+      - name: Run v6 protocol test
+        run: python mcp/v6_protocol_test.py
+
+      - name: Run v6.1 hardening protocol test
+        run: python mcp/v61_hardening_protocol_test.py
+
+      - name: Check diff and compile exact-checkout modules
         shell: bash
         run: |
           set -euo pipefail
-          files=()
-          for f in \
+          git diff --check
+          python -m py_compile \
             unified_runtime/exact_checkout_live_acceptance_producer_v63.py \
             unified_runtime/exact_checkout_mcp_harness_v63.py \
-            scripts/run_v63_exact_checkout_live_acceptance.py; do
-            if [ -f "$f" ]; then files+=("$f"); fi
-          done
-          if [ "${#files[@]}" -gt 0 ]; then
-            python -m py_compile "${files[@]}"
-          fi
+            unified_runtime/exact_checkout_persistence_reader_v63.py \
+            unified_runtime/exact_checkout_acceptance_orchestrator_v63.py \
+            unified_runtime/exact_checkout_adversarial_scenarios_v63.py \
+            unified_runtime/exact_checkout_adversarial_duplicate_v63.py \
+            unified_runtime/exact_checkout_adversarial_idempotency_v63.py \
+            unified_runtime/exact_checkout_crash_scenarios_v63.py \
+            unified_runtime/exact_checkout_live_recovery_extra_v63.py \
+            scripts/run_v63_exact_checkout_live_acceptance.py
 
-      - name: Confirm no deployment occurs in this workflow
+      - name: Verify production branch baseline is unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='ba3bffdae13cef186b20b50335c3207fb3390ec6'
+          actual="$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)"
+          if [ "$actual" != "$expected" ]; then
+            echo "PRODUCTION_BRANCH_CHANGED expected=$expected actual=$actual" >&2
+            exit 1
+          fi
+          echo "PRODUCTION_BRANCH_UNCHANGED=$actual"
+
+      - name: Execute exact-checkout live acceptance CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/v63-exact-checkout-artifacts"
+          python scripts/run_v63_exact_checkout_live_acceptance.py \
+            --expected-git-sha "$GITHUB_SHA" \
+            --output-dir "$RUNNER_TEMP/v63-exact-checkout-artifacts"
+
+      - name: Verify exact artifact inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/v63-exact-checkout-artifacts"
+          python - "$artifact_dir" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          expected = {
+              "V63_EXACT_CHECKOUT_BACKEND_CORRELATION.json",
+              "V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json",
+              "V63_EXACT_CHECKOUT_ACCEPTANCE.json",
+          }
+          actual = {path.name for path in root.iterdir() if path.is_file()}
+          if actual != expected:
+              raise SystemExit(f"ARTIFACT_INVENTORY_MISMATCH expected={sorted(expected)} actual={sorted(actual)}")
+          acceptance = json.loads((root / "V63_EXACT_CHECKOUT_ACCEPTANCE.json").read_text(encoding="utf-8"))
+          if acceptance.get("production_ready") is not False:
+              raise SystemExit("EXACT_CHECKOUT_MUST_NOT_MARK_PRODUCTION_READY")
+          if acceptance.get("render_r2_acceptance_required") is not True:
+              raise SystemExit("RENDER_R2_ACCEPTANCE_REQUIREMENT_MISSING")
+          if (acceptance.get("backend_validation") or {}).get("verified") is not True:
+              raise SystemExit("BACKEND_VALIDATION_NOT_VERIFIED")
+          if (acceptance.get("recovery_validation") or {}).get("verified") is not True:
+              raise SystemExit("RECOVERY_VALIDATION_NOT_VERIFIED")
+          print("EXACT_CHECKOUT_ARTIFACT_INVENTORY_VERIFIED")
+          PY
+
+      - name: Upload exact-checkout acceptance receipts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v63-exact-checkout-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_BACKEND_CORRELATION.json
+            ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json
+            ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_ACCEPTANCE.json
+
+      - name: Confirm exact-checkout isolation boundary
         run: |
           python - <<'PY'
-          print('EXACT_CHECKOUT_TDD_ONLY: no production branch update, no Render deploy, no R2 mutation')
+          print('EXACT_CHECKOUT_ONLY: production mutation disabled; Render/R2 execution remains out of scope')
           PY
