@@ -5,7 +5,7 @@ services:
     repo: https://github.com/Scorp96/customs-buyer-intelligence-ledger
     branch: cbi-v6-3-demand-expansion
     region: singapore
-    plan: 0.5c-512mb
+    plan: free
     dockerfilePath: ./deploy/cloud/Dockerfile
     dockerContext: .
     dockerCommand: python -B -Xutf8 mcp/render_bootstrap.py
