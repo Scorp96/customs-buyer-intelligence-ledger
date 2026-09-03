@@ -86,9 +86,7 @@ class V63ProductionGateTests(unittest.TestCase):
                     },
                 },
             },
-            "render_deploy_verified": True,
-            "r2_restore_verified": True,
-            "real_pvc_acceptance_verified": True,
+            "render_r2_pvc_acceptance_verified": True,
             "exact_v63_recovery_acceptance_verified": True,
             "live_v63_backend_correlation_acceptance_verified": True,
             "live_v63_backend_correlation_acceptance_snapshot_sha256": "a" * 64,
@@ -101,9 +99,7 @@ class V63ProductionGateTests(unittest.TestCase):
         result = evaluate_v63_production_gate({
             "health": {"status": "READY", "runtime_version": "6.1.0", "mutation_wal": {"prepared_count": 0, "reconciliation_required": False, "guarded_mutation_tools": []}},
             "contract": {},
-            "render_deploy_verified": False,
-            "r2_restore_verified": False,
-            "real_pvc_acceptance_verified": False,
+            "render_r2_pvc_acceptance_verified": False,
         })
         self.assertFalse(result["production_ready"])
         self.assertIn("V62_ORCHESTRATION_NOT_LIVE", result["blockers"])
@@ -122,7 +118,6 @@ class V63ProductionGateTests(unittest.TestCase):
         result = evaluate_v63_production_gate(payload)
         self.assertFalse(result["production_ready"])
         self.assertIn("V63_MUTATION_WAL_INVENTORY_INCOMPLETE", result["blockers"])
-
 
     def test_v63_mutation_in_unreconciled_inventory_blocks_release(self):
         payload = self.healthy_payload()
@@ -144,8 +139,6 @@ class V63ProductionGateTests(unittest.TestCase):
         result = evaluate_v63_production_gate(payload)
         self.assertFalse(result["production_ready"])
         self.assertIn("V63_PRODUCTION_WAL_NOT_BOUND", result["blockers"])
-
-
 
     def test_runtime_durable_backend_must_be_bound_to_existing_store(self):
         payload = self.healthy_payload()
@@ -184,14 +177,12 @@ class V63ProductionGateTests(unittest.TestCase):
         self.assertFalse(result["production_ready"])
         self.assertIn("V63_PRODUCTION_RECOVERY_MAPPING_INVALID", result["blockers"])
 
-
     def test_exact_v63_recovery_acceptance_is_required(self):
         payload = self.healthy_payload()
         payload["exact_v63_recovery_acceptance_verified"] = False
         result = evaluate_v63_production_gate(payload)
         self.assertFalse(result["production_ready"])
         self.assertIn("V63_EXACT_RECOVERY_ACCEPTANCE_NOT_VERIFIED", result["blockers"])
-
 
     def test_live_backend_correlation_acceptance_is_required(self):
         payload = self.healthy_payload()
@@ -200,14 +191,12 @@ class V63ProductionGateTests(unittest.TestCase):
         self.assertFalse(result["production_ready"])
         self.assertIn("V63_LIVE_BACKEND_CORRELATION_ACCEPTANCE_NOT_VERIFIED", result["blockers"])
 
-
     def test_live_backend_correlation_acceptance_must_match_current_source_snapshot(self):
         payload = self.healthy_payload()
         payload["current_production_source_snapshot_sha256"] = "b" * 64
         result = evaluate_v63_production_gate(payload)
         self.assertFalse(result["production_ready"])
         self.assertIn("V63_BACKEND_CORRELATION_ACCEPTANCE_SOURCE_DRIFT", result["blockers"])
-
 
     def test_recovery_overlay_binding_must_be_live_on_active_production_chain(self):
         payload = self.healthy_payload()
@@ -230,18 +219,12 @@ class V63ProductionGateTests(unittest.TestCase):
         self.assertFalse(result["production_ready"])
         self.assertIn("V63_RECOVERY_OVERLAY_ACCEPTANCE_SOURCE_DRIFT", result["blockers"])
 
-    def test_external_render_r2_and_real_pvc_acceptance_are_required(self):
-        for field, blocker in (
-            ("render_deploy_verified", "RENDER_DEPLOY_NOT_VERIFIED"),
-            ("r2_restore_verified", "R2_RESTORE_NOT_VERIFIED"),
-            ("real_pvc_acceptance_verified", "REAL_PVC_ACCEPTANCE_NOT_VERIFIED"),
-        ):
-            with self.subTest(field=field):
-                payload = self.healthy_payload()
-                payload[field] = False
-                result = evaluate_v63_production_gate(payload)
-                self.assertFalse(result["production_ready"])
-                self.assertIn(blocker, result["blockers"])
+    def test_render_r2_pvc_acceptance_is_required(self):
+        payload = self.healthy_payload()
+        payload["render_r2_pvc_acceptance_verified"] = False
+        result = evaluate_v63_production_gate(payload)
+        self.assertFalse(result["production_ready"])
+        self.assertIn("V63_RENDER_R2_PVC_ACCEPTANCE_NOT_VERIFIED", result["blockers"])
 
     def test_unsafe_live_correlation_preconditions_block_release(self):
         payload = self.healthy_payload()
