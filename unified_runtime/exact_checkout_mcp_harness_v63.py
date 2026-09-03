@@ -161,7 +161,40 @@ class ExactCheckoutMcpHarness:
         name: str,
         arguments: dict[str, Any],
     ) -> None:
-        raise RuntimeError("MCP_CRASH_TOOL_NOT_IMPLEMENTED")
+        process = self._process
+        if process is None or process.poll() is not None:
+            raise RuntimeError("MCP_PROCESS_NOT_RUNNING")
+        if process.stdin is None or process.stdout is None:
+            raise RuntimeError("MCP_PROCESS_STDIO_NOT_AVAILABLE")
+
+        process.stdin.write(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                },
+                ensure_ascii=True,
+            )
+            + "\n"
+        )
+        process.stdin.flush()
+
+        line = process.stdout.readline()
+        if line != "":
+            raise RuntimeError(
+                f"MCP_CRASH_TOOL_UNEXPECTED_RESPONSE[{name}]: {line.rstrip()}"
+            )
+        try:
+            returncode = process.wait(timeout=10)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"MCP_CRASH_TOOL_EXIT_TIMEOUT[{name}]") from exc
+        if returncode != 91:
+            stderr = process.stderr.read() if process.stderr is not None else ""
+            raise RuntimeError(
+                f"MCP_CRASH_TOOL_WRONG_EXIT[{name}]: expected=91 actual={returncode} stderr={stderr}"
+            )
 
     def stop(self) -> None:
         process = self._process
