@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from unified_runtime.core import SessionStore
+from unified_runtime.core import SessionStore, canonical_json, digest
 
 
 MODULE = "unified_runtime.exact_checkout_persistence_reader_v63"
@@ -92,6 +92,88 @@ class V63ExactCheckoutPersistenceReaderTests(unittest.TestCase):
             self.assertEqual(rows[0]["request_sha256"], "b" * 64)
             self.assertEqual(rows[0]["mutation_correlation_id"], "MUTCORR-reader-0001")
             serialized = json.dumps(rows, sort_keys=True)
+            self.assertNotIn(raw_key, serialized)
+            self.assertNotIn('"idempotency_key"', serialized)
+
+    def test_normalizes_correlation_request_hash_snapshot_and_counts_without_raw_key(self):
+        module = self._module()
+        with tempfile.TemporaryDirectory() as td:
+            persistence_root = Path(td)
+            session_root = persistence_root / "sessions"
+            store = SessionStore(session_root)
+            first = store.create({"investigation_id": INVESTIGATION_ID})
+            correlation_id = "MUTCORR-reader-opportunity-0001"
+            request_sha = "c" * 64
+            snapshot = {
+                "status": "CREATED",
+                "opportunity_id": "OPP-READER-1",
+            }
+            snapshot_sha = "d" * 64
+            second = store.append(
+                INVESTIGATION_ID,
+                "V63_PRODUCT_OPPORTUNITY_CREATED",
+                {
+                    "investigation_id": INVESTIGATION_ID,
+                    "request_sha256": request_sha,
+                    "result_snapshot": snapshot,
+                    "result_snapshot_sha256": snapshot_sha,
+                },
+            )
+            second["mutation_correlation"] = {
+                "schema": "cbi.mutation-correlation.v6.1",
+                "correlation_id": correlation_id,
+                "tool": "create_product_opportunity",
+            }
+            second["event_hash"] = digest(
+                {key: value for key, value in second.items() if key != "event_hash"}
+            )
+            store.path(INVESTIGATION_ID).write_text(
+                canonical_json(first) + "\n" + canonical_json(second) + "\n",
+                encoding="utf-8",
+            )
+
+            raw_key = "secret-opportunity-idempotency-key-0001"
+            wal_root = persistence_root / "mcp-idempotency-v61"
+            wal_root.mkdir(parents=True)
+            (wal_root / "opportunity.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "cbi.mcp-mutation-wal.v6.1",
+                        "status": "COMMITTED",
+                        "tool": "create_product_opportunity",
+                        "idempotency_key": raw_key,
+                        "request_sha256": request_sha,
+                        "mutation_correlation_id": correlation_id,
+                        "result": {
+                            **snapshot,
+                            "mutation_meta": {"idempotency_key": raw_key},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            reader = module.ExactCheckoutPersistenceReader(persistence_root)
+            evidence = reader.normalize_mutation_evidence(
+                INVESTIGATION_ID,
+                "create_product_opportunity",
+            )
+
+            self.assertEqual(evidence["event_count"], 1)
+            self.assertEqual(evidence["wal_record_count"], 1)
+            self.assertEqual(evidence["events"][0]["seq"], 2)
+            self.assertEqual(
+                evidence["events"][0]["event_type"],
+                "V63_PRODUCT_OPPORTUNITY_CREATED",
+            )
+            self.assertEqual(evidence["events"][0]["correlation_id"], correlation_id)
+            self.assertEqual(evidence["events"][0]["request_sha256"], request_sha)
+            self.assertEqual(evidence["events"][0]["result_snapshot"], snapshot)
+            self.assertEqual(
+                evidence["events"][0]["result_snapshot_sha256"],
+                snapshot_sha,
+            )
+            serialized = json.dumps(evidence, sort_keys=True)
             self.assertNotIn(raw_key, serialized)
             self.assertNotIn('"idempotency_key"', serialized)
 
