@@ -78,6 +78,23 @@ jobs:
           assert identity.get("git_sha_source") == "RENDER_GIT_COMMIT", safe
           assert identity.get("remote_entrypoint") == "mcp/server_v61_remote.py", safe
           assert identity.get("runtime_entrypoint") == "mcp/server_v61_backup_recovery.py", safe
-          assert identity.get("object_store_mode") in {"r2", "s3"}, safe
-          assert identity.get("object_state_schema") == "cbi.object-store-state.v2", safe
+          assert identity.get("object_store_mode") == "r2", safe
+
+          schema = identity.get("object_state_schema")
+          restore_source = identity.get("restore_source")
+          generation = identity.get("object_state_generation")
+          restore_generation = identity.get("restore_generation")
+          assert schema in {
+              "cbi.object-store-state.v1",
+              "cbi.object-store-state.v2",
+          }, safe
+          assert isinstance(generation, int) and not isinstance(generation, bool) and generation >= 0, safe
+          if schema == "cbi.object-store-state.v1":
+              assert restore_source == "object_state_v1", safe
+              assert restore_generation == generation, safe
+              print("LIVE_RECOVERY_POINTER_STATE=LEGACY_V1_READABLE_MIGRATION_PENDING")
+          else:
+              assert restore_source == "object_state_v2", safe
+              assert restore_generation == generation, safe
+              print("LIVE_RECOVERY_POINTER_STATE=V2")
           PY
