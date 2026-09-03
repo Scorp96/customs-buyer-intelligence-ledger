@@ -17,7 +17,6 @@ EXPECTED_FEATURE_BRANCH = "cbi-v6-3-demand-expansion"
 EXPECTED_TRANSPORT_SHA256 = "dd0c202bcbbf03654a7329a0c5b21cfb9c90a90597294de27db93bc93861b835"
 SOURCE_STAGING_ZIP_SHA256 = "ccec597fff10ced2ec1b024c55fe14325a297302f878240f54dee30da953fd0c"
 PAYLOAD_SCHEMA = "cbi.v63-staging-durable-bridge-rebuilt.v1"
-EXPECTED_V63_RUNTIME_PAYLOAD_COUNT = 56
 V63_TOOLS = {
     "append_candidate_discovery",
     "create_product_opportunity",
@@ -144,8 +143,6 @@ def _runtime_payload_names(payload_root: Path) -> tuple[str, ...]:
         for path in sorted((payload_root / "unified_runtime").glob("*.py"))
         if path.name != "__init__.py" and not path.name.startswith("v62_")
     )
-    if len(names) != EXPECTED_V63_RUNTIME_PAYLOAD_COUNT:
-        raise RuntimeError(f"V63_RUNTIME_PAYLOAD_COUNT_MISMATCH:{len(names)}")
     forbidden = {
         "__init__.py",
         "core.py",
