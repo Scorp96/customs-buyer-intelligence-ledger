@@ -172,6 +172,7 @@ def run_v63_render_r2_pvc_acceptance(
             {
                 "investigation_id": investigation_id,
                 "product_profile_id": "PVC",
+                "geography": "Synthetic",
             },
         )
     )
