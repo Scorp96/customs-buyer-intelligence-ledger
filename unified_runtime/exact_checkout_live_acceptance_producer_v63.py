@@ -70,6 +70,36 @@ def _build_ready_source_snapshot(repo_root: Path) -> dict[str, Any]:
     return snapshot
 
 
+def _assert_source_snapshot_unchanged(
+    repo_root: Path,
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        raise RuntimeError("SOURCE_SNAPSHOT_DRIFT: invalid original snapshot")
+    snapshot_sha = str(snapshot.get("snapshot_sha256") or "").strip().lower()
+    if not _SHA256_RE.fullmatch(snapshot_sha):
+        raise RuntimeError("SOURCE_SNAPSHOT_DRIFT: invalid original snapshot sha")
+    validation = production_source_snapshot_v63.validate_v63_production_source_snapshot(
+        Path(repo_root).resolve(),
+        snapshot,
+    )
+    if not isinstance(validation, dict) or validation.get("valid") is not True:
+        details: list[str] = []
+        if isinstance(validation, dict):
+            details.extend(str(item) for item in validation.get("blockers") or [])
+            details.extend(
+                f"DRIFTED:{item}" for item in validation.get("drifted_files") or []
+            )
+            details.extend(
+                f"MISSING:{item}" for item in validation.get("missing_files") or []
+            )
+            if validation.get("entrypoint_changed") is True:
+                details.append("ENTRYPOINT_CHANGED")
+        detail = ":" + ",".join(details) if details else ""
+        raise RuntimeError(f"SOURCE_SNAPSHOT_DRIFT{detail}")
+    return validation
+
+
 def run_v63_exact_checkout_live_acceptance(
     config: ExactCheckoutAcceptanceConfig,
 ) -> dict[str, Any]:
