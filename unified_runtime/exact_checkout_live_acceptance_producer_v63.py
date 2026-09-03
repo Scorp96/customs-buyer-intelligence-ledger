@@ -480,6 +480,14 @@ def run_v63_exact_checkout_live_acceptance(
 ) -> dict[str, Any]:
     if not isinstance(config, ExactCheckoutAcceptanceConfig):
         raise TypeError("config must be ExactCheckoutAcceptanceConfig")
-    _assert_expected_git_sha(config)
-    _build_ready_source_snapshot(config.repo_root)
-    raise RuntimeError("ACCEPTANCE_EXECUTION_NOT_IMPLEMENTED")
+    git_sha = _assert_expected_git_sha(config)
+    source_snapshot = _build_ready_source_snapshot(config.repo_root)
+    from .exact_checkout_acceptance_orchestrator_v63 import (
+        run_exact_checkout_acceptance_orchestration,
+    )
+    return run_exact_checkout_acceptance_orchestration(
+        repo_root=config.repo_root,
+        git_sha=git_sha,
+        output_dir=config.output_dir,
+        source_snapshot=source_snapshot,
+    )
