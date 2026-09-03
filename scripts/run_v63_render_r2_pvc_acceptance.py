@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from typing import Any
@@ -20,6 +23,7 @@ if str(ROOT) not in sys.path:
 
 from mcp.object_store_persistence import S3CompatibleClient, S3Config
 from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
+from unified_runtime.exact_checkout_mcp_harness_v63 import ExactCheckoutMcpHarness
 from unified_runtime.exact_checkout_persistence_reader_v63 import ExactCheckoutPersistenceReader
 from unified_runtime.render_r2_acceptance_client_v63 import (
     RenderR2AcceptanceClient,
@@ -113,6 +117,104 @@ def _checkout_sha() -> str:
     if completed.returncode != 0 or _GIT_SHA_RE.fullmatch(value) is None:
         raise RuntimeError("CHECKOUT_GIT_SHA_UNAVAILABLE")
     return value
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _build_quiescent_synthetic_migration_archive(
+    live_root: Path,
+    destination: Path,
+) -> Path:
+    source = Path(live_root).expanduser().resolve()
+    root = destination / "cbi-cloud-runtime"
+    root.mkdir(parents=True)
+    for component in ("sessions", "mcp-idempotency-v61"):
+        component_source = source / component
+        if component_source.is_dir():
+            shutil.copytree(component_source, root / component)
+    if not (root / "sessions").is_dir():
+        raise RuntimeError("SYNTHETIC_R2_SEED_SESSIONS_MISSING")
+
+    payload = {
+        path.relative_to(root).as_posix(): _sha256_file(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+    manifest = {
+        "schema": "cbi.cloud-runtime-export.v1",
+        "hash_chains_valid": True,
+        "activation_ready": True,
+        "pre_archive_quiescence_check": True,
+        "payload_files": payload,
+        "source_durable_fingerprint_sha256": "0" * 64,
+    }
+    (root / "export-manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    archive = destination / "migration.tar.gz"
+    with tarfile.open(archive, "w:gz", format=tarfile.PAX_FORMAT) as tf:
+        tf.add(root, arcname="cbi-cloud-runtime", recursive=True)
+    return archive
+
+
+def _ensure_disposable_r2_baseline(
+    *,
+    manager: RecoveryObjectStoreStateManagerV63,
+    checkout_root: Path,
+) -> dict[str, Any]:
+    """Seed an empty isolated namespace once; never replace existing authority."""
+
+    pointer = manager.read_pointer(required=False)
+    if pointer is not None:
+        return {
+            "seeded": False,
+            "generation": pointer.generation,
+            "archive_format": pointer.archive_format,
+        }
+
+    with tempfile.TemporaryDirectory(prefix="cbi-v63-external-r2-seed-") as tmp_name:
+        tmp = Path(tmp_name)
+        live_root = tmp / "live"
+        harness = ExactCheckoutMcpHarness(Path(checkout_root).resolve(), live_root)
+        harness.start()
+        try:
+            started = harness.tool(
+                2,
+                "start_investigation",
+                {
+                    "account": {
+                        "account_id": "C-V63-EXTERNAL-SEED",
+                        "country": "Synthetic",
+                        "name": "Synthetic v6.3 External Acceptance Seed",
+                    },
+                    "mode": "EXHAUSTIVE",
+                    "history": {"events": []},
+                    "network_policy": {"closure_strategy": "DECISION_SATURATION"},
+                    "idempotency_key": "v63-external-seed-start-0001",
+                },
+            )
+            if not str(started.get("investigation_id") or "").strip():
+                raise RuntimeError("SYNTHETIC_R2_SEED_INVESTIGATION_MISSING")
+        finally:
+            harness.stop()
+
+        migration_dir = tmp / "migration"
+        migration_dir.mkdir()
+        archive = _build_quiescent_synthetic_migration_archive(live_root, migration_dir)
+        pointer = manager.seed_migration_archive(archive, _sha256_file(archive))
+
+    return {
+        "seeded": True,
+        "generation": pointer.generation,
+        "archive_format": pointer.archive_format,
+    }
 
 
 def _extract_deployment_id(value: Any) -> str:
@@ -292,6 +394,18 @@ def _run_external(
     if not prefix or "production" in prefix.casefold():
         raise RuntimeError("R2_ACCEPTANCE_PREFIX_NOT_ISOLATED")
 
+    object_client = S3CompatibleClient(
+        S3Config(
+            endpoint=configuration["CBI_V63_R2_ENDPOINT"],
+            bucket=configuration["CBI_V63_R2_BUCKET"],
+            access_key_id=configuration["CBI_V63_R2_ACCESS_KEY_ID"],
+            secret_access_key=configuration["CBI_V63_R2_SECRET_ACCESS_KEY"],
+            region=configuration["CBI_V63_R2_REGION"],
+        )
+    )
+    seed_manager = RecoveryObjectStoreStateManagerV63(object_client, prefix=prefix)
+    _ensure_disposable_r2_baseline(manager=seed_manager, checkout_root=ROOT)
+
     initial_deployment_id = _trigger_render_hook(
         configuration["CBI_V63_RENDER_DEPLOY_HOOK_URL"],
         "RENDER_DEPLOY",
@@ -306,15 +420,6 @@ def _run_external(
     )
     _poll_pinned_health(client, timeout_seconds=poll_timeout_seconds)
 
-    object_client = S3CompatibleClient(
-        S3Config(
-            endpoint=configuration["CBI_V63_R2_ENDPOINT"],
-            bucket=configuration["CBI_V63_R2_BUCKET"],
-            access_key_id=configuration["CBI_V63_R2_ACCESS_KEY_ID"],
-            secret_access_key=configuration["CBI_V63_R2_SECRET_ACCESS_KEY"],
-            region=configuration["CBI_V63_R2_REGION"],
-        )
-    )
     controller = RenderR2ExternalReplacementController(
         object_client=object_client,
         prefix=prefix,
