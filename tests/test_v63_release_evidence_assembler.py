@@ -1,11 +1,16 @@
 import copy
 import unittest
 
+from tests.test_v63_render_r2_pvc_acceptance import (
+    _FakeAcceptanceClient,
+    _FakeReplacementController,
+)
 from unified_runtime.backend_correlation_acceptance_v63 import REQUIRED_V63_BACKEND_CORRELATION_SCENARIOS
 from unified_runtime.contract_v63 import build_v63_contract
 from unified_runtime.recovery_acceptance_v63 import run_v63_reference_recovery_acceptance
 from unified_runtime.recovery_overlay_acceptance_v63 import REQUIRED_V63_RECOVERY_OVERLAY_SCENARIOS
 from unified_runtime.release_evidence_v63 import evaluate_v63_release_evidence_bundle
+from unified_runtime.render_r2_pvc_acceptance_v63 import run_v63_render_r2_pvc_acceptance
 
 
 V63_MUTATIONS = [
@@ -126,34 +131,19 @@ class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
             ],
         }
 
-    def _render_report(self, sha="a" * 64):
-        return {
-            "schema": "cbi.v63-render-deploy-evidence.v1",
-            "verified": True,
-            "production_source_snapshot_sha256": sha,
-            "production_service_observed": True,
-            "runtime_contract_observed": True,
-        }
-
-    def _r2_report(self, sha="a" * 64):
-        return {
-            "schema": "cbi.v63-r2-restore-evidence.v1",
-            "verified": True,
-            "production_source_snapshot_sha256": sha,
-            "restore_roundtrip_passed": True,
-            "append_only_state_preserved": True,
-        }
-
-    def _real_pvc_report(self, sha="a" * 64):
-        return {
-            "schema": "cbi.v63-real-pvc-acceptance-evidence.v1",
-            "verified": True,
-            "production_source_snapshot_sha256": sha,
-            "product_profile_id": "PVC",
-            "real_customs_seed": True,
-            "synthetic_seed": False,
-            "demand_expansion_pipeline_exercised": True,
-        }
+    def _render_r2_pvc_receipt(self, *, real_render=True):
+        client = _FakeAcceptanceClient()
+        controller = _FakeReplacementController(client)
+        receipt = run_v63_render_r2_pvc_acceptance(client, controller)
+        if real_render:
+            receipt = copy.deepcopy(receipt)
+            receipt["replacement"]["instance_before"] = "dep-render-release-a"
+            receipt["replacement"]["instance_after"] = "dep-render-release-b"
+            for phase in ("health_before", "health_after"):
+                identity = receipt[phase]["deployment_identity"]
+                identity["remote_entrypoint"] = "mcp/server_v61_remote.py"
+                identity["runtime_entrypoint"] = "mcp/server_v61_backup_recovery.py"
+        return receipt
 
     def _exact_live_report(self, sha="a" * 64):
         report = copy.deepcopy(run_v63_reference_recovery_acceptance())
@@ -173,20 +163,16 @@ class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
             "exact_recovery_acceptance_report": self._exact_live_report(),
             "backend_correlation_acceptance_report": self._backend_report(),
             "recovery_overlay_acceptance_report": self._recovery_overlay_report(),
-            "render_deploy_verified": True,
-            "r2_restore_verified": True,
-            "real_pvc_acceptance_verified": True,
-            "render_deploy_evidence_report": self._render_report(),
-            "r2_restore_evidence_report": self._r2_report(),
-            "real_pvc_acceptance_evidence_report": self._real_pvc_report(),
+            "render_r2_pvc_acceptance_report": self._render_r2_pvc_receipt(),
         }
 
     def test_complete_evidence_bundle_produces_production_ready(self):
         result = evaluate_v63_release_evidence_bundle(self._bundle())
-        self.assertTrue(result["production_ready"])
+        self.assertTrue(result["production_ready"], result)
         self.assertTrue(result["component_validations"]["exact_recovery"]["verified"])
         self.assertTrue(result["component_validations"]["backend_correlation"]["verified"])
         self.assertTrue(result["component_validations"]["recovery_overlay"]["verified"])
+        self.assertTrue(result["component_validations"]["render_r2_pvc_acceptance"]["verified"])
         self.assertEqual(result["production_gate"]["status"], "PRODUCTION_READY")
 
     def test_user_supplied_verified_booleans_cannot_override_failed_backend_report(self):
@@ -216,29 +202,34 @@ class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
         self.assertFalse(result["component_validations"]["exact_recovery"]["verified"])
         self.assertIn("V63_EXACT_RECOVERY_ACCEPTANCE_NOT_VERIFIED", result["production_gate"]["blockers"])
 
-    def test_caller_external_verified_booleans_cannot_replace_missing_evidence_reports(self):
+    def test_caller_verified_boolean_cannot_replace_missing_render_r2_pvc_receipt(self):
         bundle = self._bundle()
-        bundle.pop("render_deploy_evidence_report")
-        bundle.pop("r2_restore_evidence_report")
-        bundle.pop("real_pvc_acceptance_evidence_report")
-        bundle["render_deploy_verified"] = True
-        bundle["r2_restore_verified"] = True
-        bundle["real_pvc_acceptance_verified"] = True
+        bundle.pop("render_r2_pvc_acceptance_report")
+        bundle["render_r2_pvc_acceptance_verified"] = True
         result = evaluate_v63_release_evidence_bundle(bundle)
         self.assertFalse(result["production_ready"])
-        self.assertFalse(result["component_validations"]["render_deploy"]["verified"])
-        self.assertFalse(result["component_validations"]["r2_restore"]["verified"])
-        self.assertFalse(result["component_validations"]["real_pvc_acceptance"]["verified"])
-        self.assertIn("RENDER_DEPLOY_NOT_VERIFIED", result["production_gate"]["blockers"])
-        self.assertIn("R2_RESTORE_NOT_VERIFIED", result["production_gate"]["blockers"])
-        self.assertIn("REAL_PVC_ACCEPTANCE_NOT_VERIFIED", result["production_gate"]["blockers"])
+        self.assertFalse(result["component_validations"]["render_r2_pvc_acceptance"]["verified"])
+        self.assertIn("V63_RENDER_R2_PVC_ACCEPTANCE_NOT_VERIFIED", result["production_gate"]["blockers"])
 
-    def test_external_evidence_reports_must_match_current_source_snapshot(self):
+    def test_local_mock_render_r2_receipt_is_not_release_proof(self):
         bundle = self._bundle()
-        bundle["render_deploy_evidence_report"] = self._render_report("b" * 64)
+        bundle["render_r2_pvc_acceptance_report"] = self._render_r2_pvc_receipt(real_render=False)
         result = evaluate_v63_release_evidence_bundle(bundle)
         self.assertFalse(result["production_ready"])
-        self.assertIn("PRODUCTION_SOURCE_SNAPSHOT_MISMATCH", result["component_validations"]["render_deploy"]["blockers"])
+        validation = result["component_validations"]["render_r2_pvc_acceptance"]
+        self.assertFalse(validation["verified"])
+        self.assertIn("REAL_RENDER_INSTANCE_REPLACEMENT_NOT_PROVEN", validation["blockers"])
+        self.assertIn("V63_RENDER_R2_PVC_ACCEPTANCE_NOT_VERIFIED", result["production_gate"]["blockers"])
+
+    def test_failed_render_r2_base_validation_blocks_release(self):
+        bundle = self._bundle()
+        bundle["render_r2_pvc_acceptance_report"] = copy.deepcopy(bundle["render_r2_pvc_acceptance_report"])
+        bundle["render_r2_pvc_acceptance_report"]["evidence_after"]["events"]["append_candidate_discovery"]["count"] = 2
+        result = evaluate_v63_release_evidence_bundle(bundle)
+        self.assertFalse(result["production_ready"])
+        validation = result["component_validations"]["render_r2_pvc_acceptance"]
+        self.assertFalse(validation["verified"])
+        self.assertTrue(any("DUPLICATE_BUSINESS_EVENT" in blocker for blocker in validation["blockers"]))
 
     def test_reference_runner_result_is_not_production_release_proof(self):
         bundle = self._bundle()
