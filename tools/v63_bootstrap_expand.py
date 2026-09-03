@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -7,8 +8,8 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import tarfile
+import tempfile
 from pathlib import Path
 
 EXPECTED_BASE = "ba3bffdae13cef186b20b50335c3207fb3390ec6"
@@ -16,6 +17,7 @@ EXPECTED_FEATURE_BRANCH = "cbi-v6-3-demand-expansion"
 EXPECTED_TRANSPORT_SHA256 = "dd0c202bcbbf03654a7329a0c5b21cfb9c90a90597294de27db93bc93861b835"
 SOURCE_STAGING_ZIP_SHA256 = "ccec597fff10ced2ec1b024c55fe14325a297302f878240f54dee30da953fd0c"
 PAYLOAD_SCHEMA = "cbi.v63-staging-durable-bridge-rebuilt.v1"
+EXPECTED_V63_RUNTIME_PAYLOAD_COUNT = 56
 V63_TOOLS = {
     "append_candidate_discovery",
     "create_product_opportunity",
@@ -43,14 +45,6 @@ def run(args: list[str], *, cwd: Path, capture: bool = False) -> str:
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def reconstruct_payload(root: Path) -> Path:
@@ -142,6 +136,84 @@ def copy_new_payload_files(repo: Path, payload_root: Path) -> list[str]:
         shutil.copyfile(source, target)
         copied.append(rel.as_posix())
     return copied
+
+
+def _runtime_payload_names(payload_root: Path) -> tuple[str, ...]:
+    names = tuple(
+        path.name
+        for path in sorted((payload_root / "unified_runtime").glob("*.py"))
+        if path.name != "__init__.py" and not path.name.startswith("v62_")
+    )
+    if len(names) != EXPECTED_V63_RUNTIME_PAYLOAD_COUNT:
+        raise RuntimeError(f"V63_RUNTIME_PAYLOAD_COUNT_MISMATCH:{len(names)}")
+    forbidden = {
+        "__init__.py",
+        "core.py",
+        "resilience.py",
+        "research_orchestration_hardening.py",
+        "v6.py",
+    }
+    overlap = sorted(set(names) & forbidden)
+    if overlap:
+        raise RuntimeError("V63_RUNTIME_PAYLOAD_ABSORBED_BASE_FILES:" + ",".join(overlap))
+    if "production_integration_runner.py" not in names or "demand_expansion.py" not in names:
+        raise RuntimeError("V63_RUNTIME_PAYLOAD_ANCHORS_MISSING")
+    return names
+
+
+def harden_runtime_payload_inventory(repo: Path, payload_root: Path) -> tuple[str, ...]:
+    names = _runtime_payload_names(payload_root)
+    target = repo / "unified_runtime" / "production_integration_runner.py"
+    source = target.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(target))
+    functions = [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_payload_paths"
+    ]
+    if len(functions) != 1:
+        raise RuntimeError("V63_RUNTIME_PAYLOAD_FUNCTION_NOT_UNIQUE")
+
+    assignments = [
+        node for node in tree.body
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        and any(
+            isinstance(t, ast.Name) and t.id == "V63_RUNTIME_PAYLOAD_NAMES"
+            for t in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        )
+    ]
+    if assignments:
+        if len(assignments) != 1:
+            raise RuntimeError("V63_RUNTIME_PAYLOAD_INVENTORY_AMBIGUOUS")
+        value = assignments[0].value
+        if not isinstance(value, (ast.Tuple, ast.List)):
+            raise RuntimeError("V63_RUNTIME_PAYLOAD_INVENTORY_NOT_LITERAL")
+        existing = tuple(
+            str(item.value)
+            for item in value.elts
+            if isinstance(item, ast.Constant) and isinstance(item.value, str)
+        )
+        if existing != names:
+            raise RuntimeError("V63_RUNTIME_PAYLOAD_INVENTORY_MISMATCH")
+        return names
+
+    fn = functions[0]
+    lines = source.splitlines(keepends=True)
+    start = fn.lineno - 1
+    end = int(fn.end_lineno or fn.lineno)
+    tuple_lines = ["V63_RUNTIME_PAYLOAD_NAMES = (\n"]
+    tuple_lines.extend(f'    "{name}",\n' for name in names)
+    tuple_lines.extend([
+        ")\n",
+        "\n",
+        "\n",
+        "def _payload_paths() -> list[Path]:\n",
+        "    root = _source_runtime_root()\n",
+        "    return [root / name for name in V63_RUNTIME_PAYLOAD_NAMES]\n",
+    ])
+    candidate = "".join([*lines[:start], *tuple_lines, *lines[end:]])
+    ast.parse(candidate, filename=str(target))
+    target.write_text(candidate, encoding="utf-8", newline="")
+    return names
 
 
 def exact_integration(repo: Path) -> dict:
@@ -290,8 +362,13 @@ def main() -> int:
     actual = run(["git", "rev-parse", "HEAD"], cwd=repo, capture=True)
     ancestry = subprocess.run(
         ["git", "merge-base", "--is-ancestor", EXPECTED_BASE, "HEAD"],
-        cwd=str(repo), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace", check=False,
+        cwd=str(repo),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     if ancestry.returncode != 0:
         raise RuntimeError(
@@ -307,6 +384,7 @@ def main() -> int:
         payload_root = Path(td)
         verify_and_extract(payload_transport, payload_root)
         copied = copy_new_payload_files(repo, payload_root)
+        payload_inventory = harden_runtime_payload_inventory(repo, payload_root)
 
     integration = exact_integration(repo)
     validate_scope(repo)
@@ -315,7 +393,12 @@ def main() -> int:
     run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-q"], cwd=repo)
     run([sys.executable, "mcp/v6_protocol_test.py"], cwd=repo)
     run([sys.executable, "mcp/v61_hardening_protocol_test.py"], cwd=repo)
-    run([sys.executable, "-m", "py_compile", *[str(p.relative_to(repo)) for p in sorted((repo / "unified_runtime").glob("*.py"))]], cwd=repo)
+    run([
+        sys.executable,
+        "-m",
+        "py_compile",
+        *[str(p.relative_to(repo)) for p in sorted((repo / "unified_runtime").glob("*.py"))],
+    ], cwd=repo)
     run(["git", "diff", "--check"], cwd=repo)
 
     report = {
@@ -324,6 +407,7 @@ def main() -> int:
         "bootstrap_head": actual,
         "source_staging_zip_sha256": SOURCE_STAGING_ZIP_SHA256,
         "transport_sha256": EXPECTED_TRANSPORT_SHA256,
+        "runtime_payload_inventory": list(payload_inventory),
         "copied_files": copied,
         "integration": integration,
         "tests": "PASS",
