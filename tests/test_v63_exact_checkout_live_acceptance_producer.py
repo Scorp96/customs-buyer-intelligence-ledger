@@ -8,6 +8,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +67,20 @@ class V63ExactCheckoutLiveAcceptanceProducerBoundaryTests(unittest.TestCase):
         self.assertEqual(config.repo_root, Path("/tmp/cbi-v63-checkout"))
         self.assertEqual(config.expected_git_sha, "a" * 40)
         self.assertEqual(config.output_dir, Path("/tmp/cbi-v63-output"))
+
+    def test_expected_git_sha_mismatch_blocks_before_mutation_process_start(self):
+        module = self._module()
+        config = module.ExactCheckoutAcceptanceConfig(
+            repo_root=ROOT,
+            expected_git_sha="0" * 40,
+            output_dir=ROOT / ".tmp-v63-acceptance-should-not-exist",
+        )
+        with mock.patch(
+            "unified_runtime.exact_checkout_mcp_harness_v63.ExactCheckoutMcpHarness.start"
+        ) as start:
+            with self.assertRaisesRegex(RuntimeError, "GIT_SHA_MISMATCH"):
+                module.run_v63_exact_checkout_live_acceptance(config)
+        start.assert_not_called()
 
 
 class V63ExactCheckoutMcpHarnessContractTests(unittest.TestCase):
