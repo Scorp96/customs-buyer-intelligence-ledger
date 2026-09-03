@@ -10,13 +10,19 @@ from typing import Any
 from . import production_source_snapshot_v63
 from .exact_checkout_mcp_harness_v63 import ExactCheckoutMcpHarness
 from .exact_checkout_persistence_reader_v63 import ExactCheckoutPersistenceReader
-from .recovery_semantics_v63 import canonical_v63_wal_request_sha256
+from .product_profiles import get_product_profile
+from .recovery_semantics_v63 import (
+    canonical_v63_wal_request_sha256,
+    snapshot_sha256,
+)
 
 
 _GIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _CANDIDATE_TOOL = "append_candidate_discovery"
 _CANDIDATE_EVENT = "V63_CANDIDATE_DISCOVERED"
+_OPPORTUNITY_TOOL = "create_product_opportunity"
+_OPPORTUNITY_EVENT = "V63_PRODUCT_OPPORTUNITY_CREATED"
 
 
 @dataclass(frozen=True)
@@ -135,6 +141,65 @@ def _candidate_success_arguments(investigation_id: str) -> dict[str, Any]:
     }
 
 
+def _opportunity_success_arguments(investigation_id: str) -> dict[str, Any]:
+    profile = get_product_profile("PVC")
+    account_id = "C-V63-EXACT-OPPORTUNITY"
+    return {
+        "investigation_id": investigation_id,
+        "canonical_resolution": {
+            "canonical_status": "CONFIRMED",
+            "canonical_account_id": account_id,
+            "resolver_authority": "PRIMARY_LEGAL_NAME_COUNTRY",
+            "resolver_is_existing_production_authority": True,
+            "ambiguous": False,
+            "address_only_match": False,
+            "alias_only_match": False,
+            "tax_conflict": False,
+            "country_conflict": False,
+        },
+        "opportunity": {
+            "opportunity_id": "OPP-V63-EXACT-001",
+            "account_id": account_id,
+            "product_profile_id": profile["profile_id"],
+            "product_profile_version": profile["profile_version"],
+            "product_profile_sha256": profile["profile_sha256"],
+            "application_ids": ["CABINETRY"],
+            "buyer_archetype_ids": ["CABINET_MANUFACTURER"],
+            "market_cell_ids": ["SYNTHETIC-EXACT-CELL"],
+        },
+        "idempotency_key": "v63-exact-opportunity-success-0001",
+    }
+
+
+def _start_synthetic_investigation(
+    harness: ExactCheckoutMcpHarness,
+    request_id: int,
+    *,
+    account_id: str,
+    name: str,
+    idempotency_key: str,
+) -> str:
+    started = harness.tool(
+        request_id,
+        "start_investigation",
+        {
+            "account": {
+                "account_id": account_id,
+                "country": "Synthetic",
+                "name": name,
+            },
+            "mode": "EXHAUSTIVE",
+            "history": {"events": []},
+            "network_policy": {"closure_strategy": "DECISION_SATURATION"},
+            "idempotency_key": idempotency_key,
+        },
+    )
+    investigation_id = str(started.get("investigation_id") or "").strip()
+    if not investigation_id:
+        raise RuntimeError("SYNTHETIC_INVESTIGATION_ID_MISSING")
+    return investigation_id
+
+
 def _run_candidate_success_scenario(
     repo_root: Path,
     persistence_root: Path,
@@ -144,24 +209,13 @@ def _run_candidate_success_scenario(
     harness = ExactCheckoutMcpHarness(root, persistence)
     harness.start()
     try:
-        started = harness.tool(
+        investigation_id = _start_synthetic_investigation(
+            harness,
             2,
-            "start_investigation",
-            {
-                "account": {
-                    "account_id": "C-V63-EXACT-CANDIDATE",
-                    "country": "Synthetic",
-                    "name": "Synthetic v6.3 Exact Candidate Buyer",
-                },
-                "mode": "EXHAUSTIVE",
-                "history": {"events": []},
-                "network_policy": {"closure_strategy": "DECISION_SATURATION"},
-                "idempotency_key": "v63-exact-candidate-start-0001",
-            },
+            account_id="C-V63-EXACT-CANDIDATE",
+            name="Synthetic v6.3 Exact Candidate Buyer",
+            idempotency_key="v63-exact-candidate-start-0001",
         )
-        investigation_id = str(started.get("investigation_id") or "").strip()
-        if not investigation_id:
-            raise RuntimeError("CANDIDATE_SUCCESS_INVESTIGATION_ID_MISSING")
         arguments = _candidate_success_arguments(investigation_id)
         raw_response = harness.tool(3, _CANDIDATE_TOOL, arguments)
     finally:
@@ -210,6 +264,93 @@ def _run_candidate_success_scenario(
         "evidence": evidence,
         "exact_correlation_proven": exact_correlation_proven,
         "exact_request_hash_proven": exact_request_hash_proven,
+    }
+
+
+def _run_opportunity_success_scenario(
+    repo_root: Path,
+    persistence_root: Path,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    persistence = Path(persistence_root).resolve()
+    harness = ExactCheckoutMcpHarness(root, persistence)
+    harness.start()
+    try:
+        investigation_id = _start_synthetic_investigation(
+            harness,
+            2,
+            account_id="C-V63-EXACT-OPPORTUNITY",
+            name="Synthetic v6.3 Exact Opportunity Buyer",
+            idempotency_key="v63-exact-opportunity-start-0001",
+        )
+        arguments = _opportunity_success_arguments(investigation_id)
+        raw_response = harness.tool(3, _OPPORTUNITY_TOOL, arguments)
+    finally:
+        harness.stop()
+
+    reader = ExactCheckoutPersistenceReader(persistence)
+    evidence = reader.normalize_mutation_evidence(investigation_id, _OPPORTUNITY_TOOL)
+    events = evidence.get("events") or []
+    wal_records = evidence.get("wal_records") or []
+    expected_request_sha = canonical_v63_wal_request_sha256(
+        _OPPORTUNITY_TOOL, arguments
+    )
+
+    event = events[0] if len(events) == 1 else {}
+    wal = wal_records[0] if len(wal_records) == 1 else {}
+    event_correlation = str(event.get("correlation_id") or "").strip()
+    wal_correlation = str(wal.get("correlation_id") or "").strip()
+    exact_correlation_proven = bool(
+        len(events) == 1
+        and len(wal_records) == 1
+        and event.get("event_type") == _OPPORTUNITY_EVENT
+        and wal.get("status") == "COMMITTED"
+        and event_correlation
+        and event_correlation == wal_correlation
+    )
+    exact_request_hash_proven = bool(
+        len(events) == 1
+        and len(wal_records) == 1
+        and event.get("request_sha256") == expected_request_sha
+        and wal.get("request_sha256") == expected_request_sha
+    )
+
+    response = _without_idempotency_keys(raw_response)
+    business_response = copy.deepcopy(response)
+    if isinstance(business_response, dict):
+        business_response.pop("mutation_meta", None)
+    result_snapshot = event.get("result_snapshot") if isinstance(event, dict) else None
+    result_snapshot_sha = (
+        str(event.get("result_snapshot_sha256") or "").lower()
+        if isinstance(event, dict)
+        else ""
+    )
+    exact_result_snapshot_proven = bool(
+        isinstance(result_snapshot, dict)
+        and result_snapshot == business_response
+        and _SHA256_RE.fullmatch(result_snapshot_sha)
+        and snapshot_sha256(result_snapshot) == result_snapshot_sha
+    )
+
+    if not exact_correlation_proven:
+        raise RuntimeError("OPPORTUNITY_SUCCESS_EXACT_CORRELATION_NOT_PROVEN")
+    if not exact_request_hash_proven:
+        raise RuntimeError("OPPORTUNITY_SUCCESS_EXACT_REQUEST_HASH_NOT_PROVEN")
+    if not exact_result_snapshot_proven:
+        raise RuntimeError("OPPORTUNITY_SUCCESS_EXACT_RESULT_SNAPSHOT_NOT_PROVEN")
+    if not isinstance(response, dict) or response.get("status") != "CREATED":
+        raise RuntimeError("OPPORTUNITY_SUCCESS_RESPONSE_INVALID")
+
+    return {
+        "scenario": "opportunity_success",
+        "tool": _OPPORTUNITY_TOOL,
+        "investigation_id": investigation_id,
+        "response": response,
+        "evidence": evidence,
+        "durable_result_snapshot": copy.deepcopy(result_snapshot),
+        "exact_correlation_proven": exact_correlation_proven,
+        "exact_request_hash_proven": exact_request_hash_proven,
+        "exact_result_snapshot_proven": exact_result_snapshot_proven,
     }
 
 
