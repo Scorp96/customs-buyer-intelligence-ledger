@@ -91,3 +91,60 @@ class ExactCheckoutPersistenceReader:
                 raise RuntimeError(f"WAL_RECORD_INVALID:{path.name}")
             rows.append(sanitized)
         return rows
+
+    def normalize_mutation_evidence(
+        self,
+        investigation_id: str,
+        tool_name: str,
+    ) -> dict[str, Any]:
+        tool = str(tool_name or "").strip()
+        if not tool:
+            raise RuntimeError("TOOL_NAME_INVALID")
+
+        event_rows: list[dict[str, Any]] = []
+        for event in self.read_session_events(investigation_id):
+            correlation = event.get("mutation_correlation")
+            if not isinstance(correlation, dict) or correlation.get("tool") != tool:
+                continue
+            payload = event.get("payload")
+            payload = payload if isinstance(payload, dict) else {}
+            event_rows.append(
+                {
+                    "seq": event.get("seq"),
+                    "event_type": event.get("event_type"),
+                    "correlation_id": correlation.get("correlation_id"),
+                    "request_sha256": payload.get("request_sha256"),
+                    "result_snapshot": _without_raw_idempotency_keys(
+                        payload.get("result_snapshot")
+                    ),
+                    "result_snapshot_sha256": payload.get(
+                        "result_snapshot_sha256"
+                    ),
+                }
+            )
+
+        wal_rows: list[dict[str, Any]] = []
+        for row in self.read_wal_records():
+            if row.get("tool") != tool:
+                continue
+            result = row.get("result")
+            wal_rows.append(
+                {
+                    "status": row.get("status"),
+                    "correlation_id": row.get("mutation_correlation_id"),
+                    "request_sha256": row.get("request_sha256"),
+                    "state_version_before": row.get("state_version_before"),
+                    "state_version_after": row.get("state_version_after"),
+                    "result": _without_raw_idempotency_keys(result),
+                    "result_sha256": row.get("result_sha256"),
+                }
+            )
+
+        return {
+            "tool": tool,
+            "event_count": len(event_rows),
+            "wal_record_count": len(wal_rows),
+            "events": event_rows,
+            "wal_records": wal_rows,
+            "raw_idempotency_key_exposed": False,
+        }
