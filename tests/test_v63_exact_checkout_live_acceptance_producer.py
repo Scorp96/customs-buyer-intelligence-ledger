@@ -106,6 +106,27 @@ class V63ExactCheckoutLiveAcceptanceProducerBoundaryTests(unittest.TestCase):
                     module.run_v63_exact_checkout_live_acceptance(config)
         start.assert_not_called()
 
+    def test_source_snapshot_drift_blocks_finalization(self):
+        module = self._module()
+        snapshot = {
+            "status": "READY",
+            "source_pins_complete": True,
+            "snapshot_sha256": "a" * 64,
+            "blockers": [],
+        }
+        with mock.patch(
+            "unified_runtime.production_source_snapshot_v63.validate_v63_production_source_snapshot",
+            return_value={
+                "valid": False,
+                "blockers": ["SOURCE_DRIFT_DETECTED"],
+                "drifted_files": ["mcp/server_v61.py"],
+                "missing_files": [],
+                "entrypoint_changed": False,
+            },
+        ):
+            with self.assertRaisesRegex(RuntimeError, "SOURCE_SNAPSHOT_DRIFT"):
+                module._assert_source_snapshot_unchanged(ROOT, snapshot)
+
 
 class V63ExactCheckoutMcpHarnessContractTests(unittest.TestCase):
     def _module(self):
