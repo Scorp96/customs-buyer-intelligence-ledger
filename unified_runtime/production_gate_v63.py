@@ -88,12 +88,8 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
         if invalid_mapping:
             blockers.append("V63_PRODUCTION_RECOVERY_MAPPING_INVALID")
 
-    if not bool(payload.get("render_deploy_verified")):
-        blockers.append("RENDER_DEPLOY_NOT_VERIFIED")
-    if not bool(payload.get("r2_restore_verified")):
-        blockers.append("R2_RESTORE_NOT_VERIFIED")
-    if not bool(payload.get("real_pvc_acceptance_verified")):
-        blockers.append("REAL_PVC_ACCEPTANCE_NOT_VERIFIED")
+    if not bool(payload.get("render_r2_pvc_acceptance_verified")):
+        blockers.append("V63_RENDER_R2_PVC_ACCEPTANCE_NOT_VERIFIED")
 
     if not bool(payload.get("exact_v63_recovery_acceptance_verified")):
         blockers.append("V63_EXACT_RECOVERY_ACCEPTANCE_NOT_VERIFIED")
@@ -122,9 +118,7 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
         "status": "PRODUCTION_READY" if not blockers else "NOT_PRODUCTION_READY",
         "blockers": blockers,
         "required_v63_mutations": sorted(_REQUIRED_MUTATIONS),
-        "checked_render_deploy": bool(payload.get("render_deploy_verified")),
-        "checked_r2_restore": bool(payload.get("r2_restore_verified")),
-        "checked_real_pvc_acceptance": bool(payload.get("real_pvc_acceptance_verified")),
+        "checked_render_r2_pvc_acceptance": bool(payload.get("render_r2_pvc_acceptance_verified")),
         "checked_exact_v63_recovery_acceptance": bool(payload.get("exact_v63_recovery_acceptance_verified")),
         "checked_live_v63_backend_correlation_acceptance": bool(payload.get("live_v63_backend_correlation_acceptance_verified")),
         "checked_live_v63_recovery_overlay_acceptance": bool(payload.get("live_v63_recovery_overlay_acceptance_verified")),
