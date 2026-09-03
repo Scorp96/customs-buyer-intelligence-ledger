@@ -140,7 +140,20 @@ class ExactCheckoutMcpHarness:
         name: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        raise RuntimeError("MCP_TOOL_CALL_NOT_IMPLEMENTED")
+        response = self._rpc(
+            request_id,
+            "tools/call",
+            {"name": name, "arguments": arguments},
+        )
+        if "error" in response:
+            raise RuntimeError(f"MCP_TOOL_CALL_FAILED[{name}]: {response['error']}")
+        result = response.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError(f"MCP_TOOL_RESULT_INVALID[{name}]")
+        structured = result.get("structuredContent")
+        if not isinstance(structured, dict):
+            raise RuntimeError(f"MCP_TOOL_STRUCTURED_CONTENT_MISSING[{name}]")
+        return structured
 
     def crash_tool(
         self,
