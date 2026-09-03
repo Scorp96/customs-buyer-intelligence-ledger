@@ -30,6 +30,6 @@ jobs:
 
       - name: Harden bootstrap gates, expand exact v6.3 staging, test and commit
         run: |
-          sed -i 's/if not chunks:/if len(chunks) != 32:/' tools/v63_bootstrap_expand.py
+          sed -i 's/if len(chunks) != 16:/if len(chunks) != 32:/' tools/v63_bootstrap_expand.py
           sed -i '/".github\/workflows\/cbi-v63-bootstrap.yml",/a\        "V63_FEATURE_ATTESTATION.json",' tools/v63_bootstrap_expand.py
           python -B -Xutf8 tools/v63_bootstrap_expand.py
