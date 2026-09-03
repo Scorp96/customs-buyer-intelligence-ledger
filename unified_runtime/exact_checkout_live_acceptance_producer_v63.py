@@ -129,7 +129,7 @@ def _candidate_success_arguments(investigation_id: str) -> dict[str, Any]:
             "branch_group": "TRADE_GRAPH",
             "branch": "same_product_hs_application_buyer",
             "company_name": "Synthetic Exact Candidate Buyer",
-            "product_profile_id": "PVC_FOAM_BOARD",
+            "product_profile_id": "PVC",
         },
         "idempotency_key": "v63-exact-candidate-success-0001",
     }
