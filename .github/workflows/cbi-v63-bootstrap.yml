@@ -28,54 +28,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Harden bootstrap gates, expand exact v6.3 staging, test and commit
+      - name: Run permanent v6.3 bootstrap
+        shell: bash
         run: |
-          run_bootstrap() {
-            echo 'STAGE ancestry'
-            git merge-base --is-ancestor ba3bffdae13cef186b20b50335c3207fb3390ec6 HEAD || return $?
-            echo 'STAGE patch-bootstrap-script'
-            python - <<'PY'
-          from pathlib import Path
-          p = Path('tools/v63_bootstrap_expand.py')
-          s = p.read_text(encoding='utf-8')
-
-          if 'if not chunks:' in s:
-              s = s.replace('if not chunks:', 'if len(chunks) != 32:', 1)
-          elif 'if len(chunks) != 32:' not in s:
-              raise SystemExit('EXPECTED_CHUNK_GATE_NOT_FOUND')
-
-          scope_marker = '        ".github/workflows/cbi-v63-bootstrap.yml",\n'
-          if '        "V63_FEATURE_ATTESTATION.json",\n' not in s or '        "V63_BOOTSTRAP_FAILURE.txt",\n' not in s:
-              if scope_marker not in s:
-                  raise SystemExit('EXPECTED_SCOPE_MARKER_NOT_FOUND')
-              additions = ''
-              if '        "V63_FEATURE_ATTESTATION.json",\n' not in s:
-                  additions += '        "V63_FEATURE_ATTESTATION.json",\n'
-              if '        "V63_BOOTSTRAP_FAILURE.txt",\n' not in s:
-                  additions += '        "V63_BOOTSTRAP_FAILURE.txt",\n'
-              s = s.replace(scope_marker, scope_marker + additions, 1)
-
-          base_old = '''    parent = run(["git", "rev-parse", "HEAD^"], cwd=repo, capture=True)\n    if parent.lower() != EXPECTED_BASE:\n        raise RuntimeError(f"V63_BOOTSTRAP_BASE_MISMATCH:{parent}")\n'''
-          if base_old in s:
-              s = s.replace(base_old, '    parent = EXPECTED_BASE\n', 1)
-          elif '    parent = EXPECTED_BASE\n' not in s:
-              raise SystemExit('EXPECTED_BASE_GATE_NOT_FOUND')
-
-          p.write_text(s, encoding='utf-8', newline='')
-          PY
-            patch_rc=$?
-            [ "$patch_rc" -eq 0 ] || return "$patch_rc"
-            rm -f V63_BOOTSTRAP_FAILURE.txt
-            echo 'STAGE python-bootstrap'
-            python -B -Xutf8 tools/v63_bootstrap_expand.py
-          }
           set +e
-          run_bootstrap > /tmp/v63-bootstrap.txt 2>&1
+          python -B -Xutf8 tools/v63_bootstrap_expand.py > /tmp/v63-bootstrap.txt 2>&1
           rc=$?
           set -e
           cat /tmp/v63-bootstrap.txt
+
           if [ "$rc" -ne 0 ]; then
             cp /tmp/v63-bootstrap.txt V63_BOOTSTRAP_FAILURE.txt
+            git reset
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add -f V63_BOOTSTRAP_FAILURE.txt
