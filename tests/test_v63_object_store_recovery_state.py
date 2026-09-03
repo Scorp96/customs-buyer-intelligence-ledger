@@ -7,9 +7,11 @@ import tarfile
 import tempfile
 import unittest
 
-from mcp.object_store_persistence import (
-    ObjectStoreConflict,
-    ObjectStoreStateManager,
+from mcp.object_store_persistence import ObjectStoreConflict
+from mcp.object_store_recovery_v63 import (
+    ARCHIVE_FORMAT_V2,
+    RecoveryObjectStoreStateManagerV63,
+    STATE_SCHEMA_V2,
 )
 
 
@@ -85,11 +87,11 @@ class V63ObjectStoreRecoveryStateTests(unittest.TestCase):
             tmp = Path(tmp_name)
             migration = _migration_archive(tmp / "source")
             client = _FakeObjectClient()
-            seed = ObjectStoreStateManager(client, prefix="cbi-v63-r2-test")
+            seed = RecoveryObjectStoreStateManagerV63(client, prefix="cbi-v63-r2-test")
             seed.seed_migration_archive(migration, _sha256_file(migration))
 
             live_a = tmp / "live-a"
-            writer = ObjectStoreStateManager(client, prefix="cbi-v63-r2-test")
+            writer = RecoveryObjectStoreStateManagerV63(client, prefix="cbi-v63-r2-test")
             self.assertTrue(writer.restore_into(live_a))
             writer.attach_existing(live_a)
 
@@ -117,9 +119,13 @@ class V63ObjectStoreRecoveryStateTests(unittest.TestCase):
             wal_path.write_bytes(wal_bytes)
 
             self.assertTrue(writer.sync_if_changed(live_a))
+            self.assertIsNotNone(writer.pointer)
+            assert writer.pointer is not None
+            self.assertEqual(writer.pointer.archive_format, ARCHIVE_FORMAT_V2)
+            self.assertEqual(writer.health()["recovery_state_schema"], STATE_SCHEMA_V2)
 
             live_b = tmp / "live-b"
-            reader = ObjectStoreStateManager(client, prefix="cbi-v63-r2-test")
+            reader = RecoveryObjectStoreStateManagerV63(client, prefix="cbi-v63-r2-test")
             self.assertTrue(reader.restore_into(live_b))
             reader.attach_existing(live_b)
 
