@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Render-specific bootstrap gate for CBI v6.1.
+"""Render-specific bootstrap gate for CBI v6.1/v6.3 recovery state.
 
 A brand-new Render instance is intentionally *not* treated as a new empty
 production Runtime. In paid-disk mode an operator imports a validated migration
 bundle into CBI_RENDER_LIVE_ROOT. In ephemeral/free mode an optional
 S3-compatible object-store mirror restores the authoritative pointed generation
-before production MCP is imported.
+before production MCP is imported. The v6.3 recovery manager preserves backward
+compatibility with migration/object-state v1 while also restoring recovery-state
+v2 generations that contain both sessions and mutation WAL.
 
 Until one of those durable sources is available this process exposes only a
 minimal health endpoint and returns 503 for MCP traffic.
@@ -25,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from mcp.object_store_persistence import ObjectStoreStateManager
+from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
 
 
 def _live_root() -> Path:
@@ -99,7 +101,7 @@ class BootstrapHandler(BaseHTTPRequestHandler):
                     "service": "customs-buyer-intelligence",
                     "durable_state_loaded": False,
                     "mcp_enabled": False,
-                    "object_store_configured": ObjectStoreStateManager.from_env() is not None,
+                    "object_store_configured": RecoveryObjectStoreStateManagerV63.from_env() is not None,
                 },
             )
             return
@@ -150,10 +152,10 @@ def main() -> int:
     live = _live_root()
     state = _state(live)
 
-    # Free/ephemeral hosts restore their pointed object-store generation before
-    # importing the production stack. Missing current.json is not treated as a
-    # new empty production ledger; we remain in bootstrap-only mode instead.
-    persistence = ObjectStoreStateManager.from_env()
+    # Ephemeral hosts restore their pointed recovery generation before importing
+    # the production stack. Missing current.json is not treated as a new empty
+    # production ledger; we remain in bootstrap-only mode instead.
+    persistence = RecoveryObjectStoreStateManagerV63.from_env()
     if state == "bootstrap" and persistence is not None:
         restored = persistence.restore_into(live)
         if restored:

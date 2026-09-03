@@ -1,0 +1,102 @@
+name: CBI v6.3 isolated Render R2 PVC acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v63-render-r2-pvc-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  external-acceptance:
+    name: Isolated Render R2 PVC external acceptance
+    if: ${{ github.ref == 'refs/heads/cbi-v6-3-demand-expansion' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact feature SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Assert exact feature SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "cbi-v6-3-demand-expansion"
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$GITHUB_SHA"
+          echo "ISOLATED_ACCEPTANCE_FEATURE_SHA=$actual"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Run deterministic regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_v63_*.py' -q
+          python -m unittest discover -s tests -p 'test_*.py' -q
+          python mcp/v6_protocol_test.py
+          python mcp/v61_hardening_protocol_test.py
+          git diff --check
+          python -m py_compile \
+            unified_runtime/render_r2_acceptance_client_v63.py \
+            unified_runtime/render_r2_pvc_acceptance_v63.py \
+            unified_runtime/render_r2_pvc_acceptance_validator_v63.py \
+            scripts/run_v63_render_r2_pvc_acceptance.py
+
+      - name: Run Render R2 PVC acceptance (BLOCKED_EXTERNAL on missing configuration)
+        shell: bash
+        env:
+          CBI_V63_RENDER_DEPLOY_HOOK_URL: ${{ secrets.CBI_V63_RENDER_DEPLOY_HOOK_URL }}
+          CBI_V63_RENDER_RESTART_HOOK_URL: ${{ secrets.CBI_V63_RENDER_RESTART_HOOK_URL }}
+          CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}
+          CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          CBI_V63_R2_ENDPOINT: ${{ secrets.CBI_V63_R2_ENDPOINT }}
+          CBI_V63_R2_BUCKET: ${{ secrets.CBI_V63_R2_BUCKET }}
+          CBI_V63_R2_ACCESS_KEY_ID: ${{ secrets.CBI_V63_R2_ACCESS_KEY_ID }}
+          CBI_V63_R2_SECRET_ACCESS_KEY: ${{ secrets.CBI_V63_R2_SECRET_ACCESS_KEY }}
+          CBI_V63_R2_PREFIX: ${{ secrets.CBI_V63_R2_PREFIX }}
+          CBI_V63_R2_REGION: ${{ secrets.CBI_V63_R2_REGION }}
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/v63-render-r2-pvc-artifacts"
+          python scripts/run_v63_render_r2_pvc_acceptance.py \
+            --expected-git-sha "$GITHUB_SHA" \
+            --output-dir "$RUNNER_TEMP/v63-render-r2-pvc-artifacts"
+
+      - name: Verify production branch baseline is unchanged
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='ba3bffdae13cef186b20b50335c3207fb3390ec6'
+          actual="$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)"
+          if [ "$actual" != "$expected" ]; then
+            echo "PRODUCTION_BRANCH_CHANGED expected=$expected actual=$actual" >&2
+            exit 1
+          fi
+          echo "PRODUCTION_BRANCH_UNCHANGED=$actual"
+
+      - name: Upload sanitized Render R2 PVC acceptance receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v63-render-r2-pvc-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/v63-render-r2-pvc-artifacts/*.json
+
+      - name: Confirm no production deploy or merge occurred
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          echo 'ISOLATED_ACCEPTANCE_ONLY: no production Render deploy and no production branch merge performed'

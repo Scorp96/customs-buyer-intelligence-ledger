@@ -84,6 +84,7 @@ from .country_identity_hardening import (
     V61CountryIdentityHardeningMixin,
 )
 
+from .demand_expansion import V63DemandExpansionMixin
 from .research_orchestration_hardening import V61ResearchOrchestrationHardeningMixin
 
 RUNTIME_VERSION = V6_RUNTIME_VERSION
@@ -93,6 +94,7 @@ FRESHNESS_LEVELS = V61_FRESHNESS_LEVELS
 
 
 class UnifiedRuntime(
+    V63DemandExpansionMixin,
     V61ResearchOrchestrationHardeningMixin,
     V61CountryIdentityHardeningMixin,
     V61BrandHardeningMixin,

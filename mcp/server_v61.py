@@ -838,6 +838,119 @@ for _name in _MUTATING_TOOLS:
         )
 
 
+from unified_runtime.mcp_schema_v63 import build_v63_tool_descriptors as _build_v63_tool_descriptors
+from unified_runtime.existing_production_store_backend_v63 import ExistingProductionStoreBackend
+from unified_runtime.runtime_durable_backend_v63 import bind_v63_runtime_durable_backend
+
+_BASE_V63_TOOL_DESCRIPTORS = _server.tool_descriptors
+
+def _v63_tool_descriptors():
+    tools = _BASE_V63_TOOL_DESCRIPTORS()
+    names = {str(item.get('name') or '') for item in tools if isinstance(item, dict)}
+    for item in _build_v63_tool_descriptors():
+        if str(item.get('name') or '') not in names:
+            tools.append(item)
+    return tools
+
+_V63_DURABLE_BACKEND = ExistingProductionStoreBackend()
+bind_v63_runtime_durable_backend(_server.RUNTIME, _V63_DURABLE_BACKEND)
+
+def _v63_get_product_profiles_handler(arguments):
+    return _server.RUNTIME.get_product_profiles(arguments)
+
+def _v63_get_capability_profile_handler(arguments):
+    return _server.RUNTIME.get_capability_profile(arguments)
+
+def _v63_evaluate_capability_fit_handler(arguments):
+    return _server.RUNTIME.evaluate_capability_fit(arguments)
+
+def _v63_assess_candidate_researchability_handler(arguments):
+    return _server.RUNTIME.assess_candidate_researchability(arguments)
+
+def _v63_rank_candidate_research_queue_handler(arguments):
+    return _server.RUNTIME.rank_candidate_research_queue(arguments)
+
+def _v63_preview_customs_seed_expansion_handler(arguments):
+    return _server.RUNTIME.preview_customs_seed_expansion(arguments)
+
+def _v63_plan_candidate_expansion_handler(arguments):
+    return _server.RUNTIME.plan_candidate_expansion(arguments)
+
+def _v63_evaluate_relative_opportunity_handler(arguments):
+    return _server.RUNTIME.evaluate_relative_opportunity(arguments)
+
+def _v63_plan_contact_exhaustion_handler(arguments):
+    return _server.RUNTIME.plan_contact_exhaustion(arguments)
+
+def _v63_evaluate_expansion_saturation_handler(arguments):
+    return _server.RUNTIME.evaluate_expansion_saturation(arguments)
+
+def _v63_project_legacy_peer_receipt_handler(arguments):
+    return _server.RUNTIME.project_legacy_peer_receipt(arguments)
+
+def _v63_preview_recursive_anchor_expansion_handler(arguments):
+    return _server.RUNTIME.preview_recursive_anchor_expansion(arguments)
+
+def _v63_evaluate_route_reuse_handler(arguments):
+    return _server.RUNTIME.evaluate_route_reuse(arguments)
+
+def _v63_get_portfolio_metrics_handler(arguments):
+    return _server.RUNTIME.get_portfolio_metrics(arguments)
+
+def _v63_schedule_expansion_research_handler(arguments):
+    return _server.RUNTIME.schedule_expansion_research(arguments)
+
+def _v63_plan_local_outreach_handler(arguments):
+    return _server.RUNTIME.plan_local_outreach(arguments)
+
+def _v63_plan_local_context_resolution_handler(arguments):
+    return _server.RUNTIME.plan_local_context_resolution(arguments)
+
+def _v63_evaluate_sales_readiness_handler(arguments):
+    return _server.RUNTIME.evaluate_sales_readiness(arguments)
+
+def _v63_derive_demand_anchor_handler(arguments):
+    return _server.RUNTIME.derive_demand_anchor(arguments)
+
+def _v63_evaluate_product_opportunity_handler(arguments):
+    return _server.RUNTIME.evaluate_product_opportunity(arguments)
+
+def _v63_append_candidate_discovery_handler(arguments):
+    return _invoke_mutation('append_candidate_discovery', _server.RUNTIME.append_candidate_discovery, arguments)
+
+def _v63_create_product_opportunity_handler(arguments):
+    return _invoke_mutation('create_product_opportunity', _server.RUNTIME.create_product_opportunity, arguments)
+
+def _v63_promote_opportunity_anchor_handler(arguments):
+    return _invoke_mutation('promote_opportunity_anchor', _server.RUNTIME.promote_opportunity_anchor, arguments)
+
+_MUTATING_TOOLS.update({'append_candidate_discovery', 'promote_opportunity_anchor', 'create_product_opportunity'})
+_server.tool_descriptors = _v63_tool_descriptors
+_server.TOOL_HANDLERS['get_product_profiles'] = _v63_get_product_profiles_handler
+_server.TOOL_HANDLERS['get_capability_profile'] = _v63_get_capability_profile_handler
+_server.TOOL_HANDLERS['evaluate_capability_fit'] = _v63_evaluate_capability_fit_handler
+_server.TOOL_HANDLERS['assess_candidate_researchability'] = _v63_assess_candidate_researchability_handler
+_server.TOOL_HANDLERS['rank_candidate_research_queue'] = _v63_rank_candidate_research_queue_handler
+_server.TOOL_HANDLERS['preview_customs_seed_expansion'] = _v63_preview_customs_seed_expansion_handler
+_server.TOOL_HANDLERS['plan_candidate_expansion'] = _v63_plan_candidate_expansion_handler
+_server.TOOL_HANDLERS['evaluate_relative_opportunity'] = _v63_evaluate_relative_opportunity_handler
+_server.TOOL_HANDLERS['plan_contact_exhaustion'] = _v63_plan_contact_exhaustion_handler
+_server.TOOL_HANDLERS['evaluate_expansion_saturation'] = _v63_evaluate_expansion_saturation_handler
+_server.TOOL_HANDLERS['project_legacy_peer_receipt'] = _v63_project_legacy_peer_receipt_handler
+_server.TOOL_HANDLERS['preview_recursive_anchor_expansion'] = _v63_preview_recursive_anchor_expansion_handler
+_server.TOOL_HANDLERS['evaluate_route_reuse'] = _v63_evaluate_route_reuse_handler
+_server.TOOL_HANDLERS['get_portfolio_metrics'] = _v63_get_portfolio_metrics_handler
+_server.TOOL_HANDLERS['schedule_expansion_research'] = _v63_schedule_expansion_research_handler
+_server.TOOL_HANDLERS['plan_local_outreach'] = _v63_plan_local_outreach_handler
+_server.TOOL_HANDLERS['plan_local_context_resolution'] = _v63_plan_local_context_resolution_handler
+_server.TOOL_HANDLERS['evaluate_sales_readiness'] = _v63_evaluate_sales_readiness_handler
+_server.TOOL_HANDLERS['derive_demand_anchor'] = _v63_derive_demand_anchor_handler
+_server.TOOL_HANDLERS['evaluate_product_opportunity'] = _v63_evaluate_product_opportunity_handler
+_server.TOOL_HANDLERS['append_candidate_discovery'] = _v63_append_candidate_discovery_handler
+_server.TOOL_HANDLERS['create_product_opportunity'] = _v63_create_product_opportunity_handler
+_server.TOOL_HANDLERS['promote_opportunity_anchor'] = _v63_promote_opportunity_anchor_handler
+
+
 def main() -> int:
     return _server.main()
 
