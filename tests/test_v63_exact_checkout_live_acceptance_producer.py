@@ -144,6 +144,18 @@ class V63ExactCheckoutMcpHarnessContractTests(unittest.TestCase):
                 harness.stop()
             self.assertTrue(V63_MUTATION_TOOLS <= names)
 
+    def test_tool_calls_real_active_mcp_and_returns_structured_content(self):
+        module = self._module()
+        with tempfile.TemporaryDirectory() as td:
+            harness = module.ExactCheckoutMcpHarness(ROOT, Path(td))
+            harness.start()
+            try:
+                contract = harness.tool(3, "get_runtime_contract", {})
+            finally:
+                harness.stop()
+            self.assertIsInstance(contract, dict)
+            self.assertIn("production_adapter_mutation_wal", contract)
+
 
 if __name__ == "__main__":
     unittest.main()
