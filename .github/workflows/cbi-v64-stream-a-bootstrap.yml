@@ -1,4 +1,4 @@
-name: CBI v6.4 Stream A final cross-version verification
+name: CBI v6.4 final full-suite diagnostic
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  verify:
+  diagnose:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -24,7 +24,7 @@ jobs:
           set -euo pipefail
           test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
           test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
-      - name: Apply bounded cross-version test repairs
+      - name: Apply bounded candidate repairs
         shell: bash
         run: |
           set -euo pipefail
@@ -74,26 +74,20 @@ jobs:
           p.write_text(t,encoding='utf-8')
           PY
           git diff --check
-      - name: Gate affected cross-version tests
+      - name: Capture exact full-suite blocker
         shell: bash
         run: |
-          python -m unittest -q tests/test_v61_independent_audit.py
-          python -m unittest -q tests/test_v61_peer_pivot_wal_recovery.py
-          python -m unittest -q tests/test_v64_route_promotion_safety.py tests/test_v6_architecture.py tests/test_v6_properties_and_crash.py
-      - name: Gate full repository suite
-        run: python -m unittest discover -s tests -p 'test_*.py' -q
-      - name: Commit repairs and clean bootstrap diagnostics
-        shell: bash
-        run: |
-          set -euo pipefail
+          set -u
+          mkdir -p .cbi-v64-diagnostics
+          set +e
+          python -m unittest discover -s tests -p 'test_*.py' -q > .cbi-v64-diagnostics/full_suite_final_blocker.txt 2>&1
+          rc=$?
+          set -e
+          printf '\nEXIT_CODE=%s\n' "$rc" >> .cbi-v64-diagnostics/full_suite_final_blocker.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tests/test_v61_independent_audit.py tests/test_v61_peer_pivot_wal_recovery.py tests/test_v64_route_promotion_safety.py tests/test_v6_architecture.py
-          git commit -m 'test(v64): align promotion preconditions and loader isolation'
-          git rm -r .cbi-v64-bootstrap .cbi-v64-diagnostics .github/workflows/cbi-v64-stream-a-bootstrap.yml
-          git commit -m 'chore(v64): remove Stream A bootstrap diagnostics'
-          git diff --check 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD
-          test -z "$(git status --porcelain)"
-          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
+          git add .cbi-v64-diagnostics/full_suite_final_blocker.txt
+          git commit -m 'test(v64): persist final Stream A full-suite blocker'
           test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
           git push origin HEAD:refs/heads/cbi-v64-semantic-forward-port-58e14973
+          exit "$rc"
