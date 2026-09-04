@@ -701,7 +701,8 @@ class V61ResearchOrchestrationHardeningMixin:
                 scan_errors.append({
                     "investigation_id": investigation_id,
                     "account_id": account_id,
-                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                    "code": "ACCOUNT_STATE_READ_FAILED",
                 })
 
         reconciliation = detect_identity_reconciliation(identities.values())

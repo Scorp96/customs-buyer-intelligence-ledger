@@ -75,7 +75,10 @@ class FakeBase:
         return {"schema": "cbi.portfolio-queue.v6.1", "count": len(self.rows), "queue": list(self.rows[:limit])}
 
     def get_account_state(self, arguments):
-        return self.account_states[arguments["investigation_id"]]
+        state = self.account_states[arguments["investigation_id"]]
+        if isinstance(state, Exception):
+            raise state
+        return state
 
     def get_runtime_contract(self, arguments):
         return {"schema": "cbi.runtime-contract.v6.1"}
@@ -112,6 +115,18 @@ class PortfolioIdentityReconciliationTests(unittest.TestCase):
             policy["portfolio_scan_scope"],
             "FULL_VISIBLE_PORTFOLIO_BEFORE_LIMIT",
         )
+
+    def test_identity_scan_errors_do_not_echo_exception_messages(self):
+        runtime = Runtime()
+        runtime.account_states["INV-2"] = ValueError("DETAIL_SHOULD_NOT_ECHO")
+        result = runtime.get_portfolio_queue({"limit": 3})
+        scan_errors = result["canonical_identity_reconciliation"]["scan_errors"]
+        self.assertEqual(len(scan_errors), 1)
+        self.assertEqual(scan_errors[0]["account_id"], "ACCT-2")
+        self.assertEqual(scan_errors[0]["error_type"], "ValueError")
+        self.assertEqual(scan_errors[0]["code"], "ACCOUNT_STATE_READ_FAILED")
+        self.assertNotIn("error", scan_errors[0])
+        self.assertNotIn("DETAIL_SHOULD_NOT_ECHO", str(scan_errors))
 
     def test_active_lifecycle_is_separated_from_operational_research_activity(self):
         runtime = Runtime()
