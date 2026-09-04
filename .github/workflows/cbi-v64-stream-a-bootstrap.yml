@@ -1,127 +1,59 @@
-name: CBI v6.4 Stream A repair and verify
+name: CBI v6.4 Stream A repaired red-gate diagnostic
 
 on:
   push:
-    branches:
-      - cbi-v64-semantic-forward-port-58e14973
-    paths:
-      - .cbi-v64-bootstrap/READY
+    branches: [cbi-v64-semantic-forward-port-58e14973]
+    paths: [.cbi-v64-bootstrap/READY]
 
 permissions:
   contents: write
 
-concurrency:
-  group: cbi-v64-stream-a-repair
-  cancel-in-progress: false
-
 jobs:
-  repair-stream-a:
+  diagnose:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
     steps:
-      - name: Checkout isolated feature branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           ref: cbi-v64-semantic-forward-port-58e14973
-
-      - name: Verify immutable remote baselines
+      - name: Verify refs
         shell: bash
         run: |
           set -euo pipefail
           test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
           test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
-          git merge-base --is-ancestor 58e14973c62cca5a9daefa7b4012e427135736d5 HEAD
-
-      - name: Apply minimal compatibility repairs
+      - name: Apply two bounded compatibility repairs
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          path = Path('unified_runtime/research_orchestration_hardening.py')
-          text = path.read_text(encoding='utf-8')
-
-          old_route = (
-              '        account_id = state["start"]["account"]["account_id"]\n'
-              '        claims = self._claims_view(state)\n'
-              '        claim = claims.get("contact.company_route") if isinstance(claims, dict) else None\n'
-          )
-          new_route = (
-              '        account_id = state["start"]["account"]["account_id"]\n'
-              '        claims_view = getattr(self, "_claims_view", None)\n'
-              '        claims = claims_view(state) if callable(claims_view) else {}\n'
-              '        claim = claims.get("contact.company_route") if isinstance(claims, dict) else None\n'
-          )
-          if text.count(old_route) != 1:
-              raise SystemExit(f'ROUTE_DIAGNOSTIC_EDIT_ANCHOR_COUNT={text.count(old_route)}')
-          text = text.replace(old_route, new_route, 1)
-
-          old_peer = (
-              '    def _peer_reconciliation_view(\n'
-              '        self,\n'
-              '        state: dict[str, Any],\n'
-              '    ) -> list[dict[str, Any]]:\n'
-              '        root_blockers = self._promotion_identity_blockers(state)\n'
-              '        rows: list[dict[str, Any]] = []\n'
-              '        peers = state.get("peers") or {}\n'
-              '        if not isinstance(peers, dict):\n'
-              '            return rows\n'
-          )
-          new_peer = (
-              '    def _peer_reconciliation_view(\n'
-              '        self,\n'
-              '        state: dict[str, Any],\n'
-              '    ) -> list[dict[str, Any]]:\n'
-              '        rows: list[dict[str, Any]] = []\n'
-              '        peers = state.get("peers") or {}\n'
-              '        if not isinstance(peers, dict) or not peers:\n'
-              '            return rows\n'
-              '        root_blockers = self._promotion_identity_blockers(state)\n'
-          )
-          if text.count(old_peer) != 1:
-              raise SystemExit(f'PEER_RECONCILIATION_EDIT_ANCHOR_COUNT={text.count(old_peer)}')
-          text = text.replace(old_peer, new_peer, 1)
-
-          path.write_text(text, encoding='utf-8')
+          p=Path('unified_runtime/research_orchestration_hardening.py')
+          t=p.read_text(encoding='utf-8')
+          a='        account_id = state["start"]["account"]["account_id"]\n        claims = self._claims_view(state)\n        claim = claims.get("contact.company_route") if isinstance(claims, dict) else None\n'
+          b='        account_id = state["start"]["account"]["account_id"]\n        claims_view = getattr(self, "_claims_view", None)\n        claims = claims_view(state) if callable(claims_view) else {}\n        claim = claims.get("contact.company_route") if isinstance(claims, dict) else None\n'
+          if t.count(a)!=1: raise SystemExit(f'route_anchor={t.count(a)}')
+          t=t.replace(a,b,1)
+          a='    def _peer_reconciliation_view(\n        self,\n        state: dict[str, Any],\n    ) -> list[dict[str, Any]]:\n        root_blockers = self._promotion_identity_blockers(state)\n        rows: list[dict[str, Any]] = []\n        peers = state.get("peers") or {}\n        if not isinstance(peers, dict):\n            return rows\n'
+          b='    def _peer_reconciliation_view(\n        self,\n        state: dict[str, Any],\n    ) -> list[dict[str, Any]]:\n        rows: list[dict[str, Any]] = []\n        peers = state.get("peers") or {}\n        if not isinstance(peers, dict) or not peers:\n            return rows\n        root_blockers = self._promotion_identity_blockers(state)\n'
+          if t.count(a)!=1: raise SystemExit(f'peer_anchor={t.count(a)}')
+          p.write_text(t.replace(a,b,1),encoding='utf-8')
           PY
           git diff --check
-          git diff -- unified_runtime/research_orchestration_hardening.py
-
-      - name: Red-gate regression now passes
-        run: python -m unittest -q tests/test_v61_research_orchestration_hardening.py
-
-      - name: Gate v63 candidate anchor
-        run: python -m unittest -q tests/test_v63_candidate_anchor.py
-
-      - name: Gate v63 research scheduler
-        run: python -m unittest -q tests/test_v63_research_scheduler.py
-
-      - name: Gate all v63 tests
-        run: python -m unittest discover -s tests -p 'test_v63_*.py' -q
-
-      - name: Gate MCP v6 protocol
-        run: python mcp/v6_protocol_test.py
-
-      - name: Gate MCP v61 hardening protocol
-        run: python mcp/v61_hardening_protocol_test.py
-
-      - name: Gate full repository suite
-        run: python -m unittest discover -s tests -p 'test_*.py' -q
-
-      - name: Commit repair and clean temporary bootstrap evidence
+      - name: Capture repaired red gate and push diagnostics
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
+          mkdir -p .cbi-v64-diagnostics
+          set +e
+          python -m unittest -q tests/test_v61_research_orchestration_hardening.py > .cbi-v64-diagnostics/v61_after_two_repairs.txt 2>&1
+          rc=$?
+          set -e
+          printf '\nEXIT_CODE=%s\n' "$rc" >> .cbi-v64-diagnostics/v61_after_two_repairs.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add unified_runtime/research_orchestration_hardening.py
+          git add unified_runtime/research_orchestration_hardening.py .cbi-v64-diagnostics/v61_after_two_repairs.txt
           git commit -m 'fix(v64): preserve optional diagnostics and empty-peer compatibility'
-          git rm -r .cbi-v64-bootstrap .cbi-v64-diagnostics .github/workflows/cbi-v64-stream-a-bootstrap.yml
-          git commit -m 'chore(v64): remove Stream A bootstrap diagnostics'
-          git diff --check 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD
-          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
-          test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
-          test -z "$(git status --porcelain)"
           git push origin HEAD:refs/heads/cbi-v64-semantic-forward-port-58e14973
+          exit "$rc"
