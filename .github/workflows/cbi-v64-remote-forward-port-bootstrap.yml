@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - cbi-v64-authoritative-forward-port-58e14973
+    paths:
+      - .cbi-v64-bootstrap/READY
 
 permissions:
   contents: write
@@ -33,19 +35,27 @@ jobs:
           PRODUCTION_BRANCH='cbi-v6-cloud-runtime-20260901'
           PRODUCTION_SHA='a311a2a57ee43a1f1a3b2819bf28946566b05692'
           FEATURE_BRANCH='cbi-v64-authoritative-forward-port-58e14973'
-
           test "$(git branch --show-current)" = "$FEATURE_BRANCH"
           git merge-base --is-ancestor "$SOURCE_SHA" HEAD
           test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | awk '{print $1}')" = "$SOURCE_SHA"
           test "$(git ls-remote origin "refs/heads/$PRODUCTION_BRANCH" | awk '{print $1}')" = "$PRODUCTION_SHA"
           test "$SOURCE_SHA" != "$PRODUCTION_SHA"
 
-      - name: Decode and verify SAFE payload
+      - name: Reassemble and verify SAFE payload
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/cbi-v64"
-          base64 --decode .cbi-v64-bootstrap/payload.b64 > "$RUNNER_TEMP/cbi-v64/payload.tar.gz"
+          echo 'd2d4964aba9e186e8d48e08f066f4d8c5d9d9dfe800c2ad9cecbcd282311ce78  .cbi-v64-bootstrap/payload.b64.part-00' | sha256sum -c -
+          echo '7f7c310f56226ddf72d015a38bb897ae7508291c558d27222c721cf4bde1c13a  .cbi-v64-bootstrap/payload.b64.part-01' | sha256sum -c -
+          echo 'aa1e2d43b635fefd6c1efafea5d514f0a0d2372fdf91d82c66bd86d6c1f70ba2  .cbi-v64-bootstrap/payload.b64.part-02' | sha256sum -c -
+          echo '0663ff0e37e75bdf3294c956a6a25779615cd76a385c30559131b8be0873f2fd  .cbi-v64-bootstrap/payload.b64.part-03' | sha256sum -c -
+          echo 'fba59cc33b0cf01fd78f5ae7fc0989f41f052bb43a8cf7ae270cbb175227f712  .cbi-v64-bootstrap/payload.b64.part-04' | sha256sum -c -
+          echo 'bb25a5894c2bdd15ba5482da5b5ca61acab5ef6e067f0f14c6ee8cd59312311f  .cbi-v64-bootstrap/payload.b64.part-05' | sha256sum -c -
+          cat .cbi-v64-bootstrap/payload.b64.part-* > "$RUNNER_TEMP/cbi-v64/payload.b64"
+          test "$(wc -c < "$RUNNER_TEMP/cbi-v64/payload.b64")" -eq 40616
+          echo '2fd8f33e2dd29985adb17db60622da2b973d670ca83e02c5344054cc5e24ec3b  '"$RUNNER_TEMP/cbi-v64/payload.b64" | sha256sum -c -
+          base64 --decode "$RUNNER_TEMP/cbi-v64/payload.b64" > "$RUNNER_TEMP/cbi-v64/payload.tar.gz"
           echo '4c0d23365e29038181adcda98b96a37288f19bbdabc8955ed7a416a89399c80c  '"$RUNNER_TEMP/cbi-v64/payload.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/cbi-v64/payload.tar.gz" -C "$RUNNER_TEMP/cbi-v64"
           cd "$RUNNER_TEMP/cbi-v64"
