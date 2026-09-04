@@ -121,6 +121,19 @@ class CanonicalIdentityReconciliationDetectorTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["status"], "REVIEW_REQUIRED")
         self.assertIn("PARTIAL_SHARED_TAX_ID", result["items"][0]["evidence_basis"])
 
+    def test_candidate_blocking_avoids_all_pairs_for_unrelated_accounts(self):
+        rows = [
+            account(f"A-{index}", f"Distinct Company {index} Limited")
+            for index in range(200)
+        ]
+        rows.append(account("DUP-1", "Shared Company Limited"))
+        rows.append(account("DUP-2", "Shared Company Ltd"))
+        result = detect_identity_reconciliation(rows)
+        self.assertEqual(result["candidate_pair_count"], 1)
+        self.assertEqual(result["pair_count"], 1)
+        self.assertEqual(result["cluster_count"], 1)
+        self.assertEqual(result["items"][0]["account_ids"], ["DUP-1", "DUP-2"])
+
     def test_detector_never_mutates_input_records(self):
         rows = [account("A-1", "Acme Ltd"), account("A-2", "Acme Ltd")]
         before = [dict(row) for row in rows]

@@ -136,6 +136,29 @@ def _pair_item(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any] | 
     }
 
 
+def _candidate_pair_indexes(snapshot: list[dict[str, Any]]) -> list[tuple[int, int]]:
+    blocks: dict[tuple[str, str, str], list[int]] = {}
+    for index, record in enumerate(snapshot):
+        country = _normalized_country(record.get("country"))
+        if not country:
+            continue
+        name = _normalized_legal_name(record.get("name"))
+        if name:
+            blocks.setdefault(("LEGAL_NAME", country, name), []).append(index)
+        for tax_id in _tax_ids(record):
+            blocks.setdefault(("TAX_ID", country, tax_id), []).append(index)
+        for external_id in _external_ids(record):
+            blocks.setdefault(("EXTERNAL_ID", country, external_id), []).append(index)
+
+    pairs: set[tuple[int, int]] = set()
+    for members in blocks.values():
+        unique_members = sorted(set(members))
+        if len(unique_members) < 2:
+            continue
+        pairs.update(combinations(unique_members, 2))
+    return sorted(pairs)
+
+
 def _cluster_item(
     component_indexes: list[int],
     snapshot: list[dict[str, Any]],
@@ -189,10 +212,11 @@ def detect_identity_reconciliation(records: Iterable[dict[str, Any]]) -> dict[st
         for index, record in enumerate(snapshot)
         if _account_id(record)
     }
+    candidate_pairs = _candidate_pair_indexes(snapshot)
     pair_items = [
         item
-        for left, right in combinations(snapshot, 2)
-        if (item := _pair_item(left, right)) is not None
+        for left_index, right_index in candidate_pairs
+        if (item := _pair_item(snapshot[left_index], snapshot[right_index])) is not None
     ]
 
     adjacency: dict[int, set[int]] = {}
@@ -228,6 +252,7 @@ def detect_identity_reconciliation(records: Iterable[dict[str, Any]]) -> dict[st
         "schema": "cbi.canonical-identity-reconciliation.v6.4",
         "read_only": True,
         "auto_merge_allowed": False,
+        "candidate_pair_count": len(candidate_pairs),
         "pair_count": len(pair_items),
         "cluster_count": len(items),
         "counts": counts,
