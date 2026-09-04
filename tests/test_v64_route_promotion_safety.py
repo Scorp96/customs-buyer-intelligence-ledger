@@ -240,6 +240,22 @@ class RouteSafetyTests(unittest.TestCase):
 
         self.assertEqual(result["outreach_readiness"], "COMPANY_ROUTE_READY")
 
+    def test_current_confirmed_information_with_active_conflict_is_not_actionable(self):
+        record = information_route(temporal_status="CURRENT_CONFIRMED")
+        conflict = information_route(temporal_status="CURRENT_CONFIRMED")
+        conflict["information_id"] = "INFO-CONFLICT"
+        conflict["outreach_eligible_claimed"] = False
+        record["conflicts_with_information_ids"] = ["INFO-CONFLICT"]
+        self.runtime.compat_state["information_records"] = {
+            "INFO-1": record,
+            "INFO-CONFLICT": conflict,
+        }
+
+        result = self.runtime.evaluate_outreach_readiness(self.args)
+
+        self.assertEqual(result["outreach_readiness"], "IDENTITY_ONLY")
+        self.assertEqual(result["canonical_route_view"], [])
+
     def test_compiled_current_likely_route_is_not_actionable(self):
         self.runtime.state["observations"] = {
             "OBS-1": {
@@ -436,6 +452,20 @@ class PromotionCanonicalReresolutionTests(unittest.TestCase):
         row = result["peer_reconciliation"][0]
         self.assertEqual(row["reconciliation_state"], "STILL_CANONICAL_NEW")
         self.assertTrue(row["promotion_eligible_under_current_identity"])
+
+    def test_reconciliation_view_reports_ambiguous_without_claiming_account_exists(self):
+        self.runtime.canonical_registry.result = {
+            "status": "AMBIGUOUS",
+            "match": None,
+            "candidates": [{"account_id": "C998"}, {"account_id": "C999"}],
+        }
+
+        result = self.runtime.get_account_state({"investigation_id": INVESTIGATION_ID})
+
+        row = result["peer_reconciliation"][0]
+        self.assertEqual(row["reconciliation_state"], "CANONICAL_RESOLUTION_AMBIGUOUS")
+        self.assertIsNone(row["matched_account_id"])
+        self.assertFalse(row["promotion_eligible_under_current_identity"])
 
     def test_promoted_peer_is_not_reclassified_by_reconciliation_view(self):
         self.runtime.state["peers"]["PEER-1"]["stage"] = "PROMOTED_ANCHOR"

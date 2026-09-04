@@ -61,6 +61,8 @@ class V61ResearchOrchestrationHardeningMixin:
             ]
         elif record.get("outreach_eligible_claimed") is True:
             warnings.append("CONTACT_IS_NOT_CONFIRMED_CURRENT")
+        if record.get("conflicts_with_information_ids"):
+            warnings.append("INFORMATION_ROUTE_HAS_ACTIVE_CONFLICT")
         return sorted(set(warnings))
 
     @staticmethod
@@ -440,7 +442,11 @@ class V61ResearchOrchestrationHardeningMixin:
                 "reconciliation_state": (
                     "STILL_CANONICAL_NEW"
                     if status == "NOT_FOUND"
+                    else "CANONICAL_RESOLUTION_AMBIGUOUS"
+                    if status == "AMBIGUOUS"
                     else "NOW_CANONICAL_ACCOUNT_EXISTS"
+                    if matched_account_id
+                    else "CANONICAL_RESOLUTION_UNRESOLVED"
                 ),
                 "promotion_eligible_under_current_identity": bool(
                     stage == "ANCHOR_ELIGIBLE"
