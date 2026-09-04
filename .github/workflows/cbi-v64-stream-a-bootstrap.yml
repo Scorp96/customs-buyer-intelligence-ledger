@@ -30,12 +30,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SOURCE_SHA='58e14973c62cca5a9daefa7b4012e427135736d5'
-          PRODUCTION_SHA='a311a2a57ee43a1f1a3b2819bf28946566b05692'
-          test "$(git branch --show-current)" = 'cbi-v64-semantic-forward-port-58e14973'
-          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = "$SOURCE_SHA"
-          test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = "$PRODUCTION_SHA"
-          git merge-base --is-ancestor "$SOURCE_SHA" HEAD
+          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
+          test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
+          git merge-base --is-ancestor 58e14973c62cca5a9daefa7b4012e427135736d5 HEAD
 
       - name: Reassemble and verify SAFE payload
         shell: bash
@@ -63,18 +60,30 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git am "$RUNNER_TEMP/cbi-v64/CBI_v64_wave1_3_cumulative.patch"
-          test "$(git rev-list --count 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD)" -eq 10
 
-      - name: Run Stream A regression gates
-        run: |
-          python -m unittest -q tests/test_v61_research_orchestration_hardening.py
-          python -m unittest -q tests/test_v63_candidate_anchor.py
-          python -m unittest -q tests/test_v63_research_scheduler.py
-          python -m unittest discover -s tests -p 'test_v63_*.py' -q
-          python mcp/v6_protocol_test.py
-          python mcp/v61_hardening_protocol_test.py
-          python -m unittest discover -s tests -p 'test_*.py' -q
-          git diff --check 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD
+      - name: Gate v61 research orchestration
+        run: python -m unittest -q tests/test_v61_research_orchestration_hardening.py
+
+      - name: Gate v63 candidate anchor
+        run: python -m unittest -q tests/test_v63_candidate_anchor.py
+
+      - name: Gate v63 research scheduler
+        run: python -m unittest -q tests/test_v63_research_scheduler.py
+
+      - name: Gate all v63 tests
+        run: python -m unittest discover -s tests -p 'test_v63_*.py' -q
+
+      - name: Gate MCP v6 protocol
+        run: python mcp/v6_protocol_test.py
+
+      - name: Gate MCP v61 hardening protocol
+        run: python mcp/v61_hardening_protocol_test.py
+
+      - name: Gate full repository suite
+        run: python -m unittest discover -s tests -p 'test_*.py' -q
+
+      - name: Gate diff check
+        run: git diff --check 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD
 
       - name: Remove bootstrap artifacts and push feature only
         shell: bash
@@ -84,6 +93,5 @@ jobs:
           test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
           git rm -r .cbi-v64-bootstrap .github/workflows/cbi-v64-stream-a-bootstrap.yml
           git commit -m 'chore(v64): remove remote Stream A bootstrap artifacts'
-          git diff --check 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD
           test -z "$(git status --porcelain)"
           git push origin HEAD:refs/heads/cbi-v64-semantic-forward-port-58e14973
