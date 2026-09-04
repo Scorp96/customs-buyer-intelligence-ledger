@@ -1,0 +1,96 @@
+name: CBI v6.4 remote forward-port bootstrap
+
+on:
+  push:
+    branches:
+      - cbi-v64-authoritative-forward-port-58e14973
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cbi-v64-remote-forward-port-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  forward-port:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout isolated feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: cbi-v64-authoritative-forward-port-58e14973
+
+      - name: Verify immutable remote baselines
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_BRANCH='cbi-v6-3-demand-expansion'
+          SOURCE_SHA='58e14973c62cca5a9daefa7b4012e427135736d5'
+          PRODUCTION_BRANCH='cbi-v6-cloud-runtime-20260901'
+          PRODUCTION_SHA='a311a2a57ee43a1f1a3b2819bf28946566b05692'
+          FEATURE_BRANCH='cbi-v64-authoritative-forward-port-58e14973'
+
+          test "$(git branch --show-current)" = "$FEATURE_BRANCH"
+          git merge-base --is-ancestor "$SOURCE_SHA" HEAD
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | awk '{print $1}')" = "$SOURCE_SHA"
+          test "$(git ls-remote origin "refs/heads/$PRODUCTION_BRANCH" | awk '{print $1}')" = "$PRODUCTION_SHA"
+          test "$SOURCE_SHA" != "$PRODUCTION_SHA"
+
+      - name: Decode and verify SAFE payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cbi-v64"
+          base64 --decode .cbi-v64-bootstrap/payload.b64 > "$RUNNER_TEMP/cbi-v64/payload.tar.gz"
+          echo '4c0d23365e29038181adcda98b96a37288f19bbdabc8955ed7a416a89399c80c  '"$RUNNER_TEMP/cbi-v64/payload.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/cbi-v64/payload.tar.gz" -C "$RUNNER_TEMP/cbi-v64"
+          cd "$RUNNER_TEMP/cbi-v64"
+          echo 'ec7e445a55ed59c662f15542bc08bf5848525e75f9f44b3cf12caa071d25347c  CBI_v64_wave1_3_cumulative.patch' | sha256sum -c -
+          echo '30791c4e3252afcd984c4bfe6e9537f9118f586a617d1d592c1291f1de0953bf  CBI_v64_backup_retention_payload_ownership_wave2_4.patch' | sha256sum -c -
+          echo '2b57ede8d2aa563130063afa6d586a33fdd36ffcc21a91220354cd4bbb12d498  test_v64_c279_full_runtime.py' | sha256sum -c -
+
+      - name: Apply reviewed v6.4 patch streams
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git am --keep-cr \
+            "$RUNNER_TEMP/cbi-v64/CBI_v64_wave1_3_cumulative.patch" \
+            "$RUNNER_TEMP/cbi-v64/CBI_v64_backup_retention_payload_ownership_wave2_4.patch"
+          test ! -e tests/test_v64_c279_full_runtime.py
+          cp "$RUNNER_TEMP/cbi-v64/test_v64_c279_full_runtime.py" tests/test_v64_c279_full_runtime.py
+          git add tests/test_v64_c279_full_runtime.py
+          git commit -m 'test(v64): add isolated C279 authoritative regression'
+
+      - name: Run targeted v6.1 and v6.3 gates
+        run: |
+          python -m unittest -q tests/test_v61_research_orchestration_hardening.py
+          python -m unittest -q tests/test_v63_candidate_anchor.py
+          python -m unittest -q tests/test_v63_research_scheduler.py
+          python -m unittest discover -s tests -p 'test_v63_*.py' -q
+          python mcp/v6_protocol_test.py
+          python mcp/v61_hardening_protocol_test.py
+
+      - name: Run full repository suite and diff check
+        run: |
+          python -m unittest discover -s tests -p 'test_*.py' -q
+          git diff --check 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD
+
+      - name: Recheck remote refs and push feature only
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_BRANCH='cbi-v6-3-demand-expansion'
+          SOURCE_SHA='58e14973c62cca5a9daefa7b4012e427135736d5'
+          PRODUCTION_BRANCH='cbi-v6-cloud-runtime-20260901'
+          PRODUCTION_SHA='a311a2a57ee43a1f1a3b2819bf28946566b05692'
+          FEATURE_BRANCH='cbi-v64-authoritative-forward-port-58e14973'
+          test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | awk '{print $1}')" = "$SOURCE_SHA"
+          test "$(git ls-remote origin "refs/heads/$PRODUCTION_BRANCH" | awk '{print $1}')" = "$PRODUCTION_SHA"
+          test -z "$(git status --porcelain)"
+          git push origin "HEAD:refs/heads/$FEATURE_BRANCH"
