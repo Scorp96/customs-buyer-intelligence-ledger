@@ -1,0 +1,37 @@
+======================================================================
+ERROR: test_v6_architecture (unittest.loader._FailedTest.test_v6_architecture)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_v6_architecture
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/unittest/loader.py", line 394, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/loader.py", line 337, in _get_module_from_name
+    __import__(name)
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v6_architecture.py", line 12, in <module>
+    from unified_runtime import CBI_MCP_TOOL_NAMES, UnifiedRuntime, ValidationError
+ImportError: cannot import name 'CBI_MCP_TOOL_NAMES' from 'unified_runtime' (unknown location)
+
+
+======================================================================
+ERROR: test_v6_properties_and_crash (unittest.loader._FailedTest.test_v6_properties_and_crash)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_v6_properties_and_crash
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/unittest/loader.py", line 394, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/loader.py", line 337, in _get_module_from_name
+    __import__(name)
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v6_properties_and_crash.py", line 7, in <module>
+    from unified_runtime import UnifiedRuntime
+ImportError: cannot import name 'UnifiedRuntime' from 'unified_runtime' (unknown location)
+
+
+----------------------------------------------------------------------
+Ran 954 tests in 53.594s
+
+FAILED (errors=2, skipped=4)
+BACKUP_DAILY_MUTATION_LATENCY {"first_mutation_seconds": 0.01224730400002727, "second_mutation_seconds": 0.006595028000049297, "snapshot_count": 1}
+
+EXIT_CODE=1
