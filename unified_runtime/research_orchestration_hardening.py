@@ -471,11 +471,11 @@ class V61ResearchOrchestrationHardeningMixin:
         self,
         state: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        root_blockers = self._promotion_identity_blockers(state)
         rows: list[dict[str, Any]] = []
         peers = state.get("peers") or {}
-        if not isinstance(peers, dict):
+        if not isinstance(peers, dict) or not peers:
             return rows
+        root_blockers = self._promotion_identity_blockers(state)
         for peer_id, peer in sorted(peers.items(), key=lambda item: str(item[0])):
             if not isinstance(peer, dict):
                 continue
@@ -595,7 +595,8 @@ class V61ResearchOrchestrationHardeningMixin:
         outreach: dict[str, Any],
     ) -> dict[str, Any]:
         account_id = state["start"]["account"]["account_id"]
-        claims = self._claims_view(state)
+        claims_view = getattr(self, "_claims_view", None)
+        claims = claims_view(state) if callable(claims_view) else {}
         claim = claims.get("contact.company_route") if isinstance(claims, dict) else None
         claim_state = (
             str(claim.get("state") or "UNSEEN").upper()
