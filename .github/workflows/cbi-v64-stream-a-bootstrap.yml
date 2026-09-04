@@ -34,7 +34,7 @@ jobs:
           test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
           git merge-base --is-ancestor 58e14973c62cca5a9daefa7b4012e427135736d5 HEAD
 
-      - name: Apply minimal optional lower-capability fix
+      - name: Apply minimal compatibility repairs
         shell: bash
         run: |
           set -euo pipefail
@@ -42,20 +42,49 @@ jobs:
           from pathlib import Path
           path = Path('unified_runtime/research_orchestration_hardening.py')
           text = path.read_text(encoding='utf-8')
-          old = (
+
+          old_route = (
               '        account_id = state["start"]["account"]["account_id"]\n'
               '        claims = self._claims_view(state)\n'
               '        claim = claims.get("contact.company_route") if isinstance(claims, dict) else None\n'
           )
-          new = (
+          new_route = (
               '        account_id = state["start"]["account"]["account_id"]\n'
               '        claims_view = getattr(self, "_claims_view", None)\n'
               '        claims = claims_view(state) if callable(claims_view) else {}\n'
               '        claim = claims.get("contact.company_route") if isinstance(claims, dict) else None\n'
           )
-          if text.count(old) != 1:
-              raise SystemExit(f'ROUTE_DIAGNOSTIC_EDIT_ANCHOR_COUNT={text.count(old)}')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          if text.count(old_route) != 1:
+              raise SystemExit(f'ROUTE_DIAGNOSTIC_EDIT_ANCHOR_COUNT={text.count(old_route)}')
+          text = text.replace(old_route, new_route, 1)
+
+          old_peer = (
+              '    def _peer_reconciliation_view(\n'
+              '        self,\n'
+              '        state: dict[str, Any],\n'
+              '    ) -> list[dict[str, Any]]:\n'
+              '        root_blockers = self._promotion_identity_blockers(state)\n'
+              '        rows: list[dict[str, Any]] = []\n'
+              '        peers = state.get("peers") or {}\n'
+              '        if not isinstance(peers, dict):\n'
+              '            return rows\n'
+          )
+          new_peer = (
+              '    def _peer_reconciliation_view(\n'
+              '        self,\n'
+              '        state: dict[str, Any],\n'
+              '    ) -> list[dict[str, Any]]:\n'
+              '        rows: list[dict[str, Any]] = []\n'
+              '        peers = state.get("peers") or {}\n'
+              '        if not isinstance(peers, dict) or not peers:\n'
+              '            return rows\n'
+              '        root_blockers = self._promotion_identity_blockers(state)\n'
+          )
+          if text.count(old_peer) != 1:
+              raise SystemExit(f'PEER_RECONCILIATION_EDIT_ANCHOR_COUNT={text.count(old_peer)}')
+          text = text.replace(old_peer, new_peer, 1)
+
+          path.write_text(text, encoding='utf-8')
           PY
           git diff --check
           git diff -- unified_runtime/research_orchestration_hardening.py
@@ -88,7 +117,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add unified_runtime/research_orchestration_hardening.py
-          git commit -m 'fix(v64): tolerate optional lower claims view in route diagnostics'
+          git commit -m 'fix(v64): preserve optional diagnostics and empty-peer compatibility'
           git rm -r .cbi-v64-bootstrap .cbi-v64-diagnostics .github/workflows/cbi-v64-stream-a-bootstrap.yml
           git commit -m 'chore(v64): remove Stream A bootstrap diagnostics'
           git diff --check 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD
