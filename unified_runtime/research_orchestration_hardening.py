@@ -14,6 +14,27 @@ from .canonical_identity_reconciliation_v64 import detect_identity_reconciliatio
 
 
 ROOT_IDENTITY_CLAIMS = ("identity.legal_entity", "identity.ultimate_buyer")
+
+def _portfolio_operational_activity_state(row: dict[str, Any]) -> str:
+    environment = str(row.get("environment") or "").strip().upper()
+    lifecycle = str(row.get("lifecycle") or "").strip().upper()
+    if environment in {"TEST", "PLACEHOLDER", "MIGRATION"} or lifecycle in {
+        "TEST",
+        "PLACEHOLDER",
+    }:
+        return "NON_PRODUCTION"
+    observation_count = int(row.get("observation_count") or 0)
+    peer_count = int(row.get("peer_count") or 0)
+    grade = str(row.get("commercial_value_grade") or "").strip().upper()
+    confidence = str(row.get("research_confidence") or "").strip().upper()
+    if (
+        observation_count > 0
+        or peer_count > 0
+        or grade not in {"", "NQ"}
+        or confidence not in {"", "R0"}
+    ):
+        return "RESEARCH_MATERIALIZED"
+    return "INITIALIZATION_ONLY"
 ROOT_IDENTITY_BLOCKING_STATES = {
     "CONFLICTED",
     "REFUTED",
@@ -692,10 +713,18 @@ class V61ResearchOrchestrationHardeningMixin:
                 )
 
         enriched_rows: list[dict[str, Any]] = []
+        activity_summary = {
+            "RESEARCH_MATERIALIZED": 0,
+            "INITIALIZATION_ONLY": 0,
+            "NON_PRODUCTION": 0,
+        }
         for row in full_rows:
             account_id = str(row.get("account_id") or "").strip()
             statuses = sorted(statuses_by_account.get(account_id, set()))
             enriched = dict(row)
+            activity_state = _portfolio_operational_activity_state(enriched)
+            enriched["operational_activity_state"] = activity_state
+            activity_summary[activity_state] += 1
             enriched["canonical_identity_reconciliation_required"] = bool(
                 statuses
             )
@@ -712,6 +741,11 @@ class V61ResearchOrchestrationHardeningMixin:
         )
 
         result["queue"] = enriched_rows[:requested_limit]
+        result["operational_activity_summary"] = {
+            **activity_summary,
+            "lifecycle_rewritten": False,
+            "queue_reordered": False,
+        }
         result["canonical_identity_reconciliation"] = reconciliation
         return result
 
@@ -752,6 +786,24 @@ class V61ResearchOrchestrationHardeningMixin:
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
         contract = dict(super().get_runtime_contract(arguments))
+        contract["portfolio_operational_activity_v6_4"] = {
+            "active_lifecycle_implies_research_materialized": False,
+            "initialization_only_rule": "ZERO_OBSERVATIONS_ZERO_PEERS_NQ_R0",
+            "non_production_environments": ["TEST", "PLACEHOLDER", "MIGRATION"],
+            "lifecycle_rewritten": False,
+            "queue_reordered": False,
+        }
+        contract["canonical_identity_reconciliation_v6_4"] = {
+            "mode": "READ_ONLY_DETECTION",
+            "automatic_merge_allowed": False,
+            "deterministic_duplicate_requires": (
+                "ALL_CLUSTER_MEMBERS_SHARE_STRUCTURED_TAX_ID"
+            ),
+            "partial_strong_id_inheritance_allowed": False,
+            "account_id_string_is_identity_evidence": False,
+            "portfolio_scan_scope": "FULL_VISIBLE_PORTFOLIO_BEFORE_LIMIT",
+            "history_rows_collapsed": False,
+        }
         contract["research_orchestration_v6_2"] = {
             "governance_principle": "CONSTRAIN_CONCLUSIONS_NOT_EXPLORATION",
             "budget_exhaustion_stops_host_research": False,

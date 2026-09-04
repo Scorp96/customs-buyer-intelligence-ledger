@@ -64,9 +64,9 @@ class FakeBase:
             },
         }
         self.rows = [
-            {"investigation_id": "INV-1", "account_id": "ACCT-1", "account_name": "Acme"},
-            {"investigation_id": "INV-2", "account_id": "ACCT-2", "account_name": "Other"},
-            {"investigation_id": "INV-3", "account_id": "ACCT-3", "account_name": "Acme Duplicate"},
+            {"investigation_id": "INV-1", "account_id": "ACCT-1", "account_name": "Acme", "environment": "PRODUCTION", "lifecycle": "ACTIVE", "commercial_value_grade": "A", "research_confidence": "R3", "observation_count": 5, "peer_count": 0},
+            {"investigation_id": "INV-2", "account_id": "ACCT-2", "account_name": "Other", "environment": "PRODUCTION", "lifecycle": "ACTIVE", "commercial_value_grade": "NQ", "research_confidence": "R0", "observation_count": 0, "peer_count": 0},
+            {"investigation_id": "INV-3", "account_id": "ACCT-3", "account_name": "Acme Duplicate", "environment": "PRODUCTION", "lifecycle": "ACTIVE", "commercial_value_grade": "NQ", "research_confidence": "R0", "observation_count": 0, "peer_count": 0},
         ]
 
     def get_portfolio_queue(self, arguments):
@@ -77,12 +77,56 @@ class FakeBase:
     def get_account_state(self, arguments):
         return self.account_states[arguments["investigation_id"]]
 
+    def get_runtime_contract(self, arguments):
+        return {"schema": "cbi.runtime-contract.v6.1"}
+
 
 class Runtime(Mixin, FakeBase):
     pass
 
 
 class PortfolioIdentityReconciliationTests(unittest.TestCase):
+    def test_runtime_contract_separates_lifecycle_from_operational_activity(self):
+        runtime = Runtime()
+        contract = runtime.get_runtime_contract({})
+        policy = contract["portfolio_operational_activity_v6_4"]
+        self.assertFalse(policy["active_lifecycle_implies_research_materialized"])
+        self.assertEqual(
+            policy["initialization_only_rule"],
+            "ZERO_OBSERVATIONS_ZERO_PEERS_NQ_R0",
+        )
+        self.assertFalse(policy["lifecycle_rewritten"])
+        self.assertFalse(policy["queue_reordered"])
+
+    def test_runtime_contract_exposes_fail_closed_identity_reconciliation_policy(self):
+        runtime = Runtime()
+        contract = runtime.get_runtime_contract({})
+        policy = contract["canonical_identity_reconciliation_v6_4"]
+        self.assertEqual(policy["mode"], "READ_ONLY_DETECTION")
+        self.assertFalse(policy["automatic_merge_allowed"])
+        self.assertEqual(
+            policy["deterministic_duplicate_requires"],
+            "ALL_CLUSTER_MEMBERS_SHARE_STRUCTURED_TAX_ID",
+        )
+        self.assertEqual(
+            policy["portfolio_scan_scope"],
+            "FULL_VISIBLE_PORTFOLIO_BEFORE_LIMIT",
+        )
+
+    def test_active_lifecycle_is_separated_from_operational_research_activity(self):
+        runtime = Runtime()
+        result = runtime.get_portfolio_queue({"limit": 3})
+        by_id = {row["account_id"]: row for row in result["queue"]}
+        self.assertEqual(by_id["ACCT-1"]["operational_activity_state"], "RESEARCH_MATERIALIZED")
+        self.assertEqual(by_id["ACCT-2"]["operational_activity_state"], "INITIALIZATION_ONLY")
+        self.assertEqual(by_id["ACCT-3"]["operational_activity_state"], "INITIALIZATION_ONLY")
+        self.assertEqual(by_id["ACCT-2"]["lifecycle"], "ACTIVE")
+        summary = result["operational_activity_summary"]
+        self.assertEqual(summary["RESEARCH_MATERIALIZED"], 1)
+        self.assertEqual(summary["INITIALIZATION_ONLY"], 2)
+        self.assertFalse(summary["lifecycle_rewritten"])
+        self.assertFalse(summary["queue_reordered"])
+
     def test_detector_scans_full_visible_portfolio_before_applying_user_limit(self):
         runtime = Runtime()
         result = runtime.get_portfolio_queue({"limit": 2})
