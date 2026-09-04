@@ -1,5 +1,3 @@
-CBI_V64_STREAM_A_CROSS_VERSION_REPAIR_V8
+CBI_V64_LOADER_SEQUENCE_DIAGNOSTIC_V9
 source=58e14973c62cca5a9daefa7b4012e427135736d5
 production=a311a2a57ee43a1f1a3b2819bf28946566b05692
-root_identity_gate=preserved_fail_closed
-loader_isolation=repair
