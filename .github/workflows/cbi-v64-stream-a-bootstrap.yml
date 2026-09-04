@@ -1,4 +1,4 @@
-name: CBI v6.4 Stream A cross-version repair
+name: CBI v6.4 loader isolation diagnostic
 
 on:
   push:
@@ -9,104 +9,36 @@ permissions:
   contents: write
 
 jobs:
-  repair-and-verify:
+  diagnose-loader:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           ref: cbi-v64-semantic-forward-port-58e14973
-      - name: Verify immutable refs
+      - name: Apply candidate test-only repairs and capture loader sequence
         shell: bash
         run: |
-          set -euo pipefail
-          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
-          test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
-      - name: Align legacy promotion fixtures with v64 root-identity precondition
-        shell: bash
-        run: |
-          set -euo pipefail
+          set -u
           python - <<'PY'
           from pathlib import Path
-
-          # Independent audit: add an explicit helper and use it only in tests
-          # whose subject is post-gate promotion lifecycle behavior.
-          p = Path('tests/test_v61_independent_audit.py')
-          t = p.read_text(encoding='utf-8')
-          anchor = '''    def resolve_every_claim(self) -> tuple[dict, dict]:\n'''
-          helper = '''    def support_root_identity_for_promotion(self) -> None:\n        result = self.compile([\n            self.observation(\n                "identity.legal_entity",\n                suffix="root-legal-entity-for-promotion",\n                value={"legal_name": "Synthetic Audit Buyer"},\n            ),\n            self.observation(\n                "identity.ultimate_buyer",\n                suffix="root-ultimate-buyer-for-promotion",\n                value={"ultimate_buyer": "Synthetic Audit Buyer"},\n            ),\n        ], "BUNDLE-V64-ROOT-IDENTITY-FOR-PROMOTION")\n        self.assertEqual(result["rejected_count"], 0)\n\n'''
-          if helper not in t:
-              if t.count(anchor) != 1:
-                  raise SystemExit(f'INDEPENDENT_HELPER_ANCHOR_COUNT={t.count(anchor)}')
-              t = t.replace(anchor, helper + anchor, 1)
-          call_anchor = '''        self.assertEqual(eligible["stage"], "ANCHOR_ELIGIBLE")\n        promoted = self.runtime.promote_anchor({\n'''
-          call_replace = '''        self.assertEqual(eligible["stage"], "ANCHOR_ELIGIBLE")\n        self.support_root_identity_for_promotion()\n        promoted = self.runtime.promote_anchor({\n'''
-          if call_replace not in t:
-              if t.count(call_anchor) != 1:
-                  raise SystemExit(f'INDEPENDENT_MONOTONIC_ANCHOR_COUNT={t.count(call_anchor)}')
-              t = t.replace(call_anchor, call_replace, 1)
-          call_anchor2 = '''        ], "BUNDLE-V61-PREMATURE-BRANCHES")\n        self.runtime.promote_anchor({\n'''
-          call_replace2 = '''        ], "BUNDLE-V61-PREMATURE-BRANCHES")\n        self.support_root_identity_for_promotion()\n        self.runtime.promote_anchor({\n'''
-          if call_replace2 not in t:
-              if t.count(call_anchor2) != 1:
-                  raise SystemExit(f'INDEPENDENT_PREPROMOTION_ANCHOR_COUNT={t.count(call_anchor2)}')
-              t = t.replace(call_anchor2, call_replace2, 1)
-          p.write_text(t, encoding='utf-8')
-
-          # WAL fixture: establish root account identity in the same durable
-          # state before testing promotion crash/recovery. Keep the first three
-          # peer evidence outcome indexes unchanged.
-          p = Path('tests/test_v61_peer_pivot_wal_recovery.py')
-          t = p.read_text(encoding='utf-8')
-          old = '''            self._observation(\n                "trade.import_activity",\n                "peer-trade",\n                owner_type="PEER",\n                owner_id=peer_id,\n            ),\n        ], "BUNDLE-PEER-WAL-FACTS")\n'''
-          new = '''            self._observation(\n                "trade.import_activity",\n                "peer-trade",\n                owner_type="PEER",\n                owner_id=peer_id,\n            ),\n            self._observation(\n                "identity.legal_entity",\n                "root-legal-entity",\n            ),\n            self._observation(\n                "identity.ultimate_buyer",\n                "root-ultimate-buyer",\n            ),\n        ], "BUNDLE-PEER-WAL-FACTS")\n'''
+          p=Path('tests/test_v64_route_promotion_safety.py'); t=p.read_text(encoding='utf-8')
+          old='''    except ModuleNotFoundError:\n        for name in list(sys.modules):\n            if name == "unified_runtime" or name.startswith("unified_runtime."):\n                sys.modules.pop(name, None)\n        root = Path(__file__).resolve().parents[1]\n        package = types.ModuleType("unified_runtime")\n'''
+          new='''    except ModuleNotFoundError:\n        for name in list(sys.modules):\n            if name == "unified_runtime" or name.startswith("unified_runtime."):\n                sys.modules.pop(name, None)\n        root = Path(__file__).resolve().parents[1]\n        if (root / "unified_runtime" / "__init__.py").exists():\n            from unified_runtime.research_orchestration_hardening import V61ResearchOrchestrationHardeningMixin  # type: ignore\n            from unified_runtime.errors import ValidationError  # type: ignore\n            return V61ResearchOrchestrationHardeningMixin, ValidationError\n        package = types.ModuleType("unified_runtime")\n'''
           if new not in t:
-              if t.count(old) != 1:
-                  raise SystemExit(f'WAL_ROOT_IDENTITY_ANCHOR_COUNT={t.count(old)}')
-              t = t.replace(old, new, 1)
-          p.write_text(t, encoding='utf-8')
-
-          # v64 patch-only loader must not leak a synthetic unified_runtime
-          # package into the rest of repository unittest discovery. If the
-          # initial import failed because an earlier test polluted sys.modules,
-          # purge and retry the real package before namespace fallback.
-          p = Path('tests/test_v64_route_promotion_safety.py')
-          t = p.read_text(encoding='utf-8')
-          old = '''    except ModuleNotFoundError:\n        for name in list(sys.modules):\n            if name == "unified_runtime" or name.startswith("unified_runtime."):\n                sys.modules.pop(name, None)\n        root = Path(__file__).resolve().parents[1]\n        package = types.ModuleType("unified_runtime")\n'''
-          new = '''    except ModuleNotFoundError:\n        for name in list(sys.modules):\n            if name == "unified_runtime" or name.startswith("unified_runtime."):\n                sys.modules.pop(name, None)\n        root = Path(__file__).resolve().parents[1]\n        if (root / "unified_runtime" / "__init__.py").exists():\n            from unified_runtime.research_orchestration_hardening import (  # type: ignore\n                V61ResearchOrchestrationHardeningMixin,\n            )\n            from unified_runtime.errors import ValidationError  # type: ignore\n            return V61ResearchOrchestrationHardeningMixin, ValidationError\n        package = types.ModuleType("unified_runtime")\n'''
-          if new not in t:
-              if t.count(old) != 1:
-                  raise SystemExit(f'V64_LOADER_ANCHOR_COUNT={t.count(old)}')
-              t = t.replace(old, new, 1)
-          p.write_text(t, encoding='utf-8')
+              if t.count(old)!=1: raise SystemExit(f'loader_anchor={t.count(old)}')
+              p.write_text(t.replace(old,new,1),encoding='utf-8')
           PY
-          git diff --check
-      - name: Gate independent promotion lifecycle
-        run: python -m unittest -q tests/test_v61_independent_audit.py
-      - name: Gate promotion WAL recovery
-        run: python -m unittest -q tests/test_v61_peer_pivot_wal_recovery.py
-      - name: Gate v64 route promotion safety
-        run: python -m unittest -q tests/test_v64_route_promotion_safety.py
-      - name: Gate v6 imports after v64 safety module
-        shell: bash
-        run: |
-          python -m unittest -q tests/test_v64_route_promotion_safety.py tests/test_v6_architecture.py tests/test_v6_properties_and_crash.py
-      - name: Gate full repository suite
-        run: python -m unittest discover -s tests -p 'test_*.py' -q
-      - name: Commit repairs and clean all bootstrap diagnostics
-        shell: bash
-        run: |
-          set -euo pipefail
+          mkdir -p .cbi-v64-diagnostics
+          set +e
+          python -m unittest -q tests/test_v64_route_promotion_safety.py tests/test_v6_architecture.py tests/test_v6_properties_and_crash.py > .cbi-v64-diagnostics/loader_sequence.txt 2>&1
+          rc=$?
+          set -e
+          printf '\nEXIT_CODE=%s\n' "$rc" >> .cbi-v64-diagnostics/loader_sequence.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tests/test_v61_independent_audit.py tests/test_v61_peer_pivot_wal_recovery.py tests/test_v64_route_promotion_safety.py
-          git commit -m 'test(v64): align cross-version promotion and loader regressions'
-          git rm -r .cbi-v64-bootstrap .cbi-v64-diagnostics .github/workflows/cbi-v64-stream-a-bootstrap.yml
-          git commit -m 'chore(v64): remove Stream A bootstrap diagnostics'
-          git diff --check 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD
-          test -z "$(git status --porcelain)"
-          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
-          test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
+          git add .cbi-v64-diagnostics/loader_sequence.txt
+          git commit -m 'test(v64): persist loader isolation diagnostic'
           git push origin HEAD:refs/heads/cbi-v64-semantic-forward-port-58e14973
+          exit "$rc"
