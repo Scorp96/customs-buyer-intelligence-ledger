@@ -69,7 +69,10 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git am --keep-cr \
+          # On Linux, default git am strips CR from CRLF mbox lines. --keep-cr is
+          # intentionally not used because the reviewed wave1 mbox is mixed LF/CRLF
+          # while the fresh GitHub checkout is LF-normalized.
+          git am \
             "$RUNNER_TEMP/cbi-v64/CBI_v64_wave1_3_cumulative.patch" \
             "$RUNNER_TEMP/cbi-v64/CBI_v64_backup_retention_payload_ownership_wave2_4.patch"
           test ! -e tests/test_v64_c279_full_runtime.py
