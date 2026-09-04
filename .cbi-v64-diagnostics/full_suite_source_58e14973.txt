@@ -1,7 +1,0 @@
-----------------------------------------------------------------------
-Ran 929 tests in 53.087s
-
-OK (skipped=4)
-BACKUP_DAILY_MUTATION_LATENCY {"first_mutation_seconds": 0.011777098999971258, "second_mutation_seconds": 0.005572911000001568, "snapshot_count": 1}
-
-EXIT_CODE=0
