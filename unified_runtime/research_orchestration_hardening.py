@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from .errors import ValidationError
+from .canonical_identity_reconciliation_v64 import detect_identity_reconciliation
 
 
 ROOT_IDENTITY_CLAIMS = ("identity.legal_entity", "identity.ultimate_buyer")
@@ -646,6 +647,73 @@ class V61ResearchOrchestrationHardeningMixin:
             "contains_route_values": False,
             "mutates_history": False,
         }
+
+    def get_portfolio_queue(
+        self,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        args = dict(arguments or {})
+        requested_limit = int(args.get("limit", 100))
+        if not 1 <= requested_limit <= 1000:
+            raise ValidationError("limit must be 1-1000")
+
+        full_args = dict(args)
+        full_args["limit"] = 1000
+        result = dict(super().get_portfolio_queue(full_args))
+        full_rows = [dict(row) for row in (result.get("queue") or [])]
+
+        identities: dict[str, dict[str, Any]] = {}
+        scan_errors: list[dict[str, str]] = []
+        for row in full_rows:
+            investigation_id = str(row.get("investigation_id") or "").strip()
+            account_id = str(row.get("account_id") or "").strip()
+            if not investigation_id or not account_id or account_id in identities:
+                continue
+            try:
+                account_state = super().get_account_state(
+                    {"investigation_id": investigation_id}
+                )
+                account = dict(account_state.get("account") or {})
+                account.setdefault("account_id", account_id)
+                identities[account_id] = account
+            except (ValidationError, KeyError, TypeError, ValueError) as exc:
+                scan_errors.append({
+                    "investigation_id": investigation_id,
+                    "account_id": account_id,
+                    "error": str(exc),
+                })
+
+        reconciliation = detect_identity_reconciliation(identities.values())
+        statuses_by_account: dict[str, set[str]] = {}
+        for item in reconciliation["items"]:
+            for account_id in item["account_ids"]:
+                statuses_by_account.setdefault(account_id, set()).add(
+                    item["status"]
+                )
+
+        enriched_rows: list[dict[str, Any]] = []
+        for row in full_rows:
+            account_id = str(row.get("account_id") or "").strip()
+            statuses = sorted(statuses_by_account.get(account_id, set()))
+            enriched = dict(row)
+            enriched["canonical_identity_reconciliation_required"] = bool(
+                statuses
+            )
+            enriched["canonical_identity_reconciliation_statuses"] = statuses
+            enriched_rows.append(enriched)
+
+        total_count = int(result.get("count", len(full_rows)))
+        reconciliation["scan_scope"] = "FULL_VISIBLE_PORTFOLIO_BEFORE_LIMIT"
+        reconciliation["scanned_row_count"] = len(full_rows)
+        reconciliation["scan_error_count"] = len(scan_errors)
+        reconciliation["scan_errors"] = scan_errors
+        reconciliation["coverage_complete"] = (
+            len(full_rows) >= total_count and not scan_errors
+        )
+
+        result["queue"] = enriched_rows[:requested_limit]
+        result["canonical_identity_reconciliation"] = reconciliation
+        return result
 
     def get_account_state(
         self,
