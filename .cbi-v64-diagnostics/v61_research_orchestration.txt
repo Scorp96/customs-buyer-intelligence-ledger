@@ -1,0 +1,36 @@
+======================================================================
+ERROR: test_account_state_exposes_current_source_coverage_without_mutating_closure (tests.test_v61_research_orchestration_hardening.ResearchOrchestrationTests.test_account_state_exposes_current_source_coverage_without_mutating_closure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v61_research_orchestration_hardening.py", line 315, in test_account_state_exposes_current_source_coverage_without_mutating_closure
+    result = self.runtime.get_account_state(self.args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/research_orchestration_hardening.py", line 779, in get_account_state
+    result["route_projection_diagnostics"] = self._route_projection_diagnostics(
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/research_orchestration_hardening.py", line 598, in _route_projection_diagnostics
+    claims = self._claims_view(state)
+             ^^^^^^^^^^^^^^^^^
+AttributeError: 'Runtime' object has no attribute '_claims_view'
+
+======================================================================
+ERROR: test_account_state_reuses_normalized_outreach_and_routes (tests.test_v61_research_orchestration_hardening.ResearchOrchestrationTests.test_account_state_reuses_normalized_outreach_and_routes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v61_research_orchestration_hardening.py", line 304, in test_account_state_reuses_normalized_outreach_and_routes
+    result = self.runtime.get_account_state(self.args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/research_orchestration_hardening.py", line 779, in get_account_state
+    result["route_projection_diagnostics"] = self._route_projection_diagnostics(
+                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/research_orchestration_hardening.py", line 598, in _route_projection_diagnostics
+    claims = self._claims_view(state)
+             ^^^^^^^^^^^^^^^^^
+AttributeError: 'Runtime' object has no attribute '_claims_view'
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.003s
+
+FAILED (errors=2)
+
+EXIT_CODE=1
