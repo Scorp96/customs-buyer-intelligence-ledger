@@ -1,4 +1,5 @@
-CBI_V64_SOURCE_BASELINE_FULL_SUITE_V7
+CBI_V64_STREAM_A_CROSS_VERSION_REPAIR_V8
 source=58e14973c62cca5a9daefa7b4012e427135736d5
 production=a311a2a57ee43a1f1a3b2819bf28946566b05692
-baseline_command=python -m unittest discover -s tests -p test_*.py -q
+root_identity_gate=preserved_fail_closed
+loader_isolation=repair
