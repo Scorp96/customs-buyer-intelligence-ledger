@@ -1,4 +1,4 @@
-CBI_V64_STREAM_A_FULL_SUITE_CAPTURE_V6
+CBI_V64_SOURCE_BASELINE_FULL_SUITE_V7
 source=58e14973c62cca5a9daefa7b4012e427135736d5
 production=a311a2a57ee43a1f1a3b2819bf28946566b05692
-capture=full_suite_after_stream_a
+baseline_command=python -m unittest discover -s tests -p test_*.py -q
