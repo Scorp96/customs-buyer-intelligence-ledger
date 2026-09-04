@@ -1,4 +1,4 @@
-name: CBI v6.4 Stream A remote apply
+name: CBI v6.4 Stream A repair and verify
 
 on:
   push:
@@ -11,11 +11,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: cbi-v64-stream-a-remote-apply
+  group: cbi-v64-stream-a-repair
   cancel-in-progress: false
 
 jobs:
-  apply-stream-a:
+  repair-stream-a:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -32,47 +32,63 @@ jobs:
           set -euo pipefail
           test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
           test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
+          git merge-base --is-ancestor 58e14973c62cca5a9daefa7b4012e427135736d5 HEAD
 
-      - name: Reassemble and verify SAFE payload
+      - name: Apply minimal optional lower-capability fix
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/cbi-v64"
-          echo 'd2d4964aba9e186e8d48e08f066f4d8c5d9d9dfe800c2ad9cecbcd282311ce78  .cbi-v64-bootstrap/payload.b64.part-00' | sha256sum -c -
-          echo '7f7c310f56226ddf72d015a38bb897ae7508291c558d27222c721cf4bde1c13a  .cbi-v64-bootstrap/payload.b64.part-01' | sha256sum -c -
-          echo 'aa1e2d43b635fefd6c1efafea5d514f0a0d2372fdf91d82c66bd86d6c1f70ba2  .cbi-v64-bootstrap/payload.b64.part-02' | sha256sum -c -
-          echo '0663ff0e37e75bdf3294c956a6a25779615cd76a385c30559131b8be0873f2fd  .cbi-v64-bootstrap/payload.b64.part-03' | sha256sum -c -
-          echo 'fba59cc33b0cf01fd78f5ae7fc0989f41f052bb43a8cf7ae270cbb175227f712  .cbi-v64-bootstrap/payload.b64.part-04' | sha256sum -c -
-          echo 'bb25a5894c2bdd15ba5482da5b5ca61acab5ef6e067f0f14c6ee8cd59312311f  .cbi-v64-bootstrap/payload.b64.part-05' | sha256sum -c -
-          cat .cbi-v64-bootstrap/payload.b64.part-* > "$RUNNER_TEMP/cbi-v64/payload.b64"
-          test "$(wc -c < "$RUNNER_TEMP/cbi-v64/payload.b64")" -eq 40616
-          echo '2fd8f33e2dd29985adb17db60622da2b973d670ca83e02c5344054cc5e24ec3b  '"$RUNNER_TEMP/cbi-v64/payload.b64" | sha256sum -c -
-          base64 --decode "$RUNNER_TEMP/cbi-v64/payload.b64" > "$RUNNER_TEMP/cbi-v64/payload.tar.gz"
-          echo '4c0d23365e29038181adcda98b96a37288f19bbdabc8955ed7a416a89399c80c  '"$RUNNER_TEMP/cbi-v64/payload.tar.gz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/cbi-v64/payload.tar.gz" -C "$RUNNER_TEMP/cbi-v64"
-          echo 'ec7e445a55ed59c662f15542bc08bf5848525e75f9f44b3cf12caa071d25347c  '"$RUNNER_TEMP/cbi-v64/CBI_v64_wave1_3_cumulative.patch" | sha256sum -c -
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('unified_runtime/research_orchestration_hardening.py')
+          text = path.read_text(encoding='utf-8')
+          old = '        claims = self._claims_view(state)\n'
+          new = (
+              '        claims_view = getattr(self, "_claims_view", None)\n'
+              '        claims = claims_view(state) if callable(claims_view) else {}\n'
+          )
+          if old not in text:
+              raise SystemExit('EXPECTED_STREAM_A_CLAIMS_CALL_NOT_FOUND')
+          if text.count(old) != 1:
+              raise SystemExit('STREAM_A_CLAIMS_CALL_NOT_UNIQUE')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+          git diff -- unified_runtime/research_orchestration_hardening.py
 
-      - name: Apply Stream A nine reviewed commits
+      - name: Red-gate regression now passes
+        run: python -m unittest -q tests/test_v61_research_orchestration_hardening.py
+
+      - name: Gate v63 candidate anchor
+        run: python -m unittest -q tests/test_v63_candidate_anchor.py
+
+      - name: Gate v63 research scheduler
+        run: python -m unittest -q tests/test_v63_research_scheduler.py
+
+      - name: Gate all v63 tests
+        run: python -m unittest discover -s tests -p 'test_v63_*.py' -q
+
+      - name: Gate MCP v6 protocol
+        run: python mcp/v6_protocol_test.py
+
+      - name: Gate MCP v61 hardening protocol
+        run: python mcp/v61_hardening_protocol_test.py
+
+      - name: Gate full repository suite
+        run: python -m unittest discover -s tests -p 'test_*.py' -q
+
+      - name: Commit repair and clean temporary bootstrap evidence
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git am "$RUNNER_TEMP/cbi-v64/CBI_v64_wave1_3_cumulative.patch"
-
-      - name: Capture v61 research orchestration diagnostic and persist Stream A
-        shell: bash
-        run: |
-          set -u
-          mkdir -p .cbi-v64-diagnostics
-          set +e
-          python -m unittest -q tests/test_v61_research_orchestration_hardening.py > .cbi-v64-diagnostics/v61_research_orchestration.txt 2>&1
-          rc=$?
-          set -e
-          printf '\nEXIT_CODE=%s\n' "$rc" >> .cbi-v64-diagnostics/v61_research_orchestration.txt
-          git add .cbi-v64-diagnostics/v61_research_orchestration.txt
-          git commit -m 'test(v64): capture Stream A v61 diagnostic'
+          git add unified_runtime/research_orchestration_hardening.py
+          git commit -m 'fix(v64): tolerate optional lower claims view in route diagnostics'
+          git rm -r .cbi-v64-bootstrap .cbi-v64-diagnostics .github/workflows/cbi-v64-stream-a-bootstrap.yml
+          git commit -m 'chore(v64): remove Stream A bootstrap diagnostics'
+          git diff --check 58e14973c62cca5a9daefa7b4012e427135736d5..HEAD
           test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
           test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
+          test -z "$(git status --porcelain)"
           git push origin HEAD:refs/heads/cbi-v64-semantic-forward-port-58e14973
-          exit "$rc"
