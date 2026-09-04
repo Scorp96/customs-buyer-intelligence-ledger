@@ -1,4 +1,4 @@
-name: CBI v6.4 Stream A full-suite diagnostic
+name: CBI v6.4 source baseline full-suite diagnostic
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  diagnose-full-suite:
+  baseline:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -18,35 +18,29 @@ jobs:
         with:
           fetch-depth: 0
           ref: cbi-v64-semantic-forward-port-58e14973
-      - name: Forward-port stale v61 fixture
+      - name: Verify refs and create source worktree
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          p=Path('tests/test_v61_research_orchestration_hardening.py')
-          t=p.read_text(encoding='utf-8')
-          marker='    def test_account_state_reuses_normalized_outreach_and_routes(self):\n'
-          s=t.index(marker); e=t.index('\n    def ',s+len(marker)); b=t[s:e]
-          old='                "source": {"freshness": "CURRENT_LIKELY"},\n'
-          new='                "source": {"freshness": "CURRENT_CONFIRMED"},\n'
-          if b.count(old)!=1: raise SystemExit(f'fixture_anchor={b.count(old)}')
-          p.write_text(t[:s]+b.replace(old,new,1)+t[e:],encoding='utf-8')
-          PY
-      - name: Capture full suite and persist exact failure
+          SOURCE='58e14973c62cca5a9daefa7b4012e427135736d5'
+          PROD='a311a2a57ee43a1f1a3b2819bf28946566b05692'
+          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = "$SOURCE"
+          test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = "$PROD"
+          git worktree add --detach "$RUNNER_TEMP/source-baseline" "$SOURCE"
+      - name: Run exact source baseline full suite
         shell: bash
         run: |
           set -u
           mkdir -p .cbi-v64-diagnostics
           set +e
-          python -m unittest discover -s tests -p 'test_*.py' -q > .cbi-v64-diagnostics/full_suite_after_stream_a.txt 2>&1
+          (cd "$RUNNER_TEMP/source-baseline" && python -m unittest discover -s tests -p 'test_*.py' -q) > .cbi-v64-diagnostics/full_suite_source_58e14973.txt 2>&1
           rc=$?
           set -e
-          printf '\nEXIT_CODE=%s\n' "$rc" >> .cbi-v64-diagnostics/full_suite_after_stream_a.txt
+          printf '\nEXIT_CODE=%s\n' "$rc" >> .cbi-v64-diagnostics/full_suite_source_58e14973.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tests/test_v61_research_orchestration_hardening.py .cbi-v64-diagnostics/full_suite_after_stream_a.txt
-          git commit -m 'test(v64): persist Stream A full-suite diagnostic'
+          git add .cbi-v64-diagnostics/full_suite_source_58e14973.txt
+          git commit -m 'test(v64): persist authoritative source full-suite baseline'
           test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
           git push origin HEAD:refs/heads/cbi-v64-semantic-forward-port-58e14973
           exit "$rc"
