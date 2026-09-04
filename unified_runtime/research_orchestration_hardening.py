@@ -10,12 +10,9 @@ from __future__ import annotations
 from typing import Any
 
 
-CURRENT_ROUTE_STATES = {
-    "LIVE",
+STRONG_DIRECT_ROUTE_STATES = {
     "CURRENT",
     "CURRENT_CONFIRMED",
-    "CURRENT_LIKELY",
-    "RECENT",
 }
 SUPPORTED_ROUTE_CHANNELS = {
     "EMAIL",
@@ -37,6 +34,24 @@ class V61ResearchOrchestrationHardeningMixin:
         if not value:
             raise ValueError("investigation_id is required")
         return value
+
+    def _information_route_warnings(
+        self,
+        record: dict[str, Any],
+        account_id: str,
+    ) -> list[str]:
+        """Preserve lower route gates while accepting CURRENT_CONFIRMED."""
+        warnings = list(super()._information_route_warnings(record, account_id))
+        temporal_status = str(record.get("temporal_status") or "").upper()
+        if temporal_status in STRONG_DIRECT_ROUTE_STATES:
+            warnings = [
+                warning
+                for warning in warnings
+                if warning != "CONTACT_IS_NOT_CONFIRMED_CURRENT"
+            ]
+        elif record.get("outreach_eligible_claimed") is True:
+            warnings.append("CONTACT_IS_NOT_CONFIRMED_CURRENT")
+        return sorted(set(warnings))
 
     @staticmethod
     def _remaining_units(result: dict[str, Any]) -> float | None:
@@ -117,9 +132,11 @@ class V61ResearchOrchestrationHardeningMixin:
             return None
         if raw.get("verified") is not True:
             return None
-        if raw.get("channel_proof") is not True:
+        if raw.get("masked") is True:
             return None
         if raw.get("guessed") is True:
+            return None
+        if channel in {"WHATSAPP", "ZALO"} and raw.get("channel_proof") is not True:
             return None
         route = {
             "kind": channel,
@@ -158,7 +175,7 @@ class V61ResearchOrchestrationHardeningMixin:
             source = observation.get("source")
             if not isinstance(source, dict):
                 continue
-            if str(source.get("freshness") or "").upper() not in CURRENT_ROUTE_STATES:
+            if str(source.get("freshness") or "").upper() not in STRONG_DIRECT_ROUTE_STATES:
                 continue
             value = observation.get("value")
             if not isinstance(value, dict):
@@ -176,34 +193,59 @@ class V61ResearchOrchestrationHardeningMixin:
                 routes.append(route)
         return routes
 
-    @staticmethod
     def _information_company_routes(
-        history: dict[str, Any],
+        self,
+        investigation_id: str,
         account_id: str,
     ) -> list[dict[str, Any]]:
+        """Recompute current Information route eligibility without rewriting history."""
+        try:
+            compat_state = self._state(investigation_id)
+        except (AttributeError, KeyError):
+            return []
+        records_by_id = compat_state.get("information_records") or {}
+        if not isinstance(records_by_id, dict):
+            return []
+        evidence_index = compat_state.get("evidence") or {}
+        existing_ids = set(records_by_id)
+        superseded_ids = {
+            str(item)
+            for record in records_by_id.values()
+            if isinstance(record, dict)
+            for item in (record.get("supersedes_information_ids") or [])
+            if str(item) in existing_ids
+        }
+
         routes: list[dict[str, Any]] = []
-        for record in history.get("merged_current_view") or []:
+        for information_id, record in records_by_id.items():
             if not isinstance(record, dict):
                 continue
-            if record.get("information_type") != "ROUTE":
+            if str(information_id) in superseded_ids:
                 continue
-            if record.get("route_scope") != "BUYER_DIRECT":
+            if record.get("outreach_eligible_claimed") is not True:
                 continue
-            if record.get("outreach_eligible_effective") is not True:
+            if self._information_route_warnings(record, account_id):
                 continue
-            if record.get("subject_owner_id") != account_id:
+            evidence_ids = [str(item) for item in (record.get("evidence_ids") or [])]
+            if any(evidence_id not in evidence_index for evidence_id in evidence_ids):
                 continue
-            if str(record.get("temporal_status") or "").upper() not in CURRENT_ROUTE_STATES:
+            unresolved_lineage = [
+                str(item)
+                for field in ("supersedes_information_ids", "conflicts_with_information_ids")
+                for item in (record.get(field) or [])
+                if str(item) not in existing_ids
+            ]
+            if unresolved_lineage:
                 continue
             value = record.get("value")
             if not isinstance(value, dict):
                 continue
-            route = V61ResearchOrchestrationHardeningMixin._route_payload(
+            route = self._route_payload(
                 value,
                 account_id=account_id,
-                source_kind="INFORMATION_HISTORY",
-                evidence_ids=list(record.get("evidence_ids") or []),
-                information_id=str(record.get("information_id") or "") or None,
+                source_kind="INFORMATION_HISTORY_DERIVED",
+                evidence_ids=evidence_ids,
+                information_id=str(record.get("information_id") or information_id),
             )
             if route:
                 routes.append(route)
@@ -235,6 +277,7 @@ class V61ResearchOrchestrationHardeningMixin:
         account_id = state["start"]["account"]["account_id"]
 
         routes = self._compiled_company_routes(state)
+        routes.extend(self._information_company_routes(investigation_id, account_id))
 
         # Lower v6.1 hardening remains the authority for legacy Information
         # Records. This overlay is additive: never erase IDs/routes that the lower

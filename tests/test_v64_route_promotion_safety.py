@@ -1,0 +1,269 @@
+import importlib.util
+import sys
+import types
+import unittest
+from pathlib import Path
+
+
+def _load_overlay():
+    try:
+        from unified_runtime.research_orchestration_hardening import (  # type: ignore
+            V61ResearchOrchestrationHardeningMixin,
+        )
+        from unified_runtime.errors import ValidationError  # type: ignore
+        return V61ResearchOrchestrationHardeningMixin, ValidationError
+    except ModuleNotFoundError:
+        for name in list(sys.modules):
+            if name == "unified_runtime" or name.startswith("unified_runtime."):
+                sys.modules.pop(name, None)
+        root = Path(__file__).resolve().parents[1]
+        package = types.ModuleType("unified_runtime")
+        package.__path__ = [str(root / "unified_runtime")]
+        sys.modules["unified_runtime"] = package
+        errors = types.ModuleType("unified_runtime.errors")
+
+        class ValidationError(ValueError):
+            pass
+
+        errors.ValidationError = ValidationError
+        sys.modules["unified_runtime.errors"] = errors
+        path = root / "unified_runtime" / "research_orchestration_hardening.py"
+        spec = importlib.util.spec_from_file_location(
+            "unified_runtime.research_orchestration_hardening", path
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module.V61ResearchOrchestrationHardeningMixin, ValidationError
+
+
+V61ResearchOrchestrationHardeningMixin, ValidationError = _load_overlay()
+
+
+ACCOUNT_ID = "SYNTH-ACCOUNT-001"
+INVESTIGATION_ID = "INV-SYNTH-001"
+
+
+def information_route(*, temporal_status="CURRENT", channel="EMAIL", value="buyer@example.com", **overrides):
+    record = {
+        "information_id": "INFO-1",
+        "information_type": "ROUTE",
+        "subject_owner_id": ACCOUNT_ID,
+        "related_account_id": ACCOUNT_ID,
+        "route_scope": "BUYER_DIRECT",
+        "temporal_status": temporal_status,
+        "confidence": "HIGH",
+        "outreach_eligible_claimed": True,
+        "outreach_eligible_effective": temporal_status == "CURRENT",
+        "usage_warnings": [] if temporal_status == "CURRENT" else ["CONTACT_IS_NOT_CONFIRMED_CURRENT"],
+        "supersedes_information_ids": [],
+        "conflicts_with_information_ids": [],
+        "evidence_ids": ["EVD-1"],
+        "value": {
+            "channel": channel,
+            "value": value,
+            "verified": True,
+            "masked": False,
+            "guessed": False,
+        },
+    }
+    for key, val in overrides.items():
+        if key.startswith("value_"):
+            record["value"][key[6:]] = val
+        else:
+            record[key] = val
+    return record
+
+
+class FakeCanonicalRegistry:
+    def __init__(self):
+        self.result = {"status": "NOT_FOUND", "match": None, "candidates": []}
+
+    def resolve(self, identity):
+        self.last_identity = dict(identity)
+        return dict(self.result)
+
+
+class FakeBase:
+    def __init__(self):
+        self.state = {
+            "start": {"investigation_id": INVESTIGATION_ID, "account": {"account_id": ACCOUNT_ID}},
+            "observations": {},
+            "peers": {},
+        }
+        self.compat_state = {
+            "start": {"account": {"account_id": ACCOUNT_ID}},
+            "information_records": {},
+            "evidence": {"EVD-1": {"evidence_id": "EVD-1"}},
+        }
+        self.outreach_result = {
+            "outreach_readiness": "IDENTITY_ONLY",
+            "readiness": "IDENTITY_ONLY",
+            "valid_company_route_observation_ids": [],
+            "valid_named_route_observation_ids": [],
+            "valid_information_route_ids": [],
+            "canonical_route_view": [],
+            "canonical_route_sources": [],
+            "block_reasons": ["VERIFIED_ACCOUNT_OWNED_ROUTE_REQUIRED"],
+            "sends_message": False,
+        }
+        self.canonical_registry = FakeCanonicalRegistry()
+        self.promotions = 0
+
+    def _v6_state(self, investigation_id):
+        return self.state
+
+    def _state(self, investigation_id):
+        return self.compat_state
+
+    def _claims_view(self, state):
+        return state.get("claims", {})
+
+    @staticmethod
+    def _information_route_warnings(record, account_id):
+        warnings = []
+        if record.get("outreach_eligible_claimed") is not True:
+            return warnings
+        if record.get("information_type") not in {"CONTACT", "ROUTE"}:
+            warnings.append("INFORMATION_TYPE_IS_NOT_A_CONTACT_OR_ROUTE")
+        if record.get("subject_owner_id") != account_id:
+            warnings.append("SUBJECT_OWNER_IS_NOT_THE_BUYER_ACCOUNT")
+        if record.get("route_scope") != "BUYER_DIRECT":
+            warnings.append("ROUTE_SCOPE_IS_NOT_BUYER_DIRECT")
+        if record.get("temporal_status") != "CURRENT":
+            warnings.append("CONTACT_IS_NOT_CONFIRMED_CURRENT")
+        if record.get("confidence") not in {"HIGH", "MEDIUM_HIGH"}:
+            warnings.append("CONFIDENCE_TOO_LOW_FOR_DIRECT_OUTREACH")
+        value = record.get("value") or {}
+        if value.get("verified") is not True:
+            warnings.append("CONTACT_NOT_VERIFIED")
+        if value.get("masked") is True:
+            warnings.append("MASKED_CONTACT")
+        if value.get("guessed") is True:
+            warnings.append("GUESSED_CONTACT")
+        channel = str(value.get("channel") or "").upper()
+        route_value = str(value.get("value") or "").strip()
+        if not channel or not route_value:
+            warnings.append("CONTACT_CHANNEL_OR_VALUE_MISSING")
+        elif channel in {"WHATSAPP", "ZALO"} and value.get("channel_proof") is not True:
+            warnings.append(f"{channel}_CHANNEL_NOT_PROVEN")
+        return sorted(set(warnings))
+
+    def evaluate_outreach_readiness(self, arguments):
+        return dict(self.outreach_result)
+
+    def promote_anchor(self, arguments):
+        self.promotions += 1
+        peer_id = arguments["peer_id"]
+        self.state["peers"][peer_id]["stage"] = "PROMOTED_ANCHOR"
+        return {"accepted": True, "peer_id": peer_id, "stage": "PROMOTED_ANCHOR"}
+
+
+class Runtime(V61ResearchOrchestrationHardeningMixin, FakeBase):
+    pass
+
+
+class RouteSafetyTests(unittest.TestCase):
+    def setUp(self):
+        self.runtime = Runtime()
+        self.args = {"investigation_id": INVESTIGATION_ID}
+
+    def test_current_confirmed_information_route_has_no_currentness_warning(self):
+        record = information_route(temporal_status="CURRENT_CONFIRMED")
+        warnings = self.runtime._information_route_warnings(record, ACCOUNT_ID)
+        self.assertNotIn("CONTACT_IS_NOT_CONFIRMED_CURRENT", warnings)
+
+    def test_only_current_and_current_confirmed_are_strong_direct_states(self):
+        for state in ("CURRENT", "CURRENT_CONFIRMED"):
+            with self.subTest(state=state):
+                warnings = self.runtime._information_route_warnings(
+                    information_route(temporal_status=state), ACCOUNT_ID
+                )
+                self.assertNotIn("CONTACT_IS_NOT_CONFIRMED_CURRENT", warnings)
+        for state in ("LIVE", "CURRENT_LIKELY", "RECENT", "HISTORICAL", "STALE", "UNKNOWN"):
+            with self.subTest(state=state):
+                warnings = self.runtime._information_route_warnings(
+                    information_route(temporal_status=state), ACCOUNT_ID
+                )
+                self.assertIn("CONTACT_IS_NOT_CONFIRMED_CURRENT", warnings)
+
+    def test_current_confirmed_does_not_bypass_other_route_safety_gates(self):
+        cases = [
+            ("unverified", {"value_verified": False}, "CONTACT_NOT_VERIFIED"),
+            ("masked", {"value_masked": True}, "MASKED_CONTACT"),
+            ("guessed", {"value_guessed": True}, "GUESSED_CONTACT"),
+            ("wrong-owner", {"subject_owner_id": "OTHER"}, "SUBJECT_OWNER_IS_NOT_THE_BUYER_ACCOUNT"),
+            ("wrong-scope", {"route_scope": "THIRD_PARTY"}, "ROUTE_SCOPE_IS_NOT_BUYER_DIRECT"),
+        ]
+        for name, overrides, expected in cases:
+            with self.subTest(name=name):
+                warnings = self.runtime._information_route_warnings(
+                    information_route(temporal_status="CURRENT_CONFIRMED", **overrides), ACCOUNT_ID
+                )
+                self.assertIn(expected, warnings)
+
+    def test_stale_cached_false_current_confirmed_information_is_reprojected(self):
+        record = information_route(temporal_status="CURRENT_CONFIRMED")
+        record["outreach_eligible_effective"] = False
+        record["usage_warnings"] = ["CONTACT_IS_NOT_CONFIRMED_CURRENT"]
+        self.runtime.compat_state["information_records"] = {"INFO-1": record}
+
+        result = self.runtime.evaluate_outreach_readiness(self.args)
+
+        self.assertEqual(result["outreach_readiness"], "COMPANY_ROUTE_READY")
+        self.assertEqual(result["valid_information_route_ids"], ["INFO-1"])
+        self.assertEqual(result["canonical_route_view"][0]["value"], "buyer@example.com")
+
+    def test_official_email_does_not_require_channel_proof(self):
+        record = information_route(temporal_status="CURRENT_CONFIRMED", channel="EMAIL")
+        record["value"].pop("channel_proof", None)
+        self.runtime.compat_state["information_records"] = {"INFO-1": record}
+
+        result = self.runtime.evaluate_outreach_readiness(self.args)
+
+        self.assertEqual(result["outreach_readiness"], "COMPANY_ROUTE_READY")
+
+    def test_compiled_current_likely_route_is_not_actionable(self):
+        self.runtime.state["observations"] = {
+            "OBS-1": {
+                "observation_id": "OBS-1",
+                "evidence_id": "EVD-1",
+                "claim_key": "contact.company_route",
+                "result": "POSITIVE",
+                "owner_type": "ACCOUNT",
+                "owner_id": ACCOUNT_ID,
+                "value": {
+                    "channel": "PHONE",
+                    "value": "+15550101002",
+                    "verified": True,
+                    "masked": False,
+                    "guessed": False,
+                    "channel_proof": True,
+                },
+                "source": {"freshness": "CURRENT_LIKELY"},
+            }
+        }
+
+        result = self.runtime.evaluate_outreach_readiness(self.args)
+
+        self.assertEqual(result["outreach_readiness"], "IDENTITY_ONLY")
+        self.assertEqual(result["canonical_route_view"], [])
+
+    def test_whatsapp_still_requires_channel_proof(self):
+        record = information_route(
+            temporal_status="CURRENT_CONFIRMED",
+            channel="WHATSAPP",
+            value="+15550101001",
+        )
+        record["value"].pop("channel_proof", None)
+        self.runtime.compat_state["information_records"] = {"INFO-1": record}
+
+        result = self.runtime.evaluate_outreach_readiness(self.args)
+
+        self.assertEqual(result["outreach_readiness"], "IDENTITY_ONLY")
+        self.assertEqual(result["canonical_route_view"], [])
+
+
+if __name__ == "__main__":
+    unittest.main()
