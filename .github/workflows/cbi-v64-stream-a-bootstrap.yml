@@ -42,15 +42,19 @@ jobs:
           from pathlib import Path
           path = Path('unified_runtime/research_orchestration_hardening.py')
           text = path.read_text(encoding='utf-8')
-          old = '        claims = self._claims_view(state)\n'
+          old = (
+              '        account_id = state["start"]["account"]["account_id"]\n'
+              '        claims = self._claims_view(state)\n'
+              '        claim = claims.get("contact.company_route") if isinstance(claims, dict) else None\n'
+          )
           new = (
+              '        account_id = state["start"]["account"]["account_id"]\n'
               '        claims_view = getattr(self, "_claims_view", None)\n'
               '        claims = claims_view(state) if callable(claims_view) else {}\n'
+              '        claim = claims.get("contact.company_route") if isinstance(claims, dict) else None\n'
           )
-          if old not in text:
-              raise SystemExit('EXPECTED_STREAM_A_CLAIMS_CALL_NOT_FOUND')
           if text.count(old) != 1:
-              raise SystemExit('STREAM_A_CLAIMS_CALL_NOT_UNIQUE')
+              raise SystemExit(f'ROUTE_DIAGNOSTIC_EDIT_ANCHOR_COUNT={text.count(old)}')
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
           git diff --check
