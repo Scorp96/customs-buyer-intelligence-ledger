@@ -1,0 +1,17 @@
+======================================================================
+ERROR: test_peer_anchor_eligibility_does_not_require_contact (tests.test_v6_architecture.V6ArchitectureTests.test_peer_anchor_eligibility_does_not_require_contact)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/tests/test_v6_architecture.py", line 305, in test_peer_anchor_eligibility_does_not_require_contact
+    promoted = self.runtime.promote_anchor({
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/research_orchestration_hardening.py", line 529, in promote_anchor
+    raise ValidationError(f"ROOT_CRITICAL_IDENTITY_BLOCKED:{detail}")
+unified_runtime.errors.ValidationError: ROOT_CRITICAL_IDENTITY_BLOCKED:identity.legal_entity=UNSEEN,identity.ultimate_buyer=UNSEEN
+
+----------------------------------------------------------------------
+Ran 40 tests in 1.142s
+
+FAILED (errors=1)
+
+EXIT_CODE=1
