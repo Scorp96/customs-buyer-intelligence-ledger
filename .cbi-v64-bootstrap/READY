@@ -1,4 +1,5 @@
-CBI_V64_STREAM_A_REPAIR_VERIFY_V1
+CBI_V64_STREAM_A_REPAIR_VERIFY_V2
 source=58e14973c62cca5a9daefa7b4012e427135736d5
 production=a311a2a57ee43a1f1a3b2819bf28946566b05692
 repair=optional_lower_claims_view
+anchor=route_projection_diagnostics
