@@ -393,6 +393,64 @@ class V61ResearchOrchestrationHardeningMixin:
                 blockers.append({"claim_key": claim_key, "state": claim_state})
         return sorted(blockers, key=lambda item: (item["claim_key"], item["state"]))
 
+    @staticmethod
+    def _peer_identity_material(peer: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "name": peer.get("name"),
+            "country": peer.get("country"),
+            "tax_id": peer.get("tax_id"),
+        }
+
+    def _current_peer_canonical_resolution(
+        self,
+        peer: dict[str, Any],
+    ) -> dict[str, Any]:
+        return dict(self.canonical_registry.resolve(self._peer_identity_material(peer)))
+
+    def _peer_reconciliation_view(
+        self,
+        state: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        root_blockers = self._promotion_identity_blockers(state)
+        rows: list[dict[str, Any]] = []
+        peers = state.get("peers") or {}
+        if not isinstance(peers, dict):
+            return rows
+        for peer_id, peer in sorted(peers.items(), key=lambda item: str(item[0])):
+            if not isinstance(peer, dict):
+                continue
+            stage = str(peer.get("stage") or "DISCOVERED")
+            if stage in {"PROMOTED_ANCHOR", "FULLY_AUDITED"}:
+                continue
+            current_resolution = self._current_peer_canonical_resolution(peer)
+            status = str(current_resolution.get("status") or "").upper()
+            match = current_resolution.get("match")
+            matched_account_id = (
+                str(match.get("account_id") or "")
+                if isinstance(match, dict)
+                else ""
+            )
+            rows.append({
+                "peer_id": str(peer.get("peer_id") or peer_id),
+                "historical_canonical_resolution": dict(
+                    peer.get("canonical_resolution") or {}
+                ),
+                "current_canonical_resolution": current_resolution,
+                "matched_account_id": matched_account_id or None,
+                "reconciliation_state": (
+                    "STILL_CANONICAL_NEW"
+                    if status == "NOT_FOUND"
+                    else "NOW_CANONICAL_ACCOUNT_EXISTS"
+                ),
+                "promotion_eligible_under_current_identity": bool(
+                    stage == "ANCHOR_ELIGIBLE"
+                    and peer.get("disposition") != "NOT_MATERIAL"
+                    and status == "NOT_FOUND"
+                    and not root_blockers
+                ),
+            })
+        return rows
+
     def promote_anchor(
         self,
         arguments: dict[str, Any],
@@ -405,6 +463,22 @@ class V61ResearchOrchestrationHardeningMixin:
                 f"{item['claim_key']}={item['state']}" for item in blockers
             )
             raise ValidationError(f"ROOT_CRITICAL_IDENTITY_BLOCKED:{detail}")
+
+        peer_id = str(arguments.get("peer_id") or "").strip()
+        peer = (state.get("peers") or {}).get(peer_id) if peer_id else None
+        if isinstance(peer, dict) and peer.get("stage") == "ANCHOR_ELIGIBLE":
+            resolution = self._current_peer_canonical_resolution(peer)
+            if str(resolution.get("status") or "").upper() != "NOT_FOUND":
+                match = resolution.get("match")
+                matched_account_id = (
+                    str(match.get("account_id") or "")
+                    if isinstance(match, dict)
+                    else ""
+                )
+                raise ValidationError(
+                    "PEER_NOW_RESOLVES_TO_CANONICAL_ACCOUNT:"
+                    + (matched_account_id or "UNKNOWN")
+                )
         return super().promote_anchor(arguments)
 
     @staticmethod
@@ -476,6 +550,9 @@ class V61ResearchOrchestrationHardeningMixin:
             "planner_truncated": bool(source_plan.get("truncated")),
             "closure_snapshot_policy": "CLOSURE_MUTATION_RESULT_UNCHANGED",
         }
+        result["peer_reconciliation"] = self._peer_reconciliation_view(
+            self._v6_state(investigation_id)
+        )
         return result
 
     def get_runtime_contract(

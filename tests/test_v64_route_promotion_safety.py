@@ -155,6 +155,12 @@ class FakeBase:
     def evaluate_outreach_readiness(self, arguments):
         return dict(self.outreach_result)
 
+    def get_account_state(self, arguments):
+        return {"account": {"account_id": ACCOUNT_ID}}
+
+    def plan_public_source_calls(self, arguments):
+        return {"calls": [], "truncated": False}
+
     def append_peer_discovery(self, arguments):
         self.discoveries += 1
         return {"accepted": True, "peer_id": arguments["peer_id"]}
@@ -284,6 +290,12 @@ class PromotionIdentityGateTests(unittest.TestCase):
                 "stage": "ANCHOR_ELIGIBLE",
                 "name": "Synthetic Peer",
                 "country": "ZZ",
+                "tax_id": "TAX-SYNTH-1",
+                "canonical_resolution": {
+                    "status": "NOT_FOUND",
+                    "match": None,
+                    "candidates": [],
+                },
             }
         }
         self.args = {"investigation_id": INVESTIGATION_ID, "peer_id": "PEER-1"}
@@ -341,6 +353,107 @@ class PromotionIdentityGateTests(unittest.TestCase):
         self.assertTrue(evaluated["accepted"])
         self.assertEqual(self.runtime.discoveries, 1)
         self.assertEqual(self.runtime.evaluations, 1)
+
+
+class PromotionCanonicalReresolutionTests(unittest.TestCase):
+    def setUp(self):
+        self.runtime = Runtime()
+        self.runtime.state["claims"] = {
+            "identity.legal_entity": {"state": "SUPPORTED"},
+            "identity.ultimate_buyer": {"state": "SUPPORTED"},
+        }
+        self.runtime.state["peers"] = {
+            "PEER-1": {
+                "peer_id": "PEER-1",
+                "stage": "ANCHOR_ELIGIBLE",
+                "name": "Synthetic Peer",
+                "country": "ZZ",
+                "tax_id": "TAX-SYNTH-1",
+                "canonical_resolution": {
+                    "status": "NOT_FOUND",
+                    "match": None,
+                    "candidates": [],
+                },
+            }
+        }
+        self.args = {"investigation_id": INVESTIGATION_ID, "peer_id": "PEER-1"}
+
+    def test_peer_that_now_resolves_to_canonical_account_is_blocked_before_promotion(self):
+        historical = dict(self.runtime.state["peers"]["PEER-1"]["canonical_resolution"])
+        self.runtime.canonical_registry.result = {
+            "status": "MATCH",
+            "match": {"account_id": "C999"},
+            "candidates": [],
+        }
+
+        with self.assertRaises(ValidationError) as caught:
+            self.runtime.promote_anchor(self.args)
+
+        self.assertIn("PEER_NOW_RESOLVES_TO_CANONICAL_ACCOUNT:C999", str(caught.exception))
+        self.assertEqual(self.runtime.promotions, 0)
+        self.assertEqual(self.runtime.state["peers"]["PEER-1"]["stage"], "ANCHOR_ELIGIBLE")
+        self.assertEqual(
+            self.runtime.state["peers"]["PEER-1"]["canonical_resolution"],
+            historical,
+        )
+        self.assertEqual(
+            self.runtime.canonical_registry.last_identity,
+            {"name": "Synthetic Peer", "country": "ZZ", "tax_id": "TAX-SYNTH-1"},
+        )
+
+    def test_peer_still_not_found_delegates_to_existing_promotion_path(self):
+        result = self.runtime.promote_anchor(self.args)
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(self.runtime.promotions, 1)
+        self.assertEqual(self.runtime.state["peers"]["PEER-1"]["stage"], "PROMOTED_ANCHOR")
+
+    def test_account_state_exposes_non_mutating_peer_reconciliation_view(self):
+        historical = dict(self.runtime.state["peers"]["PEER-1"]["canonical_resolution"])
+        self.runtime.canonical_registry.result = {
+            "status": "MATCH",
+            "match": {"account_id": "C999"},
+            "candidates": [],
+        }
+
+        result = self.runtime.get_account_state({"investigation_id": INVESTIGATION_ID})
+
+        row = result["peer_reconciliation"][0]
+        self.assertEqual(row["peer_id"], "PEER-1")
+        self.assertEqual(row["historical_canonical_resolution"], historical)
+        self.assertEqual(row["current_canonical_resolution"]["status"], "MATCH")
+        self.assertEqual(row["matched_account_id"], "C999")
+        self.assertEqual(row["reconciliation_state"], "NOW_CANONICAL_ACCOUNT_EXISTS")
+        self.assertFalse(row["promotion_eligible_under_current_identity"])
+        self.assertEqual(
+            self.runtime.state["peers"]["PEER-1"]["canonical_resolution"],
+            historical,
+        )
+
+    def test_reconciliation_view_reports_still_canonical_new_when_not_found(self):
+        result = self.runtime.get_account_state({"investigation_id": INVESTIGATION_ID})
+
+        row = result["peer_reconciliation"][0]
+        self.assertEqual(row["reconciliation_state"], "STILL_CANONICAL_NEW")
+        self.assertTrue(row["promotion_eligible_under_current_identity"])
+
+    def test_promoted_peer_is_not_reclassified_by_reconciliation_view(self):
+        self.runtime.state["peers"]["PEER-1"]["stage"] = "PROMOTED_ANCHOR"
+        historical = dict(self.runtime.state["peers"]["PEER-1"]["canonical_resolution"])
+        self.runtime.canonical_registry.result = {
+            "status": "MATCH",
+            "match": {"account_id": "C999"},
+            "candidates": [],
+        }
+
+        result = self.runtime.get_account_state({"investigation_id": INVESTIGATION_ID})
+
+        self.assertEqual(result["peer_reconciliation"], [])
+        self.assertEqual(self.runtime.state["peers"]["PEER-1"]["stage"], "PROMOTED_ANCHOR")
+        self.assertEqual(
+            self.runtime.state["peers"]["PEER-1"]["canonical_resolution"],
+            historical,
+        )
 
 
 if __name__ == "__main__":
