@@ -110,6 +110,8 @@ class FakeBase:
         }
         self.canonical_registry = FakeCanonicalRegistry()
         self.promotions = 0
+        self.discoveries = 0
+        self.evaluations = 0
 
     def _v6_state(self, investigation_id):
         return self.state
@@ -152,6 +154,14 @@ class FakeBase:
 
     def evaluate_outreach_readiness(self, arguments):
         return dict(self.outreach_result)
+
+    def append_peer_discovery(self, arguments):
+        self.discoveries += 1
+        return {"accepted": True, "peer_id": arguments["peer_id"]}
+
+    def evaluate_peer(self, arguments):
+        self.evaluations += 1
+        return {"accepted": True, "peer_id": arguments["peer_id"]}
 
     def promote_anchor(self, arguments):
         self.promotions += 1
@@ -263,6 +273,74 @@ class RouteSafetyTests(unittest.TestCase):
 
         self.assertEqual(result["outreach_readiness"], "IDENTITY_ONLY")
         self.assertEqual(result["canonical_route_view"], [])
+
+
+class PromotionIdentityGateTests(unittest.TestCase):
+    def setUp(self):
+        self.runtime = Runtime()
+        self.runtime.state["peers"] = {
+            "PEER-1": {
+                "peer_id": "PEER-1",
+                "stage": "ANCHOR_ELIGIBLE",
+                "name": "Synthetic Peer",
+                "country": "ZZ",
+            }
+        }
+        self.args = {"investigation_id": INVESTIGATION_ID, "peer_id": "PEER-1"}
+
+    def _set_root_identity(self, legal_state, ultimate_state):
+        self.runtime.state["claims"] = {
+            "identity.legal_entity": {"state": legal_state},
+            "identity.ultimate_buyer": {"state": ultimate_state},
+        }
+
+    def test_root_identity_blocking_states_fail_closed_before_promotion(self):
+        for blocked_state in ("CONFLICTED", "REFUTED", "BLOCKED", "SEARCHING"):
+            with self.subTest(blocked_state=blocked_state):
+                self.runtime.promotions = 0
+                self.runtime.state["peers"]["PEER-1"]["stage"] = "ANCHOR_ELIGIBLE"
+                self._set_root_identity(blocked_state, "SUPPORTED")
+
+                with self.assertRaises(ValidationError) as caught:
+                    self.runtime.promote_anchor(self.args)
+
+                self.assertIn("ROOT_CRITICAL_IDENTITY_BLOCKED", str(caught.exception))
+                self.assertEqual(self.runtime.promotions, 0)
+                self.assertEqual(
+                    self.runtime.state["peers"]["PEER-1"]["stage"],
+                    "ANCHOR_ELIGIBLE",
+                )
+
+    def test_missing_root_identity_claim_fails_closed_before_promotion(self):
+        self.runtime.state["claims"] = {
+            "identity.legal_entity": {"state": "SUPPORTED"}
+        }
+
+        with self.assertRaises(ValidationError) as caught:
+            self.runtime.promote_anchor(self.args)
+
+        self.assertIn("identity.ultimate_buyer=UNSEEN", str(caught.exception))
+        self.assertEqual(self.runtime.promotions, 0)
+
+    def test_supported_root_identity_allows_promotion_to_delegate(self):
+        self._set_root_identity("SUPPORTED", "STRONGLY_SUPPORTED")
+
+        result = self.runtime.promote_anchor(self.args)
+
+        self.assertTrue(result["accepted"])
+        self.assertEqual(self.runtime.promotions, 1)
+        self.assertEqual(self.runtime.state["peers"]["PEER-1"]["stage"], "PROMOTED_ANCHOR")
+
+    def test_identity_gate_does_not_block_discovery_or_evaluation(self):
+        self._set_root_identity("CONFLICTED", "SEARCHING")
+
+        discovered = self.runtime.append_peer_discovery(self.args)
+        evaluated = self.runtime.evaluate_peer(self.args)
+
+        self.assertTrue(discovered["accepted"])
+        self.assertTrue(evaluated["accepted"])
+        self.assertEqual(self.runtime.discoveries, 1)
+        self.assertEqual(self.runtime.evaluations, 1)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from .errors import ValidationError
 
+
+ROOT_IDENTITY_CLAIMS = ("identity.legal_entity", "identity.ultimate_buyer")
+ROOT_IDENTITY_BLOCKING_STATES = {
+    "CONFLICTED",
+    "REFUTED",
+    "BLOCKED",
+    "SEARCHING",
+    "UNSEEN",
+}
 STRONG_DIRECT_ROUTE_STATES = {
     "CURRENT",
     "CURRENT_CONFIRMED",
@@ -365,6 +375,37 @@ class V61ResearchOrchestrationHardeningMixin:
             result["block_reasons"] = blockers
         result["sends_message"] = False
         return result
+
+    def _promotion_identity_blockers(
+        self,
+        state: dict[str, Any],
+    ) -> list[dict[str, str]]:
+        claims = self._claims_view(state)
+        blockers: list[dict[str, str]] = []
+        for claim_key in ROOT_IDENTITY_CLAIMS:
+            row = claims.get(claim_key) if isinstance(claims, dict) else None
+            claim_state = (
+                str(row.get("state") or "UNSEEN").upper()
+                if isinstance(row, dict)
+                else "UNSEEN"
+            )
+            if claim_state in ROOT_IDENTITY_BLOCKING_STATES:
+                blockers.append({"claim_key": claim_key, "state": claim_state})
+        return sorted(blockers, key=lambda item: (item["claim_key"], item["state"]))
+
+    def promote_anchor(
+        self,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        investigation_id = self._investigation_id(arguments)
+        state = self._v6_state(investigation_id)
+        blockers = self._promotion_identity_blockers(state)
+        if blockers:
+            detail = ",".join(
+                f"{item['claim_key']}={item['state']}" for item in blockers
+            )
+            raise ValidationError(f"ROOT_CRITICAL_IDENTITY_BLOCKED:{detail}")
+        return super().promote_anchor(arguments)
 
     @staticmethod
     def _normalize_decision_view(result: dict[str, Any]) -> dict[str, Any]:
