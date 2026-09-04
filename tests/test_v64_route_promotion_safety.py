@@ -17,6 +17,10 @@ def _load_overlay():
             if name == "unified_runtime" or name.startswith("unified_runtime."):
                 sys.modules.pop(name, None)
         root = Path(__file__).resolve().parents[1]
+        if (root / "unified_runtime" / "__init__.py").exists():
+            from unified_runtime.research_orchestration_hardening import V61ResearchOrchestrationHardeningMixin  # type: ignore
+            from unified_runtime.errors import ValidationError  # type: ignore
+            return V61ResearchOrchestrationHardeningMixin, ValidationError
         package = types.ModuleType("unified_runtime")
         package.__path__ = [str(root / "unified_runtime")]
         sys.modules["unified_runtime"] = package

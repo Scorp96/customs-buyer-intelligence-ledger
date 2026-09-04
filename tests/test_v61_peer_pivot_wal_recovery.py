@@ -242,6 +242,8 @@ class V61PeerPivotWalRecoveryTests(unittest.TestCase):
                 owner_type="PEER",
                 owner_id=peer_id,
             ),
+            self._observation("identity.legal_entity", "root-legal-entity"),
+            self._observation("identity.ultimate_buyer", "root-ultimate-buyer"),
         ], "BUNDLE-PEER-WAL-FACTS")
         evidence = {
             "entity_verified": [bundle["outcomes"][0]["evidence_id"]],

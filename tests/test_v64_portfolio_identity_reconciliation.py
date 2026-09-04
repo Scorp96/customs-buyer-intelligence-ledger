@@ -6,10 +6,18 @@ from pathlib import Path
 
 
 def _load_overlay():
+    root = Path(__file__).resolve().parents[1]
+    if (root / "unified_runtime" / "__init__.py").exists():
+        existing = sys.modules.get("unified_runtime")
+        if existing is not None and getattr(existing, "__file__", None) is None:
+            for name in list(sys.modules):
+                if name == "unified_runtime" or name.startswith("unified_runtime."):
+                    sys.modules.pop(name, None)
+        from unified_runtime.research_orchestration_hardening import V61ResearchOrchestrationHardeningMixin  # type: ignore
+        return V61ResearchOrchestrationHardeningMixin
     for name in list(sys.modules):
         if name == "unified_runtime" or name.startswith("unified_runtime."):
             sys.modules.pop(name, None)
-    root = Path(__file__).resolve().parents[1]
     package = types.ModuleType("unified_runtime")
     package.__path__ = [str(root / "unified_runtime")]
     sys.modules["unified_runtime"] = package
