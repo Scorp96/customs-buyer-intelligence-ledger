@@ -140,6 +140,8 @@ class V61ResearchOrchestrationHardeningMixin:
     ) -> dict[str, Any] | None:
         channel = str(raw.get("channel") or raw.get("kind") or "").strip().upper()
         value = str(raw.get("value") or "").strip()
+        if not evidence_ids:
+            return None
         if channel not in SUPPORTED_ROUTE_CHANNELS or not value:
             return None
         if raw.get("verified") is not True:
@@ -167,6 +169,49 @@ class V61ResearchOrchestrationHardeningMixin:
             route["information_id"] = information_id
         return route
 
+    @staticmethod
+    def _compiled_route_rejection_reasons(
+        observation: dict[str, Any],
+        *,
+        account_id: str,
+    ) -> list[str]:
+        reasons: list[str] = []
+        if observation.get("result") != "POSITIVE":
+            reasons.append("RESULT_NOT_POSITIVE")
+        if observation.get("owner_type") != "ACCOUNT":
+            reasons.append("OWNER_TYPE_NOT_ACCOUNT")
+        if observation.get("owner_id") != account_id:
+            reasons.append("OWNER_ID_NOT_ROOT_ACCOUNT")
+        evidence_id = str(observation.get("evidence_id") or "").strip()
+        if not evidence_id:
+            reasons.append("EVIDENCE_ID_REQUIRED")
+        source = observation.get("source")
+        if not isinstance(source, dict):
+            reasons.append("SOURCE_REQUIRED")
+        else:
+            freshness = str(source.get("freshness") or "").upper()
+            if freshness not in STRONG_DIRECT_ROUTE_STATES:
+                reasons.append("FRESHNESS_NOT_STRONG_DIRECT")
+        value = observation.get("value")
+        if not isinstance(value, dict):
+            reasons.append("ROUTE_VALUE_OBJECT_REQUIRED")
+            return sorted(set(reasons))
+        channel = str(value.get("channel") or value.get("kind") or "").strip().upper()
+        route_value = str(value.get("value") or "").strip()
+        if channel not in SUPPORTED_ROUTE_CHANNELS:
+            reasons.append("UNSUPPORTED_ROUTE_CHANNEL")
+        if not route_value:
+            reasons.append("ROUTE_VALUE_REQUIRED")
+        if value.get("verified") is not True:
+            reasons.append("ROUTE_NOT_VERIFIED")
+        if value.get("masked") is True:
+            reasons.append("MASKED_ROUTE")
+        if value.get("guessed") is True:
+            reasons.append("GUESSED_ROUTE")
+        if channel in {"WHATSAPP", "ZALO"} and value.get("channel_proof") is not True:
+            reasons.append(f"{channel}_CHANNEL_NOT_PROVEN")
+        return sorted(set(reasons))
+
     def _compiled_company_routes(
         self,
         state: dict[str, Any],
@@ -178,16 +223,9 @@ class V61ResearchOrchestrationHardeningMixin:
                 continue
             if observation.get("claim_key") != "contact.company_route":
                 continue
-            if observation.get("result") != "POSITIVE":
-                continue
-            if observation.get("owner_type") != "ACCOUNT":
-                continue
-            if observation.get("owner_id") != account_id:
-                continue
-            source = observation.get("source")
-            if not isinstance(source, dict):
-                continue
-            if str(source.get("freshness") or "").upper() not in STRONG_DIRECT_ROUTE_STATES:
+            if self._compiled_route_rejection_reasons(
+                observation, account_id=account_id
+            ):
                 continue
             value = observation.get("value")
             if not isinstance(value, dict):
@@ -196,9 +234,7 @@ class V61ResearchOrchestrationHardeningMixin:
                 value,
                 account_id=account_id,
                 source_kind="COMPILED_OBSERVATION",
-                evidence_ids=[observation["evidence_id"]]
-                if observation.get("evidence_id")
-                else [],
+                evidence_ids=[str(observation["evidence_id"])],
                 observation_id=str(observation.get("observation_id") or "") or None,
             )
             if route:
@@ -531,6 +567,86 @@ class V61ResearchOrchestrationHardeningMixin:
         result["remaining_source_attempt_count_at_least"] = len(executable)
         return result
 
+    def _route_projection_diagnostics(
+        self,
+        state: dict[str, Any],
+        outreach: dict[str, Any],
+    ) -> dict[str, Any]:
+        account_id = state["start"]["account"]["account_id"]
+        claims = self._claims_view(state)
+        claim = claims.get("contact.company_route") if isinstance(claims, dict) else None
+        claim_state = (
+            str(claim.get("state") or "UNSEEN").upper()
+            if isinstance(claim, dict)
+            else "UNSEEN"
+        )
+        claim_observation_ids = (
+            [str(item) for item in (claim.get("observation_ids") or [])]
+            if isinstance(claim, dict)
+            else []
+        )
+        claim_evidence_ids = (
+            [str(item) for item in (claim.get("evidence_ids") or [])]
+            if isinstance(claim, dict)
+            else []
+        )
+        has_canonical_route = bool(
+            outreach.get("canonical_route_view")
+            or outreach.get("valid_company_route_observation_ids")
+            or outreach.get("valid_information_route_ids")
+        )
+        rows: list[dict[str, Any]] = []
+        observations = state.get("observations") or {}
+        for observation_id in claim_observation_ids:
+            observation = (
+                observations.get(observation_id)
+                if isinstance(observations, dict)
+                else None
+            )
+            if not isinstance(observation, dict):
+                rows.append(
+                    {
+                        "observation_id": observation_id,
+                        "evidence_id": None,
+                        "freshness": None,
+                        "rejection_reasons": [
+                            "OBSERVATION_NOT_AVAILABLE_IN_DERIVED_STATE"
+                        ],
+                    }
+                )
+                continue
+            source = observation.get("source")
+            rows.append(
+                {
+                    "observation_id": observation_id,
+                    "evidence_id": str(observation.get("evidence_id") or "") or None,
+                    "freshness": (
+                        str(source.get("freshness") or "").upper()
+                        if isinstance(source, dict)
+                        else None
+                    ),
+                    "rejection_reasons": self._compiled_route_rejection_reasons(
+                        observation, account_id=account_id
+                    ),
+                }
+            )
+        supported = claim_state in {"SUPPORTED", "STRONGLY_SUPPORTED"}
+        if has_canonical_route:
+            status = "CANONICAL_ROUTE_AVAILABLE"
+        elif supported:
+            status = "SUPPORTED_CLAIM_WITHOUT_CANONICAL_ROUTE"
+        else:
+            status = "NO_SUPPORTED_COMPANY_ROUTE_CLAIM"
+        return {
+            "status": status,
+            "claim_state": claim_state,
+            "claim_observation_ids": claim_observation_ids,
+            "claim_evidence_ids": claim_evidence_ids,
+            "observations": rows,
+            "contains_route_values": False,
+            "mutates_history": False,
+        }
+
     def get_account_state(
         self,
         arguments: dict[str, Any],
@@ -556,9 +672,11 @@ class V61ResearchOrchestrationHardeningMixin:
             "planner_truncated": bool(source_plan.get("truncated")),
             "closure_snapshot_policy": "CLOSURE_MUTATION_RESULT_UNCHANGED",
         }
-        result["peer_reconciliation"] = self._peer_reconciliation_view(
-            self._v6_state(investigation_id)
+        state = self._v6_state(investigation_id)
+        result["route_projection_diagnostics"] = self._route_projection_diagnostics(
+            state, outreach
         )
+        result["peer_reconciliation"] = self._peer_reconciliation_view(state)
         return result
 
     def get_runtime_contract(

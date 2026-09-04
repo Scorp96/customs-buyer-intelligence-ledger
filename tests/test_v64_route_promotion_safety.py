@@ -256,6 +256,119 @@ class RouteSafetyTests(unittest.TestCase):
         self.assertEqual(result["outreach_readiness"], "IDENTITY_ONLY")
         self.assertEqual(result["canonical_route_view"], [])
 
+    def test_compiled_current_confirmed_account_route_derives_ownership_and_currentness(self):
+        self.runtime.state["observations"] = {
+            "OBS-C279-COMPANY": {
+                "observation_id": "OBS-C279-COMPANY",
+                "evidence_id": "EVD-C279-COMPANY",
+                "claim_key": "contact.company_route",
+                "result": "POSITIVE",
+                "owner_type": "ACCOUNT",
+                "owner_id": ACCOUNT_ID,
+                "value": {
+                    "channel": "PHONE",
+                    "value": "+966535267771",
+                    "verified": True,
+                    "masked": False,
+                    "guessed": False,
+                },
+                "source": {"freshness": "CURRENT_CONFIRMED"},
+            }
+        }
+
+        result = self.runtime.evaluate_outreach_readiness(self.args)
+
+        self.assertEqual(result["outreach_readiness"], "COMPANY_ROUTE_READY")
+        route = result["canonical_route_view"][0]
+        self.assertTrue(route["current"])
+        self.assertTrue(route["owned_by_account"])
+        self.assertEqual(route["owner_entity_id"], ACCOUNT_ID)
+        self.assertEqual(route["observation_id"], "OBS-C279-COMPANY")
+
+    def test_compiled_current_confirmed_account_route_still_requires_verified_value(self):
+        self.runtime.state["observations"] = {
+            "OBS-C279-COMPANY": {
+                "observation_id": "OBS-C279-COMPANY",
+                "evidence_id": "EVD-C279-COMPANY",
+                "claim_key": "contact.company_route",
+                "result": "POSITIVE",
+                "owner_type": "ACCOUNT",
+                "owner_id": ACCOUNT_ID,
+                "value": {
+                    "channel": "PHONE",
+                    "value": "+966535267771",
+                    "masked": False,
+                    "guessed": False,
+                },
+                "source": {"freshness": "CURRENT_CONFIRMED"},
+            }
+        }
+
+        result = self.runtime.evaluate_outreach_readiness(self.args)
+
+        self.assertEqual(result["outreach_readiness"], "IDENTITY_ONLY")
+        self.assertEqual(result["canonical_route_view"], [])
+
+    def test_compiled_current_confirmed_route_requires_bound_evidence_id(self):
+        self.runtime.state["observations"] = {
+            "OBS-NO-EVIDENCE": {
+                "observation_id": "OBS-NO-EVIDENCE",
+                "claim_key": "contact.company_route",
+                "result": "POSITIVE",
+                "owner_type": "ACCOUNT",
+                "owner_id": ACCOUNT_ID,
+                "value": {
+                    "channel": "PHONE",
+                    "value": "+966535267771",
+                    "verified": True,
+                    "masked": False,
+                    "guessed": False,
+                },
+                "source": {"freshness": "CURRENT_CONFIRMED"},
+            }
+        }
+
+        result = self.runtime.evaluate_outreach_readiness(self.args)
+
+        self.assertEqual(result["outreach_readiness"], "IDENTITY_ONLY")
+        self.assertEqual(result["canonical_route_view"], [])
+
+    def test_supported_company_route_claim_without_canonical_route_exposes_projection_diagnostic(self):
+        self.runtime.state["claims"] = {
+            "contact.company_route": {
+                "state": "SUPPORTED",
+                "observation_ids": ["OBS-C279-COMPANY"],
+                "evidence_ids": ["EVD-C279-COMPANY"],
+            }
+        }
+        self.runtime.state["observations"] = {
+            "OBS-C279-COMPANY": {
+                "observation_id": "OBS-C279-COMPANY",
+                "evidence_id": "EVD-C279-COMPANY",
+                "claim_key": "contact.company_route",
+                "result": "POSITIVE",
+                "owner_type": "ACCOUNT",
+                "owner_id": ACCOUNT_ID,
+                "value": {
+                    "channel": "PHONE",
+                    "value": "+966535267771",
+                    "masked": False,
+                    "guessed": False,
+                },
+                "source": {"freshness": "CURRENT_CONFIRMED"},
+            }
+        }
+
+        result = self.runtime.get_account_state(self.args)
+
+        diagnostic = result["route_projection_diagnostics"]
+        self.assertEqual(diagnostic["status"], "SUPPORTED_CLAIM_WITHOUT_CANONICAL_ROUTE")
+        self.assertEqual(diagnostic["claim_state"], "SUPPORTED")
+        self.assertEqual(diagnostic["claim_observation_ids"], ["OBS-C279-COMPANY"] )
+        row = diagnostic["observations"][0]
+        self.assertEqual(row["observation_id"], "OBS-C279-COMPANY")
+        self.assertIn("ROUTE_NOT_VERIFIED", row["rejection_reasons"])
+
     def test_compiled_current_likely_route_is_not_actionable(self):
         self.runtime.state["observations"] = {
             "OBS-1": {
