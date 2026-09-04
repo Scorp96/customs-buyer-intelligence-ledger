@@ -1,0 +1,277 @@
+BEFORE test_answer_first_policy file= None has_runtime= None
+AFTER  test_answer_first_policy file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_chatgpt_oauth_transport file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_chatgpt_oauth_transport file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_cloud_migration_bundle_helpers file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_cloud_migration_bundle_helpers file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_object_store_persistence file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_object_store_persistence file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_remote_entrypoint_root_binding file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_remote_entrypoint_root_binding file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_remote_mcp_transport file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_remote_mcp_transport file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_render_cloud_runtime file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_render_cloud_runtime file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_unified_runtime file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_unified_runtime file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v53_resilience file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v53_resilience file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_adapter_wal file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_adapter_wal file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_backup_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_backup_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_brand_canonical_separation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_brand_canonical_separation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_bundle_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_bundle_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_canonical_snapshot_efficiency file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_canonical_snapshot_efficiency file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_closure_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_closure_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_commercial_opportunity file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_commercial_opportunity file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_contract_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_contract_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_country_identity_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_country_identity_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_current_authority file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_current_authority file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_host_offline_queue file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_host_offline_queue file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_independent_audit file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_independent_audit file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_information_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_information_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_legacy_evidence_reconciliation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_legacy_evidence_reconciliation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_legacy_peer_projection file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_legacy_peer_projection file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_load_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_load_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_migration_lineage_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_migration_lineage_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_migration_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_migration_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_mutation_correlation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_mutation_correlation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_outreach_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_outreach_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_outreach_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_outreach_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_peer_pivot_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_peer_pivot_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_peer_receipt_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_peer_receipt_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_portfolio_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_portfolio_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_portfolio_state_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_portfolio_state_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_private_golden_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_private_golden_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_private_golden_semantic_assertions file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_private_golden_semantic_assertions file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_production_launcher_root_binding file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_production_launcher_root_binding file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_provider_plan_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_provider_plan_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_queue_correlation_wal file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_queue_correlation_wal file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_receipt_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_receipt_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_research_orchestration_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_research_orchestration_hardening file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_resume_read_only file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_resume_read_only file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_start_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_start_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_sync_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_sync_wal_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_wal_inventory_complete file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_wal_inventory_complete file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v61_windows_process_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v61_windows_process_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_adapter_patch_compiler file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_adapter_patch_compiler file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_adapter_patch_recipe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_adapter_patch_recipe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_adapter_recovery_mapping file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_adapter_recovery_mapping file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_adapter_source_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_adapter_source_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_backend_correlation_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_backend_correlation_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_branch_signal_policy file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_branch_signal_policy file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_buyer_archetypes file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_buyer_archetypes file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_candidate_anchor file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_candidate_anchor file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_candidate_research_gate file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_candidate_research_gate file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_canonical_resolution_gate file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_canonical_resolution_gate file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_capability_profile file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_capability_profile file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_contact_exhaustion file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_contact_exhaustion file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_contact_source_execution file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_contact_source_execution file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_crm_projection file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_crm_projection file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_demand_evidence file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_demand_evidence file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_demand_market file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_demand_market file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_demand_pipeline file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_demand_pipeline file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_adversarial_different_idempotency_key file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_adversarial_different_idempotency_key file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_adversarial_duplicate_exact_event file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_adversarial_duplicate_exact_event file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_adversarial_wrong_correlation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_adversarial_wrong_correlation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_adversarial_wrong_request_hash file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_adversarial_wrong_request_hash file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_anchor_crash_restart file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_anchor_crash_restart file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_anchor_success file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_anchor_success file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_artifact_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_artifact_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_candidate_builder file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_candidate_builder file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_candidate_crash_restart file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_candidate_crash_restart file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_candidate_success file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_candidate_success file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_cli_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_cli_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_live_acceptance_producer file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_live_acceptance_producer file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_live_recovery_extra_adversarial file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_live_recovery_extra_adversarial file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_opportunity_crash_restart file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_opportunity_crash_restart file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_opportunity_success file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_opportunity_success file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_persistence_reader file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_persistence_reader file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_exact_checkout_release_ci_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_exact_checkout_release_ci_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_expansion_planner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_expansion_planner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_explicit_runtime_payload_inventory file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_explicit_runtime_payload_inventory file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_legacy_peer_projection file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_legacy_peer_projection file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_live_contract_validator file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_live_contract_validator file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_live_exact_recovery_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_live_exact_recovery_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_live_recovery_overlay_cli file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_live_recovery_overlay_cli file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_live_recovery_overlay_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_live_recovery_overlay_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_local_context_resolution file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_local_context_resolution file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_local_outreach_policy file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_local_outreach_policy file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_market_scope file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_market_scope file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_mcp_schema file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_mcp_schema file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_mro_integration_patch file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_mro_integration_patch file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_object_store_recovery_state file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_object_store_recovery_state file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_opportunity_domain file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_opportunity_domain file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_portfolio_metrics file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_portfolio_metrics file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_product_profiles file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_product_profiles file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_production_binding_plan file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_production_binding_plan file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_production_checkout_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_production_checkout_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_production_correlation_source_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_production_correlation_source_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_production_gate file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_production_gate file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_production_integration_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_production_integration_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_production_source_snapshot file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_production_source_snapshot file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_read_only_runtime file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_read_only_runtime file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_recovery_acceptance_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_recovery_acceptance_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_recovery_overlay_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_recovery_overlay_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_recovery_overlay_patch_compiler file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_recovery_overlay_patch_compiler file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_recovery_overlay_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_recovery_overlay_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_recovery_overlay_report_builder file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_recovery_overlay_report_builder file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_recovery_semantics_harness file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_recovery_semantics_harness file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_recursive_expansion file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_recursive_expansion file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_reference_backend_correlation_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_reference_backend_correlation_runner file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_release_evidence_assembler file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_release_evidence_assembler file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_release_evidence_cli file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_release_evidence_cli file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_release_render_r2_dependency file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_release_render_r2_dependency file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_remote_deployment_identity file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_remote_deployment_identity file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_remote_durability_checkpoint file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_remote_durability_checkpoint file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_bootstrap_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_bootstrap_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_r2_acceptance_blueprint file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_r2_acceptance_blueprint file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_r2_acceptance_client file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_r2_acceptance_client file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_r2_cross_instance_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_r2_cross_instance_recovery file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_r2_cross_instance_state_shapes file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_r2_cross_instance_state_shapes file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_r2_external_seed file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_r2_external_seed file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_r2_pvc_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_r2_pvc_acceptance file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_r2_pvc_active_http_integration file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_r2_pvc_active_http_integration file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_r2_validator_migration_boot file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_r2_validator_migration_boot file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_render_r2_workflow_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_render_r2_workflow_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_research_scheduler file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_research_scheduler file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_route_reuse file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_route_reuse file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_runtime_backend_binding_plan file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_runtime_backend_binding_plan file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_runtime_durable_backend file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_runtime_durable_backend file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_runtime_event_primitive_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_runtime_event_primitive_probe file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_sales_readiness file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_sales_readiness file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_search_localization file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_search_localization file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_source_execution file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_source_execution file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v63_wal_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v63_wal_contract file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v64_canonical_identity_reconciliation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v64_canonical_identity_reconciliation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True has_tools= True
+BEFORE test_v64_portfolio_identity_reconciliation file= /home/runner/work/customs-buyer-intelligence-ledger/customs-buyer-intelligence-ledger/unified_runtime/__init__.py has_runtime= True
+AFTER  test_v64_portfolio_identity_reconciliation file= None has_runtime= False has_tools= False
+FIRST_SYNTHETIC_AFTER test_v64_portfolio_identity_reconciliation
