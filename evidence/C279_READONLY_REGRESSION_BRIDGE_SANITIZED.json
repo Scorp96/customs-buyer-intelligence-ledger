@@ -1,0 +1,36 @@
+{
+  "schema": "cbi.v64-c279-authoritative-regression-bridge.v1",
+  "source": "CBI_LIVE_READ_ONLY_STATE",
+  "contains_route_values": false,
+  "contains_contact_values": false,
+  "mutation_calls_used": [],
+  "investigation_id": "INV-20260902T093152Z-5f3526759f65",
+  "account_id": "C279",
+  "durable_state": {
+    "last_safe_seq": 27,
+    "last_safe_event_hash": "cf5d92ecf7f7d4842306cc39134bdd09aced5fd087179da1ab6b0da5ca19b498",
+    "observation_count": 19,
+    "bundle_count": 6
+  },
+  "company_route": {
+    "claim_state": "SUPPORTED",
+    "observation_ids": ["OBS-fec290bd4ceeed8a", "OBS-6f8318b4d4aa4500"],
+    "evidence_ids": ["EVD-fd1ea35b10d56226", "EVD-31d389c000af7af6"]
+  },
+  "named_route": {
+    "claim_state": "SUPPORTED",
+    "observation_ids": ["OBS-29b275b50e10adf3"],
+    "evidence_ids": ["EVD-7d69350182383612"]
+  },
+  "pre_patch": {
+    "outreach_readiness": "IDENTITY_ONLY",
+    "block_reasons": ["VERIFIED_ACCOUNT_OWNED_ROUTE_REQUIRED"]
+  },
+  "post_patch_expectation": {
+    "minimum_outreach_readiness": "COMPANY_ROUTE_READY",
+    "prepare_outreach_must_succeed": true,
+    "sends_message": false,
+    "isolated_runtime_copy_required": true,
+    "live_source_mutation_allowed": false
+  }
+}
