@@ -30,7 +30,7 @@ def _dispatch(method: str, params: dict):
 
 
 @contextmanager
-def _server(callback):
+def _server(callback, *, static_bearer: str = STATIC_TOKEN):
     auth = ChatGPTRemoteAuthConfig(mode="none")
     app = base.RemoteMcpApplication(
         _dispatch,
@@ -41,7 +41,7 @@ def _server(callback):
     server.app = app
     server.public_base = f"http://127.0.0.1:{server.server_address[1]}"
     server.diagnostic_export = callback
-    server.diagnostic_static_bearer = STATIC_TOKEN
+    server.diagnostic_static_bearer = static_bearer
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
     try:
@@ -130,6 +130,24 @@ class V64C279ExportTransportTests(unittest.TestCase):
                 self.assertEqual(status, 404)
                 self.assertNotIn(b"payload", response)
         self.assertEqual(callback.calls, 0)
+
+    def test_missing_static_admin_bearer_disables_route_for_all_methods(self):
+        calls: list[int] = []
+        def callback():
+            calls.append(1)
+            return self._callback()
+        with _server(callback, static_bearer="") as base_url:
+            for method, body in (("GET", None), ("DELETE", None), ("POST", b"{}")):
+                status, _headers, response = _request(
+                    base_url,
+                    method,
+                    PATH,
+                    body=body,
+                    headers={"Content-Type": "application/json"} if body is not None else {},
+                )
+                self.assertEqual(status, 404)
+                self.assertNotIn(b"payload", response)
+        self.assertEqual(calls, [])
 
     def test_enabled_route_rejects_missing_and_wrong_static_bearer_without_callback(self):
         calls: list[int] = []
