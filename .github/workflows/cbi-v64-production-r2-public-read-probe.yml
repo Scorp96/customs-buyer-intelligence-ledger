@@ -15,12 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Probe production pointer with anonymous GET only
+      - name: Classify production pointer anonymous GET response
         shell: python
         run: |
           import hashlib
           import urllib.error
           import urllib.request
+          import xml.etree.ElementTree as ET
 
           url = "https://650e0986f2379c42507d3fc5ebb597a4.r2.cloudflarestorage.com/cbi-v61-production/cbi-v61/current.json"
           request = urllib.request.Request(
@@ -35,12 +36,42 @@ jobs:
           except urllib.error.HTTPError as exc:
               status = int(exc.code)
               body = exc.read()
+
+          error_code = ""
+          error_message_class = ""
+          if status != 200 and body:
+              try:
+                  root = ET.fromstring(body)
+                  code = root.findtext("Code") or ""
+                  message = root.findtext("Message") or ""
+                  allowed_codes = {
+                      "AccessDenied", "InvalidArgument", "InvalidRequest",
+                      "AuthorizationHeaderMalformed", "NoSuchBucket", "NoSuchKey",
+                      "SignatureDoesNotMatch", "MissingAuthenticationToken",
+                  }
+                  error_code = code if code in allowed_codes else ("OTHER" if code else "")
+                  low = message.lower()
+                  if "authoriz" in low or "authentic" in low or "credential" in low or "signature" in low:
+                      error_message_class = "AUTH_REQUIRED"
+                  elif "bucket" in low:
+                      error_message_class = "BUCKET_RELATED"
+                  elif "request" in low or "argument" in low:
+                      error_message_class = "REQUEST_REJECTED"
+                  elif message:
+                      error_message_class = "OTHER"
+              except ET.ParseError:
+                  error_code = "NON_XML"
+
           print("PRODUCTION_R2_ANONYMOUS_POINTER_HTTP_STATUS=" + str(status))
           print("PRODUCTION_R2_ANONYMOUS_POINTER_READABLE=" + ("true" if status == 200 else "false"))
-          if status == 200:
-              print("PRODUCTION_R2_ANONYMOUS_POINTER_BODY_SHA256=" + hashlib.sha256(body).hexdigest())
-          elif status not in {401,403,404}:
-              raise SystemExit("PRODUCTION_R2_ANONYMOUS_UNEXPECTED_STATUS")
+          print("PRODUCTION_R2_ANONYMOUS_ERROR_CODE=" + error_code)
+          print("PRODUCTION_R2_ANONYMOUS_ERROR_CLASS=" + error_message_class)
+          print("RESPONSE_BODY_SHA256=" + hashlib.sha256(body).hexdigest())
           print("AUTHORIZATION_HEADER_USED=false")
           print("WRITE_METHOD_USED=false")
           print("BODY_PRINTED=false")
+          if status == 200:
+              raise SystemExit(0)
+          if status in {400,401,403,404}:
+              raise SystemExit(0)
+          raise SystemExit("PRODUCTION_R2_ANONYMOUS_UNEXPECTED_STATUS")
