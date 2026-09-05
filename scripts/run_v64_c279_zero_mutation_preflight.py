@@ -25,6 +25,7 @@ from unified_runtime.render_r2_acceptance_client_v63 import (
 
 SCHEMA = "cbi.v64-c279-zero-mutation-preflight.v1"
 TARGET_ACCOUNT_ID = "C279"
+REMOTE_TIMEOUT_SECONDS = 60.0
 READ_ONLY_TOOLS = frozenset(
     {
         "get_portfolio_queue",
@@ -220,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
                 base_url=base_url,
                 bearer_token=bearer,
                 expected_git_sha=args.expected_production_sha,
-                timeout_seconds=30.0,
+                timeout_seconds=REMOTE_TIMEOUT_SECONDS,
             )
         )
         receipt = run_preflight(client)
