@@ -26,6 +26,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install pinned CFFI runtime dependency
+        run: python -m pip install --disable-pip-version-check --no-input --only-binary=:all: cffi==2.0.0 pycparser==2.22
+
       - name: Install hash-pinned diagnostic crypto wheel
         shell: bash
         run: |
