@@ -3,13 +3,14 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import hashlib
-import inspect
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from unified_runtime.core import UnifiedRuntime as CompatibilityRuntime
-from mcp.c279_single_session_export_v64 import build_export_callback
+from mcp import c279_single_session_export_v64 as export_mod
+from mcp.c279_single_session_export_v64 import C279ExportError, build_export_callback
 
 
 UTC = dt.timezone.utc
@@ -89,7 +90,8 @@ class V64C279ExportEntrypointContractTests(unittest.TestCase):
             self.assertTrue(callable(callback))
             assert callback is not None
 
-            response = callback()
+            with mock.patch.object(export_mod, "_utc_now", return_value=STARTED + dt.timedelta(minutes=10)):
+                response = callback()
 
             self.assertEqual(set(response), EXPORT_SCHEMA_KEYS)
             self.assertEqual(response["schema"], "cbi.v64-c279-single-session-export.v1")
@@ -100,6 +102,27 @@ class V64C279ExportEntrypointContractTests(unittest.TestCase):
             self.assertEqual(response["payload_encoding"], "base64")
             self.assertEqual(base64.b64decode(response["payload"], validate=True), before_payload)
             self.assertEqual(_inventory(sessions), before_inventory)
+
+    def test_runtime_expiry_makes_existing_callback_unavailable_and_returns_no_payload(self):
+        with tempfile.TemporaryDirectory(prefix="cbi-v64-c279-entrypoint-expiry-") as temp:
+            sessions, investigation_id, events, _session_path = self._fixture(Path(temp))
+            callback = build_export_callback(
+                sessions,
+                self._env(investigation_id, events),
+                process_started_at=STARTED,
+            )
+            self.assertTrue(callable(callback))
+            assert callback is not None
+            availability = getattr(callback, "is_available")
+
+            with mock.patch.object(export_mod, "_utc_now", return_value=STARTED + dt.timedelta(minutes=19)):
+                self.assertTrue(availability())
+            with mock.patch.object(export_mod, "_utc_now", return_value=STARTED + dt.timedelta(minutes=20)):
+                self.assertFalse(availability())
+                with self.assertRaises(C279ExportError) as caught:
+                    callback()
+            self.assertEqual(caught.exception.code, "EXPORT_UNAVAILABLE")
+            self.assertEqual(caught.exception.http_status, 404)
 
     def test_entrypoint_binds_exporter_to_existing_runtime_root_without_r2_export_path(self):
         source_path = Path(__file__).resolve().parents[1] / "mcp" / "server_v61_remote.py"
