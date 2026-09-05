@@ -544,6 +544,16 @@ def serve(
 def main(
     dispatch: Callable[[str, dict[str, Any]], Any],
     health: Callable[[], dict[str, Any]] | None = None,
+    *,
+    diagnostic_export: Callable[[], dict[str, Any]] | None = None,
+    diagnostic_static_bearer: str = "",
 ) -> int:
     args = base._parser().parse_args()
-    return serve(dispatch, health=health, host=args.host, port=args.port)
+    return serve(
+        dispatch,
+        health=health,
+        host=args.host,
+        port=args.port,
+        diagnostic_export=diagnostic_export,
+        diagnostic_static_bearer=diagnostic_static_bearer,
+    )
