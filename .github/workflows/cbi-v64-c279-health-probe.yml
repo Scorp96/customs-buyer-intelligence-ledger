@@ -1,4 +1,4 @@
-name: CBI v6.4 C279 health probe
+name: CBI v6.4 C279 current-cloud read-only probe
 
 on:
   push:
@@ -11,13 +11,15 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Fetch public health metadata only
         shell: python
         run: |
           import json
+          import os
           import urllib.request
+          from pathlib import Path
 
           url = "https://cbi-v61-preview.onrender.com/healthz"
           request = urllib.request.Request(
@@ -26,17 +28,100 @@ jobs:
               method="GET",
           )
           with urllib.request.urlopen(request, timeout=20) as response:
-              raw = response.read()
-          payload = json.loads(raw.decode("utf-8"))
-          allowed_top = {
-              "status", "service", "transport", "durable_root_bound",
-              "backup_recovery_enabled", "object_store_persistence_enabled",
-              "remote_post_handler_checkpoint_enabled", "deployment_identity",
-              "object_store_persistence", "durable_state_loaded", "mcp_enabled",
-              "object_store_configured",
+              payload = json.loads(response.read().decode("utf-8"))
+          identity = dict(payload.get("deployment_identity") or {})
+          persistence = dict(payload.get("object_store_persistence") or {})
+          safe = {
+              "status": payload.get("status"),
+              "git_sha": identity.get("git_sha"),
+              "object_store_mode": identity.get("object_store_mode"),
+              "object_state_schema": identity.get("object_state_schema"),
+              "object_state_generation": identity.get("object_state_generation"),
+              "restore_generation": identity.get("restore_generation"),
+              "archive_format": persistence.get("archive_format"),
+              "generation": persistence.get("generation"),
+              "recovery_fingerprint_sha256": persistence.get("recovery_fingerprint_sha256"),
+              "prefix": persistence.get("prefix"),
           }
-          safe = {k: payload.get(k) for k in allowed_top if k in payload}
-          # Health metadata is intentionally public, but keep only operational
-          # identity/state fields and never print arbitrary response keys.
           print("C279_HEALTH_SAFE=" + json.dumps(safe, sort_keys=True, separators=(",", ":")))
-          assert payload.get("status") in {"ok", "degraded", "bootstrap_required"}
+          assert safe["status"] in {"ok", "degraded"}
+          assert safe["git_sha"] == "a311a2a57ee43a1f1a3b2819bf28946566b05692"
+          assert safe["object_store_mode"] == "r2"
+          assert safe["object_state_schema"] == "cbi.object-store-state.v2"
+          assert safe["archive_format"] == "object_state_v2"
+          assert safe["generation"] == safe["object_state_generation"]
+          assert safe["prefix"] == "cbi-v61"
+          Path(os.environ["RUNNER_TEMP"]).joinpath("c279-health.json").write_text(
+              json.dumps(safe, sort_keys=True), encoding="utf-8"
+          )
+
+      - name: Checkout exact production source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a311a2a57ee43a1f1a3b2819bf28946566b05692
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Read current R2 pointer and restore only into runner temp
+        shell: bash
+        env:
+          CBI_OBJECT_STORE_MODE: r2
+          CBI_OBJECT_STORE_ENDPOINT: ${{ secrets.CBI_V63_R2_ENDPOINT }}
+          CBI_OBJECT_STORE_BUCKET: ${{ secrets.CBI_V63_R2_BUCKET }}
+          CBI_OBJECT_STORE_ACCESS_KEY_ID: ${{ secrets.CBI_V63_R2_ACCESS_KEY_ID }}
+          CBI_OBJECT_STORE_SECRET_ACCESS_KEY: ${{ secrets.CBI_V63_R2_SECRET_ACCESS_KEY }}
+          CBI_OBJECT_STORE_REGION: ${{ secrets.CBI_V63_R2_REGION }}
+          CBI_OBJECT_STORE_PREFIX: cbi-v61
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import tempfile
+          from pathlib import Path
+
+          from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
+
+          health = json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("c279-health.json").read_text(encoding="utf-8"))
+          manager = RecoveryObjectStoreStateManagerV63.from_env()
+          if manager is None:
+              raise SystemExit("C279_R2_MANAGER_NOT_CONFIGURED")
+          pointer = manager.read_pointer(required=True)
+          safe_pointer = {
+              "generation": getattr(pointer, "generation", None),
+              "archive_format": getattr(pointer, "archive_format", None),
+              "recovery_fingerprint_sha256": getattr(pointer, "recovery_fingerprint_sha256", None),
+          }
+          print("C279_R2_POINTER_SAFE=" + json.dumps(safe_pointer, sort_keys=True, separators=(",", ":")))
+          if safe_pointer["generation"] != health["generation"]:
+              raise SystemExit("C279_R2_GENERATION_MISMATCH")
+          if safe_pointer["archive_format"] != "object_state_v2":
+              raise SystemExit("C279_R2_ARCHIVE_FORMAT_MISMATCH")
+          if safe_pointer["recovery_fingerprint_sha256"] != health["recovery_fingerprint_sha256"]:
+              raise SystemExit("C279_R2_RECOVERY_FINGERPRINT_MISMATCH")
+
+          with tempfile.TemporaryDirectory(prefix="cbi-v64-c279-r2-") as td:
+              target = Path(td) / "current-cloud-live"
+              if not manager.restore_into(target):
+                  raise SystemExit("C279_R2_RESTORE_RETURNED_FALSE")
+              manifest = json.loads((target / "export-manifest.json").read_text(encoding="utf-8"))
+              if manifest.get("restored_generation") != health["generation"]:
+                  raise SystemExit("C279_R2_RESTORED_GENERATION_MISMATCH")
+              if manifest.get("recovery_fingerprint_sha256") != health["recovery_fingerprint_sha256"]:
+                  raise SystemExit("C279_R2_RESTORED_FINGERPRINT_MISMATCH")
+              if not (target / "sessions").is_dir() or not (target / "mcp-idempotency-v61").is_dir():
+                  raise SystemExit("C279_R2_RECOVERY_COMPONENT_MISSING")
+              print("C279_CURRENT_CLOUD_R2_ISOLATED_RESTORE=VERIFIED")
+          PY
+
+      - name: Assert production ref was not mutated
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "a311a2a57ee43a1f1a3b2819bf28946566b05692"
+          echo "C279_PRODUCTION_SOURCE_SHA_UNCHANGED=$(git rev-parse HEAD)"
