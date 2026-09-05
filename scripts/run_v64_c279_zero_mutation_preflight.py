@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from unified_runtime.render_r2_acceptance_client_v63 import (
+    DEPLOYMENT_IDENTITY_SCHEMA,
     RenderR2AcceptanceClient,
     RenderR2AcceptanceClientConfig,
     RenderR2AcceptanceClientError,
@@ -37,6 +38,30 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 class PreflightError(RuntimeError):
     pass
+
+
+class ProductionReadOnlyMcpClient(RenderR2AcceptanceClient):
+    """Reuse the proven HTTP/MCP transport with production deployment pin semantics."""
+
+    def _pin_health(self, health: dict[str, Any]) -> None:
+        if str(health.get("status") or "").strip().lower() != "ok":
+            raise RenderR2AcceptanceClientError("REMOTE_HEALTH_NOT_OK")
+        identity = health.get("deployment_identity")
+        if not isinstance(identity, dict):
+            raise RenderR2AcceptanceClientError("DEPLOYMENT_IDENTITY_MISSING")
+        if identity.get("schema") != DEPLOYMENT_IDENTITY_SCHEMA:
+            raise RenderR2AcceptanceClientError("DEPLOYMENT_IDENTITY_SCHEMA_MISMATCH")
+        observed = str(identity.get("git_sha") or "").strip().lower()
+        if observed != self.config.expected_git_sha:
+            raise RenderR2AcceptanceClientError("DEPLOYMENT_GIT_SHA_MISMATCH")
+        if identity.get("git_sha_source") != "RENDER_GIT_COMMIT":
+            raise RenderR2AcceptanceClientError("DEPLOYMENT_GIT_SHA_SOURCE_UNTRUSTED")
+        if identity.get("acceptance_pin_required") is not False:
+            raise RenderR2AcceptanceClientError("PRODUCTION_ACCEPTANCE_PIN_UNEXPECTED")
+        if identity.get("object_store_mode") != "r2":
+            raise RenderR2AcceptanceClientError("REMOTE_OBJECT_STORE_MODE_NOT_R2")
+        self._pinned_identity = dict(identity)
+        self._deployment_pinned = True
 
 
 def _fail(code: str) -> None:
@@ -166,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     base_url = str(os.environ.get("CBI_V63_ACCEPTANCE_BASE_URL") or "").strip()
     bearer = str(os.environ.get("CBI_V63_ACCEPTANCE_BEARER_TOKEN") or "").strip()
     try:
-        client = RenderR2AcceptanceClient(
+        client = ProductionReadOnlyMcpClient(
             RenderR2AcceptanceClientConfig(
                 base_url=base_url,
                 bearer_token=bearer,
