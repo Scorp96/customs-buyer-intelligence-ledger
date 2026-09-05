@@ -1,0 +1,93 @@
+name: CBI v6.4 remediation verification
+
+on:
+  push:
+    branches:
+      - cbi-v64-release-ci-remediation-d0eb97fb
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-remediation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: remediation (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+        python-version:
+          - "3.10"
+          - "3.11"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install ephemeral validation dependencies
+        run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.2 tzdata==2026.3
+
+      - name: Full unittest regression
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: 100-Evidence performance acceptance
+        run: python scripts/run_v6_load_acceptance.py --profile smoke --enforce-targets
+
+      - name: MCP compatibility self-test
+        run: python mcp/self_test.py
+
+      - name: MCP v6 protocol test
+        run: python mcp/v6_protocol_test.py
+
+      - name: MCP v6.1 production-adapter protocol test
+        run: python mcp/v61_hardening_protocol_test.py
+
+      - name: Privacy scan
+        run: python tests/privacy_scan.py
+
+      - name: Compatibility parser self-test
+        run: python skills/investigate-customs-buyers/scripts/self_test.py
+
+      - name: Intelligence self-test
+        run: python skills/investigate-customs-buyers/scripts/intelligence_self_test.py
+
+      - name: Outreach self-test
+        run: python skills/investigate-customs-buyers/scripts/outreach_self_test.py
+
+      - name: Strategic self-test
+        run: python skills/investigate-customs-buyers/scripts/strategic_self_test.py
+
+      - name: V3 compatibility self-test with deterministic fixture clock
+        shell: python
+        run: |
+          import datetime
+          import pathlib
+          import sys
+
+          scripts = pathlib.Path("skills/investigate-customs-buyers/scripts").resolve()
+          sys.path.insert(0, str(scripts))
+          import v3_engine
+
+          class FixtureDate(datetime.date):
+              @classmethod
+              def today(cls):
+                  return cls(2026, 8, 3)
+
+          v3_engine.date = FixtureDate
+          import v3_self_test
+          raise SystemExit(v3_self_test.main())
+
+      - name: Diff check
+        run: git diff --check
