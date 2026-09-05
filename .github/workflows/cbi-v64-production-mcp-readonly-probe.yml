@@ -15,9 +15,10 @@ jobs:
     env:
       ACCEPTANCE_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
     steps:
-      - name: Probe production MCP with existing acceptance bearer
+      - name: Bind production durable tails by one-way commitments
         shell: python
         run: |
+          import hashlib
           import json
           import os
           import urllib.error
@@ -32,7 +33,7 @@ jobs:
               with urllib.request.urlopen(
                   urllib.request.Request(
                       base + "/healthz",
-                      headers={"Accept":"application/json","User-Agent":"cbi-v64-production-mcp-readonly-probe"},
+                      headers={"Accept":"application/json","User-Agent":"cbi-v64-production-tail-commitment-probe"},
                       method="GET",
                   ),
                   timeout=45,
@@ -41,12 +42,13 @@ jobs:
 
           before = health()
           identity = dict(before.get("deployment_identity") or {})
+          persistence_before = dict(before.get("object_store_persistence") or {})
           if before.get("status") != "ok":
               raise SystemExit("PRODUCTION_HEALTH_NOT_OK")
           if identity.get("git_sha") != "a311a2a57ee43a1f1a3b2819bf28946566b05692":
               raise SystemExit("PRODUCTION_SHA_DRIFT")
-          before_persistence = dict(before.get("object_store_persistence") or {})
-          print("PRODUCTION_HEALTH_PIN=PASS")
+          if persistence_before.get("enabled") is not True:
+              raise SystemExit("PRODUCTION_DURABLE_PERSISTENCE_REQUIRED")
 
           next_id = 1
           def rpc(method, params):
@@ -61,11 +63,11 @@ jobs:
                       "Content-Type":"application/json",
                       "Accept":"application/json",
                       "MCP-Protocol-Version":"2026-07-28",
-                      "User-Agent":"cbi-v64-production-mcp-readonly-probe",
+                      "User-Agent":"cbi-v64-production-tail-commitment-probe",
                   },
               )
               try:
-                  with urllib.request.urlopen(request, timeout=90) as response:
+                  with urllib.request.urlopen(request, timeout=120) as response:
                       payload = json.load(response)
               except urllib.error.HTTPError as exc:
                   print("PRODUCTION_MCP_HTTP_STATUS=" + str(exc.code))
@@ -87,36 +89,48 @@ jobs:
                   raise SystemExit("PRODUCTION_TOOL_STRUCTURED_CONTENT_MISSING:" + name)
               return structured
 
-          def shape(value, depth=0):
-              if depth >= 5:
-                  return type(value).__name__
-              if isinstance(value, dict):
-                  return {str(k):shape(v, depth + 1) for k,v in sorted(value.items())}
-              if isinstance(value, list):
-                  return {"type":"list","count":len(value),"sample_shape":shape(value[0], depth + 1) if value else None}
-              return type(value).__name__
-
           rpc("initialize", {
               "protocolVersion":"2025-06-18","capabilities":{},
-              "clientInfo":{"name":"cbi-v64-production-mcp-readonly-probe","version":"4"},
+              "clientInfo":{"name":"cbi-v64-production-tail-commitment-probe","version":"1"},
           })
-          listed = rpc("tools/list", {})
-          if not isinstance(listed.get("tools"), list):
-              raise SystemExit("PRODUCTION_MCP_TOOLS_LIST_MISSING")
-          print("PRODUCTION_MCP_AUTH=PASS")
+          queue = call_tool("get_portfolio_queue", {"include_non_active":True,"include_non_production":True,"limit":1000})
+          rows = queue.get("queue")
+          if not isinstance(rows, list):
+              raise SystemExit("PORTFOLIO_QUEUE_ROWS_MISSING")
 
-          queue = call_tool("get_portfolio_queue", {"include_non_active":True,"include_non_production":True,"limit":25})
-          print("PORTFOLIO_QUEUE_STRUCTURAL_SHAPE=" + json.dumps(shape(queue), sort_keys=True, separators=(",", ":")))
+          commitments = []
+          invalid = 0
+          for row in rows:
+              if not isinstance(row, dict):
+                  invalid += 1
+                  continue
+              investigation_id = str(row.get("investigation_id") or "")
+              seq = row.get("last_safe_seq")
+              event_hash = str(row.get("last_safe_event_hash") or "")
+              if not investigation_id or isinstance(seq, bool) or not isinstance(seq, int) or len(event_hash) != 64:
+                  invalid += 1
+                  continue
+              canonical = f"{investigation_id}|{seq}|{event_hash}".encode("utf-8")
+              commitments.append(hashlib.sha256(canonical).hexdigest())
+          commitments.sort()
 
           after = health()
-          after_identity = dict(after.get("deployment_identity") or {})
-          after_persistence = dict(after.get("object_store_persistence") or {})
-          if after_identity.get("git_sha") != identity.get("git_sha"):
+          persistence_after = dict(after.get("object_store_persistence") or {})
+          if dict(after.get("deployment_identity") or {}).get("git_sha") != identity.get("git_sha"):
               raise SystemExit("PRODUCTION_SHA_CHANGED_DURING_PROBE")
-          print("PORTFOLIO_QUEUE_READONLY_CALL=PASS")
-          print("OBJECT_GENERATION_BEFORE=" + str(before_persistence.get("generation")))
-          print("OBJECT_GENERATION_AFTER=" + str(after_persistence.get("generation")))
-          print("RECOVERY_FINGERPRINT_SAME=" + str(before_persistence.get("recovery_fingerprint_sha256") == after_persistence.get("recovery_fingerprint_sha256")).lower())
+          if persistence_before.get("generation") != persistence_after.get("generation"):
+              raise SystemExit("PRODUCTION_GENERATION_CHANGED_DURING_PROBE")
+          if persistence_before.get("recovery_fingerprint_sha256") != persistence_after.get("recovery_fingerprint_sha256"):
+              raise SystemExit("PRODUCTION_RECOVERY_FINGERPRINT_CHANGED_DURING_PROBE")
+
+          print("PRODUCTION_MCP_AUTH=PASS")
+          print("PORTFOLIO_TOTAL_SCANNED=" + str(queue.get("total_scanned")))
+          print("PORTFOLIO_RETURNED_ROWS=" + str(len(rows)))
+          print("PORTFOLIO_VALID_TAIL_COMMITMENTS=" + str(len(commitments)))
+          print("PORTFOLIO_INVALID_TAIL_ROWS=" + str(invalid))
+          print("PORTFOLIO_TAIL_COMMITMENTS=" + json.dumps(commitments, separators=(",", ":")))
+          print("OBJECT_GENERATION=" + str(persistence_after.get("generation")))
+          print("RECOVERY_FINGERPRINT_STABLE=true")
           print("MUTATING_TOOL_CALLED=false")
-          print("PRIVATE_FIELD_VALUES_PRINTED=false")
+          print("PRIVATE_RAW_VALUES_PRINTED=false")
           print("SECRET_VALUE_PRINTED=false")
