@@ -103,12 +103,13 @@ from mcp.remote_durability_checkpoint_v63 import (  # noqa: E402
 _RUNTIME = _production._RUNTIME
 _BASE_DISPATCH = _production._v61._server.handle
 _DIAGNOSTIC_STATIC_BEARER = str(os.environ.get("CBI_REMOTE_BEARER_TOKEN") or "")
+_DIAGNOSTIC_OPERATOR_INTENT = str(os.environ.get("CBI_V64_C279_EXPORT_INTENT") or "").strip()
 _DIAGNOSTIC_EXPORT = build_export_callback(
     _RUNTIME.store.root,
     os.environ,
     process_started_at=_PROCESS_STARTED_AT,
 )
-if len(_DIAGNOSTIC_STATIC_BEARER) < 32:
+if len(_DIAGNOSTIC_STATIC_BEARER) < 32 and len(_DIAGNOSTIC_OPERATOR_INTENT) < 32:
     _DIAGNOSTIC_EXPORT = None
 _PERSISTENCE = RecoveryObjectStoreStateManagerV63.from_env()
 if _PERSISTENCE is not None:
@@ -237,6 +238,7 @@ def main() -> int:
         health=_health,
         diagnostic_export=_DIAGNOSTIC_EXPORT,
         diagnostic_static_bearer=_DIAGNOSTIC_STATIC_BEARER,
+        diagnostic_operator_intent=_DIAGNOSTIC_OPERATOR_INTENT,
     )
 
 

@@ -252,13 +252,19 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
     def diagnostic_static_bearer(self) -> str:
         return str(getattr(self.server, "diagnostic_static_bearer", "") or "")  # type: ignore[attr-defined]
 
+    @property
+    def diagnostic_operator_intent(self) -> str:
+        return str(getattr(self.server, "diagnostic_operator_intent", "") or "")  # type: ignore[attr-defined]
+
     def _diagnostic_parts(self) -> tuple[bool, bool]:
         parsed = urllib.parse.urlsplit(self.path)
         return parsed.path == _C279_EXPORT_PATH, bool(parsed.query or parsed.fragment)
 
     def _diagnostic_available(self, callback: Callable[[], dict[str, Any]] | None = None) -> bool:
         selected = self.diagnostic_export if callback is None else callback
-        if selected is None or len(self.diagnostic_static_bearer) < 32:
+        if selected is None:
+            return False
+        if len(self.diagnostic_operator_intent) < 32 and len(self.diagnostic_static_bearer) < 32:
             return False
         checker = getattr(selected, "is_available", None)
         if checker is None:
@@ -276,11 +282,27 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
         if not is_route or has_suffix or not self._diagnostic_available(callback):
             self._send_empty(HTTPStatus.NOT_FOUND)
             return
-        try:
-            base.require_static_bearer(self.headers, self.diagnostic_static_bearer)
-        except base.RemoteTransportError as exc:
-            self._send_json(exc.http_status, {"error": str(exc)})
-            return
+        operator_intent = self.diagnostic_operator_intent
+        if len(operator_intent) >= 32:
+            supplied_intent = str(
+                self.headers.get("X-CBI-Diagnostic-Intent")
+                or self.headers.get("x-cbi-diagnostic-intent")
+                or ""
+            ).strip()
+            if not supplied_intent or not hmac.compare_digest(supplied_intent, operator_intent):
+                self._send_empty(HTTPStatus.NOT_FOUND)
+                return
+            try:
+                self.app._auth.authorize(self.headers)
+            except base.RemoteTransportError as exc:
+                self._send_json(exc.http_status, {"error": str(exc)})
+                return
+        else:
+            try:
+                base.require_static_bearer(self.headers, self.diagnostic_static_bearer)
+            except base.RemoteTransportError as exc:
+                self._send_json(exc.http_status, {"error": str(exc)})
+                return
 
         try:
             content_type = str(self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
@@ -520,6 +542,7 @@ def serve(
     port: int | None = None,
     diagnostic_export: Callable[[], dict[str, Any]] | None = None,
     diagnostic_static_bearer: str = "",
+    diagnostic_operator_intent: str = "",
 ) -> int:
     auth = ChatGPTRemoteAuthConfig.from_env()
     public_base = _public_base_url()
@@ -532,6 +555,7 @@ def serve(
     server.public_base = public_base  # type: ignore[attr-defined]
     server.diagnostic_export = diagnostic_export  # type: ignore[attr-defined]
     server.diagnostic_static_bearer = str(diagnostic_static_bearer or "")  # type: ignore[attr-defined]
+    server.diagnostic_operator_intent = str(diagnostic_operator_intent or "")  # type: ignore[attr-defined]
     try:
         server.serve_forever(poll_interval=0.25)
     except KeyboardInterrupt:
@@ -547,8 +571,19 @@ def main(
     *,
     diagnostic_export: Callable[[], dict[str, Any]] | None = None,
     diagnostic_static_bearer: str = "",
+    diagnostic_operator_intent: str = "",
 ) -> int:
     args = base._parser().parse_args()
+    if diagnostic_operator_intent:
+        return serve(
+            dispatch,
+            health=health,
+            host=args.host,
+            port=args.port,
+            diagnostic_export=diagnostic_export,
+            diagnostic_static_bearer=diagnostic_static_bearer,
+            diagnostic_operator_intent=diagnostic_operator_intent,
+        )
     return serve(
         dispatch,
         health=health,
