@@ -55,69 +55,91 @@ jobs:
               json.dumps(safe, sort_keys=True), encoding="utf-8"
           )
 
-      - name: Checkout exact production source
+      - name: Probe production MCP read-only tools only
+        shell: python
+        env:
+          CBI_READONLY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          base = "https://cbi-v61-preview.onrender.com"
+          token = os.environ.get("CBI_READONLY_BEARER", "")
+          if len(token) < 32:
+              raise SystemExit("C279_READONLY_BEARER_UNAVAILABLE")
+
+          request_id = 0
+          def rpc(method, params):
+              global request_id
+              request_id += 1
+              body = json.dumps({
+                  "jsonrpc": "2.0", "id": request_id,
+                  "method": method, "params": params,
+              }, separators=(",", ":")).encode("utf-8")
+              req = urllib.request.Request(
+                  base + "/mcp", data=body, method="POST",
+                  headers={
+                      "Authorization": "Bearer " + token,
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                      "MCP-Protocol-Version": "2026-07-28",
+                      "User-Agent": "cbi-v64-c279-readonly-probe",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      payload = json.loads(response.read().decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  raise SystemExit(f"C279_PRODUCTION_MCP_AUTH_FAILED_HTTP_{exc.code}")
+              if payload.get("id") != request_id or payload.get("jsonrpc") != "2.0":
+                  raise SystemExit("C279_PRODUCTION_MCP_PROTOCOL_INVALID")
+              if payload.get("error"):
+                  raise SystemExit("C279_PRODUCTION_MCP_RPC_ERROR")
+              return payload.get("result") or {}
+
+          def call_readonly(name, arguments):
+              result = rpc("tools/call", {"name": name, "arguments": arguments})
+              structured = result.get("structuredContent")
+              if not isinstance(structured, dict):
+                  raise SystemExit("C279_PRODUCTION_MCP_STRUCTURED_CONTENT_MISSING")
+              return structured
+
+          health = call_readonly("get_runtime_health", {})
+          safe_health = {
+              "status": health.get("status"),
+              "runtime_version": health.get("runtime_version"),
+              "build_id": health.get("build_id"),
+              "checked_sessions": health.get("checked_sessions"),
+              "wal_prepared": ((health.get("mutation_wal") or {}).get("prepared_count")),
+              "wal_invalid": ((health.get("mutation_wal") or {}).get("invalid_count")),
+              "wal_reconciliation_required": ((health.get("mutation_wal") or {}).get("reconciliation_required")),
+          }
+          print("C279_MCP_RUNTIME_HEALTH_SAFE=" + json.dumps(safe_health, sort_keys=True, separators=(",", ":")))
+
+          state = call_readonly(
+              "get_investigation_state",
+              {"investigation_id": "INV-20260902T093152Z-5f3526759f65"},
+          )
+          safe_state = {
+              "last_safe_seq": state.get("last_safe_seq"),
+              "last_safe_event_hash": state.get("last_safe_event_hash"),
+              "status": state.get("status"),
+          }
+          print("C279_MCP_DURABLE_TAIL_SAFE=" + json.dumps(safe_state, sort_keys=True, separators=(",", ":")))
+          if safe_state["last_safe_seq"] != 27:
+              raise SystemExit("C279_CURRENT_TAIL_SEQ_DRIFT")
+          if safe_state["last_safe_event_hash"] != "cf5d92ecf7f7d4842306cc39134bdd09aced5fd087179da1ab6b0da5ca19b498":
+              raise SystemExit("C279_CURRENT_TAIL_HASH_DRIFT")
+          print("C279_PRODUCTION_MCP_READONLY_TAIL=VERIFIED")
+
+      - name: Checkout exact production source and assert ref unchanged
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: a311a2a57ee43a1f1a3b2819bf28946566b05692
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: '3.11'
-
-      - name: Read current R2 pointer and restore only into runner temp
-        shell: bash
-        env:
-          CBI_OBJECT_STORE_MODE: r2
-          CBI_OBJECT_STORE_ENDPOINT: ${{ secrets.CBI_V63_R2_ENDPOINT }}
-          CBI_OBJECT_STORE_BUCKET: ${{ secrets.CBI_V63_R2_BUCKET }}
-          CBI_OBJECT_STORE_ACCESS_KEY_ID: ${{ secrets.CBI_V63_R2_ACCESS_KEY_ID }}
-          CBI_OBJECT_STORE_SECRET_ACCESS_KEY: ${{ secrets.CBI_V63_R2_SECRET_ACCESS_KEY }}
-          CBI_OBJECT_STORE_REGION: ${{ secrets.CBI_V63_R2_REGION }}
-          CBI_OBJECT_STORE_PREFIX: cbi-v61
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import tempfile
-          from pathlib import Path
-
-          from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
-
-          health = json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("c279-health.json").read_text(encoding="utf-8"))
-          manager = RecoveryObjectStoreStateManagerV63.from_env()
-          if manager is None:
-              raise SystemExit("C279_R2_MANAGER_NOT_CONFIGURED")
-          pointer = manager.read_pointer(required=True)
-          safe_pointer = {
-              "generation": getattr(pointer, "generation", None),
-              "archive_format": getattr(pointer, "archive_format", None),
-              "recovery_fingerprint_sha256": getattr(pointer, "recovery_fingerprint_sha256", None),
-          }
-          print("C279_R2_POINTER_SAFE=" + json.dumps(safe_pointer, sort_keys=True, separators=(",", ":")))
-          if safe_pointer["generation"] != health["generation"]:
-              raise SystemExit("C279_R2_GENERATION_MISMATCH")
-          if safe_pointer["archive_format"] != "object_state_v2":
-              raise SystemExit("C279_R2_ARCHIVE_FORMAT_MISMATCH")
-          if safe_pointer["recovery_fingerprint_sha256"] != health["recovery_fingerprint_sha256"]:
-              raise SystemExit("C279_R2_RECOVERY_FINGERPRINT_MISMATCH")
-
-          with tempfile.TemporaryDirectory(prefix="cbi-v64-c279-r2-") as td:
-              target = Path(td) / "current-cloud-live"
-              if not manager.restore_into(target):
-                  raise SystemExit("C279_R2_RESTORE_RETURNED_FALSE")
-              manifest = json.loads((target / "export-manifest.json").read_text(encoding="utf-8"))
-              if manifest.get("restored_generation") != health["generation"]:
-                  raise SystemExit("C279_R2_RESTORED_GENERATION_MISMATCH")
-              if manifest.get("recovery_fingerprint_sha256") != health["recovery_fingerprint_sha256"]:
-                  raise SystemExit("C279_R2_RESTORED_FINGERPRINT_MISMATCH")
-              if not (target / "sessions").is_dir() or not (target / "mcp-idempotency-v61").is_dir():
-                  raise SystemExit("C279_R2_RECOVERY_COMPONENT_MISSING")
-              print("C279_CURRENT_CLOUD_R2_ISOLATED_RESTORE=VERIFIED")
-          PY
 
       - name: Assert production ref was not mutated
         shell: bash
