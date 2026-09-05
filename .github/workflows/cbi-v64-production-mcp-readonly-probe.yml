@@ -77,8 +77,7 @@ jobs:
               if payload.get("jsonrpc") != "2.0" or payload.get("id") != request_id:
                   raise SystemExit("PRODUCTION_MCP_JSONRPC_INVALID")
               if isinstance(payload.get("error"), dict):
-                  code = payload["error"].get("code")
-                  print("PRODUCTION_MCP_JSONRPC_ERROR_CODE=" + str(code))
+                  print("PRODUCTION_MCP_JSONRPC_ERROR_CODE=" + str(payload["error"].get("code")))
                   raise SystemExit("PRODUCTION_MCP_JSONRPC_REJECTED")
               result = payload.get("result")
               if not isinstance(result, dict):
@@ -88,26 +87,48 @@ jobs:
           rpc("initialize", {
               "protocolVersion": "2025-06-18",
               "capabilities": {},
-              "clientInfo": {"name": "cbi-v64-production-mcp-readonly-probe", "version": "1"},
+              "clientInfo": {"name": "cbi-v64-production-mcp-readonly-probe", "version": "2"},
           })
           listed = rpc("tools/list", {})
           tools = listed.get("tools")
           if not isinstance(tools, list):
               raise SystemExit("PRODUCTION_MCP_TOOLS_LIST_MISSING")
-          names = sorted({
-              str(item.get("name") or "").strip()
+
+          by_name = {
+              str(item.get("name") or "").strip(): item
               for item in tools
               if isinstance(item, dict) and str(item.get("name") or "").strip()
-          })
-          interesting = [
-              name for name in names
-              if any(marker in name.lower() for marker in (
-                  "export", "snapshot", "backup", "runtime", "state", "investigation",
-                  "journal", "portfolio", "history", "evidence", "recovery",
-              ))
-          ]
+          }
+          names = sorted(by_name)
           print("PRODUCTION_MCP_AUTH=PASS")
           print("PRODUCTION_MCP_TOOL_COUNT=" + str(len(names)))
-          print("PRODUCTION_MCP_INTERESTING_TOOLS=" + json.dumps(interesting, separators=(",", ":")))
+          print("PRODUCTION_MCP_ALL_TOOL_NAMES=" + json.dumps(names, separators=(",", ":")))
+
+          likely_read_only = [
+              name for name in names
+              if name.startswith("get_")
+              or name.startswith("list_")
+              or name.startswith("evaluate_")
+              or name.startswith("diagnose_")
+              or any(marker in name.lower() for marker in (
+                  "history", "state", "health", "journal", "portfolio", "evidence",
+                  "event", "ledger", "session", "route", "readiness", "closure",
+              ))
+          ]
+          schemas = {}
+          for name in likely_read_only:
+              item = by_name[name]
+              raw_schema = item.get("inputSchema")
+              if not isinstance(raw_schema, dict):
+                  raw_schema = {}
+              props = raw_schema.get("properties")
+              required = raw_schema.get("required")
+              schemas[name] = {
+                  "properties": sorted(str(k) for k in props) if isinstance(props, dict) else [],
+                  "required": sorted(str(v) for v in required) if isinstance(required, list) else [],
+                  "additionalProperties": raw_schema.get("additionalProperties"),
+              }
+          print("PRODUCTION_MCP_READONLY_SCHEMA_SUMMARY=" + json.dumps(schemas, sort_keys=True, separators=(",", ":")))
+          print("TOOLS_CALL_EXECUTED=false")
           print("MUTATING_TOOL_CALLED=false")
           print("SECRET_VALUE_PRINTED=false")
