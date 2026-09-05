@@ -109,6 +109,9 @@ class C279ZeroMutationPreflightTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "REMOTE_TIMEOUT")
         self.assertEqual(raised.exception.stage, "get_portfolio_queue")
 
+    def test_remote_timeout_budget_covers_measured_portfolio_latency(self) -> None:
+        self.assertEqual(preflight.REMOTE_TIMEOUT_SECONDS, 60.0)
+
     def test_zero_or_multiple_c279_targets_fail_closed(self) -> None:
         for rows in (
             [],
