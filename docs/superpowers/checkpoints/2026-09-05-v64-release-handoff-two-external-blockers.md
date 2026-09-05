@@ -23,7 +23,7 @@ Production promotion is not authorized yet.
 ## Integration gate — GREEN
 
 - TDD RED commit: `97c49cc497108e3d77f0cff5d7d5173ffd5fec31`
-- RED run: `33941295839`, failed exactly the two intended missing integration semantics.
+- RED run: `33941295839`, failed exactly the intended missing integration semantics.
 - Two-parent integrated merge commit: `17f4fe160c0908a602224eab95d172ba4eb753c6`
 - Parents: `97c49cc497108e3d77f0cff5d7d5173ffd5fec31` and exact production `a311a2a57ee43a1f1a3b2819bf28946566b05692`.
 - Exact integrated release CI run: `33941452053`.
@@ -41,21 +41,33 @@ Production promotion is not authorized yet.
 - Production Runtime: READY.
 - Production object store: `object_state_v2`, generation 669, restore generation 669.
 - Production SHA: `a311a2a57ee43a1f1a3b2819bf28946566b05692`.
-- C279 durable tail: seq 27 / event hash `cf5d92ecf7f7d4842306cc39134bdd09aced5fd087179da1ab6b0da5ca19b498`.
+- C279 durable tail remains seq 27 with the previously bound private event hash.
 - Current production readiness: `IDENTITY_ONLY`.
 - Current blocker: `VERIFIED_ACCOUNT_OWNED_ROUTE_REQUIRED`.
 - Canonical/effective account-owned route count remains zero.
+- Fresh post-exhaustion semantic probe: run `33942814266`, job `101243365731`; generation 669 and recovery fingerprint stable; no mutating tool, private raw value, or secret value was emitted.
 
-### Non-mutating routes already exhausted
+### Non-mutating routes exhausted
 
 - Existing `CBI_V63_R2_*` Actions credentials against production pointer: HTTP 403.
 - Anonymous production R2 pointer: AUTH_REQUIRED.
-- Production MCP: 65 tools, but no raw runtime-root/archive/snapshot/backup export surface.
-- Remote HTTP transport: GET only exposes health/readiness metadata, no bundle download route.
-- Render connector: no shell/SSH execution and no secret-value read.
-- GitHub secret-presence probes: tested production R2/Render/SSH/C279 aliases absent.
-- Plugin discovery: no Cloudflare R2 or Render-shell integration available beyond current Render connector.
-- Further broad secret-alias workflow creation was blocked by platform safety checks; do not attempt to bypass that safety control.
+- The exact production runtime secret names `CBI_OBJECT_STORE_MODE`, `CBI_OBJECT_STORE_ENDPOINT`, `CBI_OBJECT_STORE_BUCKET`, `CBI_OBJECT_STORE_ACCESS_KEY_ID`, `CBI_OBJECT_STORE_SECRET_ACCESS_KEY`, `CBI_OBJECT_STORE_REGION`, `CBI_OBJECT_STORE_PREFIX`, and `CBI_OBJECT_STORE_RETENTION` were all absent in GitHub Actions in presence-only run `33942814272`; no network call or secret value output occurred.
+- Existing production/release workflows have no GitHub Actions `environment:` binding and no alternate committed production object-store credential mapping.
+- Production MCP: 65 tools, but no raw append-event/session JSONL/runtime-root/archive/snapshot/backup export surface.
+- Remote HTTP transport: `/mcp` GET is disabled; there is no independent `resources/list` / `resources/read` download surface.
+- Render connector: no shell/SSH execution and no secret-value read. Service previews remain disabled/off; no reusable environment-group inheritance path is exposed by the connected control plane.
+- Plugin discovery: no Cloudflare R2 connector is available.
+- Library/file-name and semantic searches found no saved valid production R2 credential, Render SSH private key, generation-669 archive, C279 session JSONL, or readonly-minimal runtime export.
+- Historical Windows migration archive is generation 0 / rollback-only and cannot replace generation 669.
+- Historical security record states the formerly exposed R2 token was revoked and replaced; the valid bucket-scoped token was stored only in Render Environment. The revoked token must not be recovered or reused.
+
+### GitHub Actions artifacts audited byte-for-byte
+
+- C279 current-cloud preflight artifact `9960768288`: one 1337-byte JSON file only; ZIP SHA256 `44fe4e8fa1c72cb7bb3814cf4c1b2edd75e7b18a5871fddd34c2a4e5ac8e2042`; no runtime/session/archive bytes.
+- Source exact-checkout live-acceptance run `33760447567`, artifact `9895310327`: four JSON acceptance/recovery/correlation files only; no runtime archive.
+- All four historical isolated Render/R2 workflow-dispatch runs were enumerated. Successful artifacts `9893653145` and `9892512260` both use isolated prefix `cbi-v63-acceptance-20260903-r01`, not production `cbi-v61`; failed-run artifacts are only 394/498 bytes.
+
+Detailed sanitized evidence is in `docs/superpowers/checkpoints/2026-09-05-v64-c279-access-exhaustion-final.md` at checkpoint commit `5894cba9cf212af25f853bb4953aeadfb5590ba3`.
 
 ### Accepted unlock paths
 
@@ -69,7 +81,7 @@ Any one of these is sufficient to resume:
 
 - bind private C279 bridge tail to authoritative source JSONL;
 - copy source root into a temporary isolated root;
-- instantiate full current v6.4 Runtime on isolated copy;
+- instantiate full current integrated v6.4 Runtime on isolated copy;
 - run readiness/health;
 - call `prepare_outreach` only on isolated copy;
 - prove `sends_message=false`;
@@ -82,8 +94,11 @@ Any one of these is sufficient to resume:
 - Only active repository ruleset: `protect-main`, id `21810779`.
 - Production branch reports `protected=false`.
 - `protect-cbi-production` does not exist.
-- Current GitHub connector can read rulesets but exposes no repository-administration write action for creating/updating them.
-- Plugin discovery found no alternate GitHub ruleset/branch-protection administration integration.
+- Current GitHub connector can read rulesets/protection but exposes no repository-administration write action.
+- Plugin Management permission modes do not change GitHub OAuth/admin scopes.
+- Plugin discovery found no alternate GitHub repository-administration provider.
+- Production `.github/workflows` contains only CI/load/bootstrap/live-acceptance/isolated-R2-acceptance workflows; no repository-admin/ruleset workflow exists.
+- Repository code search found no `ruleset`, branch-protection management, or `gh api` governance automation that could safely apply the missing rule through an existing controlled workflow.
 
 ### Required ruleset semantics
 
@@ -108,13 +123,16 @@ Creating or weakening production governance is a high-impact repository administ
 - Rehearsal PR #21 is CLOSED, UNMERGED.
 - Production branch remains `a311a2a57ee43a1f1a3b2819bf28946566b05692`.
 - Original RC remains `4733a9b3e7286b58828750542c7ad54057cfb8ad`.
-- No Render deploy, Render environment mutation, R2 write, CRM mutation, live Runtime mutation, or production branch update was performed during production-lineage integration.
+- Integrated promotion candidate remains `17f4fe160c0908a602224eab95d172ba4eb753c6`.
+- No Render deploy, Render environment mutation, R2 write/delete, CRM mutation, live Runtime mutation, production branch update, or production ruleset mutation was performed during this access-exhaustion cycle.
 
 ## Exact next-window starting point
 
-Do not repeat merge-conflict analysis or release CI work. Start by checking whether either external unlock has become available:
+Do not repeat merge-conflict analysis, release CI, hidden-secret-name probes, MCP-resource probing, historical artifact inspection, or workflow-admin searches.
+
+Start only from a newly available external unlock:
 
 1. authorized read-only production Runtime/R2/Render filesystem access for C279; and/or
-2. GitHub repository-administration capability / explicit ruleset-creation approval.
+2. GitHub repository-administration capability with explicit authority to create `protect-cbi-production`.
 
-If neither has changed, report `PRODUCTION_READY=NO` with exactly those two blockers and do not perform production promotion.
+If neither external capability has changed, `PRODUCTION_READY=NO`; do not perform production promotion.
