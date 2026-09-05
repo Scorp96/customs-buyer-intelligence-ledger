@@ -57,8 +57,10 @@ jobs:
           main_detail = get(f"/repos/{repo}/rulesets/{main['id']}")
           if ((main_detail.get("conditions") or {}).get("ref_name") or {}).get("include") != ["~DEFAULT_BRANCH"]:
               raise SystemExit("PROTECT_MAIN_TARGET_DRIFT")
-          if main_detail.get("bypass_actors") != [] or main_detail.get("current_user_can_bypass") != "never":
-              raise SystemExit("PROTECT_MAIN_BYPASS_DRIFT")
+          # current_user_can_bypass is viewer-relative; bypass_actors is the
+          # durable repository rule and is stable across API identities.
+          if main_detail.get("bypass_actors") != []:
+              raise SystemExit("PROTECT_MAIN_BYPASS_ACTORS_DRIFT")
 
           required = [
               "regression (ubuntu-latest, py3.10)",
@@ -82,7 +84,6 @@ jobs:
               raise SystemExit("PRODUCTION_BRANCH_SHA_DRIFT")
 
           target = by_name.get("protect-cbi-production")
-          target_detail = None
           target_valid = False
           if target is not None:
               target_detail = get(f"/repos/{repo}/rulesets/{target['id']}")
@@ -102,7 +103,6 @@ jobs:
                   and target_status.get("strict_required_status_checks_policy") is True
                   and target_contexts == required
                   and target_detail.get("bypass_actors") == []
-                  and target_detail.get("current_user_can_bypass") == "never"
               )
 
           result = "GREEN" if target_valid else "BLOCKED_EXTERNAL"
