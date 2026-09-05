@@ -10,17 +10,29 @@ import unittest
 from pathlib import Path
 
 from unified_runtime import CBI_MCP_TOOL_NAMES
+from unified_runtime.mcp_schema_v63 import build_v63_tool_descriptors
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _declared_current_tool_names() -> set[str]:
+    names = set(CBI_MCP_TOOL_NAMES)
+    names.update(
+        str(item.get("name") or "")
+        for item in build_v63_tool_descriptors()
+        if isinstance(item, dict) and str(item.get("name") or "")
+    )
+    return names
 
 
 class V6WindowsPortabilityTests(unittest.TestCase):
     @staticmethod
     def _assert_current_tool_surface(tools: list[dict]) -> None:
         names = {str(item.get("name") or "") for item in tools if isinstance(item, dict)}
-        assert names == set(CBI_MCP_TOOL_NAMES), (
-            f"launcher tool surface drifted: expected={sorted(CBI_MCP_TOOL_NAMES)!r} actual={sorted(names)!r}"
+        expected = _declared_current_tool_names()
+        assert names == expected, (
+            f"launcher tool surface drifted: expected={sorted(expected)!r} actual={sorted(names)!r}"
         )
 
     def test_mcp_launcher_discovers_supported_python_dynamically(self) -> None:
