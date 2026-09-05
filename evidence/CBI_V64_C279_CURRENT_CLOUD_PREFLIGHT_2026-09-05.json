@@ -1,0 +1,62 @@
+{
+  "schema": "cbi.v64-c279-current-cloud-preflight-checkpoint.v1",
+  "captured_at_utc": "2026-09-05T02:01:14Z",
+  "workflow_run_id": 33937856740,
+  "workflow_job_id": 101229180248,
+  "workflow_head_sha": "c54038d74c80eb0289f0828f032afb623cea061f",
+  "artifact_id": 9960768288,
+  "artifact_name": "cbi-v64-c279-current-cloud-preflight-c54038d74c80eb0289f0828f032afb623cea061f",
+  "artifact_sha256": "44fe4e8fa1c72cb7bb3814cf4c1b2edd75e7b18a5871fddd34c2a4e5ac8e2042",
+  "result": "BLOCKED_EXTERNAL",
+  "blocker": "AUTHORITATIVE_SOURCE_RUNTIME_ROOT_UNAVAILABLE",
+  "c279_full_runtime_regression_verified": false,
+  "production_mutated": false,
+  "production_sha": "a311a2a57ee43a1f1a3b2819bf28946566b05692",
+  "production_object_state": {
+    "mode": "r2",
+    "schema": "cbi.object-store-state.v2",
+    "archive_format": "object_state_v2",
+    "generation": 669,
+    "restore_generation": 669,
+    "prefix": "cbi-v61",
+    "recovery_fingerprint_sha256": "3a3014f6bba6986cfc46bab676acdc087985f1fdbe6535a4317f6d0670cf0422"
+  },
+  "runtime": {
+    "status": "READY",
+    "runtime_version": "6.1.0",
+    "checked_sessions": 94,
+    "wal_prepared": 0,
+    "wal_invalid": 0,
+    "wal_reconciliation_required": false
+  },
+  "c279_durable_tail": {
+    "last_safe_seq": 27,
+    "last_safe_event_hash": "cf5d92ecf7f7d4842306cc39134bdd09aced5fd087179da1ab6b0da5ca19b498"
+  },
+  "prepatch_semantics": {
+    "company_route_supported": true,
+    "readiness": "IDENTITY_ONLY",
+    "outreach_readiness": "IDENTITY_ONLY",
+    "canonical_route_count": 0,
+    "valid_company_route_id_count": 0,
+    "account_route_count": 0,
+    "effective_outreach_routes": 0,
+    "expected_blocker_present": true
+  },
+  "live_mcp_surface": {
+    "tool_count": 65,
+    "raw_session_or_export_surface": false
+  },
+  "unsigned_production_r2_http": {
+    "HEAD": 400,
+    "GET": 400
+  },
+  "required_next_input": "authoritative current-cloud runtime-root bytes or an authorized read-only export path",
+  "safety_boundary": {
+    "production_branch_updated": false,
+    "render_deploy_triggered": false,
+    "render_environment_changed": false,
+    "r2_mutated": false,
+    "production_mcp_mutation_called": false
+  }
+}
