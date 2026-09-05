@@ -1,3 +1,4 @@
+# C279 diagnostic harness v2: retrigger after dependency fix
 name: CBI v6.4 C279 export diagnostic
 
 on:
