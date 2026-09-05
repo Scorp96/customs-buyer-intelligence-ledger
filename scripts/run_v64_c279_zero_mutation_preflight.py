@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import re
 import sys
-from typing import Any
+from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -37,7 +37,10 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class PreflightError(RuntimeError):
-    pass
+    def __init__(self, code: str, stage: str | None = None) -> None:
+        self.code = str(code)
+        self.stage = str(stage) if stage else None
+        super().__init__(self.code if self.stage is None else f"{self.code}:{self.stage}")
 
 
 class ProductionReadOnlyMcpClient(RenderR2AcceptanceClient):
@@ -68,6 +71,15 @@ def _fail(code: str) -> None:
     raise PreflightError(str(code))
 
 
+def _stage(stage: str, operation: Callable[[], Any]) -> Any:
+    safe_stage = str(stage)
+    print(f"C279_PREFLIGHT_STAGE={safe_stage}", flush=True)
+    try:
+        return operation()
+    except TimeoutError as exc:
+        raise PreflightError("REMOTE_TIMEOUT", safe_stage) from exc
+
+
 def _read_only_call(client: Any, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     if name not in READ_ONLY_TOOLS:
         _fail("PREFLIGHT_MUTATION_TOOL_FORBIDDEN")
@@ -89,12 +101,15 @@ def _tail(value: dict[str, Any]) -> tuple[int, str]:
 
 
 def run_preflight(client: Any) -> dict[str, Any]:
-    remote_health = client.read_health()
+    remote_health = _stage("health", client.read_health)
     if not isinstance(remote_health, dict):
         _fail("REMOTE_HEALTH_INVALID")
-    client.initialize()
+    _stage("initialize", client.initialize)
 
-    portfolio = _read_only_call(client, "get_portfolio_queue", {"limit": 1000})
+    portfolio = _stage(
+        "get_portfolio_queue",
+        lambda: _read_only_call(client, "get_portfolio_queue", {"limit": 1000}),
+    )
     rows = portfolio.get("queue")
     if not isinstance(rows, list):
         _fail("PORTFOLIO_QUEUE_INVALID")
@@ -109,10 +124,13 @@ def run_preflight(client: Any) -> dict[str, Any]:
     if not investigation_id:
         _fail("C279_INVESTIGATION_ID_MISSING")
 
-    investigation_health = _read_only_call(
-        client,
+    investigation_health = _stage(
         "get_investigation_health",
-        {"investigation_id": investigation_id},
+        lambda: _read_only_call(
+            client,
+            "get_investigation_health",
+            {"investigation_id": investigation_id},
+        ),
     )
     if (
         investigation_health.get("status") != "READY"
@@ -121,10 +139,13 @@ def run_preflight(client: Any) -> dict[str, Any]:
         _fail("C279_INVESTIGATION_NOT_READY")
     health_seq, health_hash = _tail(investigation_health)
 
-    state = _read_only_call(
-        client,
+    state = _stage(
         "get_investigation_state",
-        {"investigation_id": investigation_id},
+        lambda: _read_only_call(
+            client,
+            "get_investigation_state",
+            {"investigation_id": investigation_id},
+        ),
     )
     state_seq, state_hash = _tail(state)
     if (
@@ -139,10 +160,13 @@ def run_preflight(client: Any) -> dict[str, Any]:
     if not isinstance(company_route, dict) or company_route.get("state") != "SUPPORTED":
         _fail("C279_PREPATCH_BASELINE_MISMATCH")
 
-    readiness = _read_only_call(
-        client,
+    readiness = _stage(
         "evaluate_outreach_readiness",
-        {"investigation_id": investigation_id},
+        lambda: _read_only_call(
+            client,
+            "evaluate_outreach_readiness",
+            {"investigation_id": investigation_id},
+        ),
     )
     blockers = readiness.get("block_reasons")
     if (
@@ -203,7 +227,24 @@ def main(argv: list[str] | None = None) -> int:
         _write_receipt(output, receipt)
         print("C279_ZERO_MUTATION_PREFLIGHT=VERIFIED")
         return 0
-    except (PreflightError, RenderR2AcceptanceClientError) as exc:
+    except PreflightError as exc:
+        receipt = {
+            "schema": SCHEMA,
+            "status": "BLOCKED",
+            "verified": False,
+            "production_mutation_performed": False,
+            "error_code": exc.code,
+        }
+        if exc.stage:
+            receipt["error_stage"] = exc.stage
+        try:
+            _write_receipt(output, receipt)
+        except OSError:
+            pass
+        detail = exc.code if exc.stage is None else f"{exc.code}:{exc.stage}"
+        print(f"C279 zero-mutation preflight blocked: {detail}", file=sys.stderr)
+        return 2
+    except RenderR2AcceptanceClientError as exc:
         error_code = str(exc).split(":", 1)[0].strip() or "PREFLIGHT_FAILED"
         receipt = {
             "schema": SCHEMA,
