@@ -43,6 +43,26 @@ class RemoteTransportError(Exception):
         self.rpc_code = int(rpc_code)
 
 
+def require_static_bearer(headers: Mapping[str, str], expected_token: str) -> None:
+    """Authorize only the exact private static bearer; never OAuth-fallback."""
+    authorization = str(headers.get("Authorization") or headers.get("authorization") or "")
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        raise RemoteTransportError(
+            "Bearer authentication required", http_status=401, rpc_code=-32001
+        )
+    supplied = authorization[len(prefix):].strip()
+    if not supplied:
+        raise RemoteTransportError(
+            "Bearer authentication required", http_status=401, rpc_code=-32001
+        )
+    expected = str(expected_token or "")
+    if not expected or not hmac.compare_digest(supplied, expected):
+        raise RemoteTransportError(
+            "Invalid bearer credential", http_status=401, rpc_code=-32001
+        )
+
+
 @dataclass(frozen=True)
 class RemoteAuthConfig:
     mode: str
