@@ -1,0 +1,35 @@
+name: CBI v6.4 Stream B RED verification
+
+on:
+  push:
+    branches: [cbi-v64-semantic-forward-port-58e14973]
+    paths: [.cbi-v64-stream-b/RED_READY]
+
+permissions:
+  contents: read
+
+jobs:
+  red:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: cbi-v64-semantic-forward-port-58e14973
+      - name: Verify immutable refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
+          test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
+      - name: Observe expected Stream B failures
+        shell: bash
+        run: |
+          set +e
+          python -m unittest -v tests/test_v64_stream_b_semantic_forward_port.py 2>&1 | tee "$RUNNER_TEMP/stream-b-red.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          test "$rc" -ne 0
+          grep -Eq "backup_retention_evidence_v64|BACKUP_RETENTION_NOT_VERIFIED|deployment_backup_retention_v6_4|_validate_backup_retention_report|V64_GATE_EXECUTED|AssertionError" "$RUNNER_TEMP/stream-b-red.log"
+          echo "STREAM_B_RED_OBSERVED"
