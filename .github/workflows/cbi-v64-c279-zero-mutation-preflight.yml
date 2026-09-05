@@ -1,0 +1,114 @@
+name: CBI v6.4 C279 zero-mutation production preflight
+
+on:
+  push:
+    branches:
+      - "cbi-v64-release-candidate-c279-diagnostic-preflight-bab9f71f"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-c279-zero-mutation-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_PRODUCTION_SHA: a311a2a57ee43a1f1a3b2819bf28946566b05692
+  PRODUCTION_BRANCH: cbi-v6-cloud-runtime-20260901
+
+jobs:
+  zero-mutation-preflight:
+    name: C279 zero-production-mutation preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact preflight SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Assert exact preflight branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "cbi-v64-release-candidate-c279-diagnostic-preflight-bab9f71f"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "C279_PREFLIGHT_CHECKOUT_SHA=$GITHUB_SHA"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Verify production ref before preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote https://github.com/Scorp96/customs-buyer-intelligence-ledger.git "refs/heads/$PRODUCTION_BRANCH" | awk '{print $1}')"
+          test -n "$actual"
+          if [ "$actual" != "$EXPECTED_PRODUCTION_SHA" ]; then
+            echo "PRODUCTION_BRANCH_CHANGED expected=$EXPECTED_PRODUCTION_SHA actual=$actual" >&2
+            exit 1
+          fi
+          echo "PRODUCTION_BRANCH_BEFORE=$actual"
+
+      - name: Run zero-mutation C279 preflight
+        shell: bash
+        env:
+          CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}
+          CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c279-preflight"
+          python scripts/run_v64_c279_zero_mutation_preflight.py \
+            --expected-production-sha "$EXPECTED_PRODUCTION_SHA" \
+            --output "$RUNNER_TEMP/c279-preflight/C279_ZERO_MUTATION_PREFLIGHT.json"
+
+      - name: Validate sanitized preflight receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/c279-preflight/C279_ZERO_MUTATION_PREFLIGHT.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          assert payload.get('schema') == 'cbi.v64-c279-zero-mutation-preflight.v1', payload
+          assert payload.get('status') == 'VERIFIED', payload
+          assert payload.get('verified') is True, payload
+          assert payload.get('production_mutation_performed') is False, payload
+          text = json.dumps(payload, ensure_ascii=True, sort_keys=True).casefold()
+          for forbidden in ('authorization', 'bearer', 'email', 'phone', 'whatsapp', 'zalo'):
+              assert forbidden not in text, forbidden
+          print('C279_PREFLIGHT_SANITIZED_RECEIPT=PASS')
+          PY
+
+      - name: Verify production ref after preflight
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote https://github.com/Scorp96/customs-buyer-intelligence-ledger.git "refs/heads/$PRODUCTION_BRANCH" | awk '{print $1}')"
+          test -n "$actual"
+          if [ "$actual" != "$EXPECTED_PRODUCTION_SHA" ]; then
+            echo "PRODUCTION_BRANCH_CHANGED expected=$EXPECTED_PRODUCTION_SHA actual=$actual" >&2
+            exit 1
+          fi
+          echo "PRODUCTION_BRANCH_AFTER=$actual"
+
+      - name: Upload sanitized preflight receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v6.0.0
+        with:
+          name: cbi-v64-c279-zero-mutation-preflight-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: ${{ runner.temp }}/c279-preflight/C279_ZERO_MUTATION_PREFLIGHT.json
+
+      - name: Confirm zero production mutation scope
+        if: ${{ always() }}
+        run: echo 'C279_ZERO_MUTATION_SCOPE=NO_DEPLOY_NO_R2_NO_PRODUCTION_REF_WRITE_NO_OUTREACH_MUTATION'
