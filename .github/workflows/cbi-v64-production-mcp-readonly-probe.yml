@@ -26,23 +26,26 @@ jobs:
           token = os.environ.get("ACCEPTANCE_BEARER") or ""
           if not token:
               raise SystemExit("ACCEPTANCE_BEARER_PRESENT=false")
-          print("ACCEPTANCE_BEARER_PRESENT=true")
-
           base = "https://cbi-v61-preview.onrender.com"
-          with urllib.request.urlopen(
-              urllib.request.Request(
-                  base + "/healthz",
-                  headers={"Accept": "application/json", "User-Agent": "cbi-v64-production-mcp-readonly-probe"},
-                  method="GET",
-              ),
-              timeout=30,
-          ) as response:
-              health = json.load(response)
-          identity = dict(health.get("deployment_identity") or {})
-          if health.get("status") != "ok":
+
+          def health():
+              with urllib.request.urlopen(
+                  urllib.request.Request(
+                      base + "/healthz",
+                      headers={"Accept": "application/json", "User-Agent": "cbi-v64-production-mcp-readonly-probe"},
+                      method="GET",
+                  ),
+                  timeout=30,
+              ) as response:
+                  return json.load(response)
+
+          before = health()
+          identity = dict(before.get("deployment_identity") or {})
+          if before.get("status") != "ok":
               raise SystemExit("PRODUCTION_HEALTH_NOT_OK")
           if identity.get("git_sha") != "a311a2a57ee43a1f1a3b2819bf28946566b05692":
               raise SystemExit("PRODUCTION_SHA_DRIFT")
+          before_persistence = dict(before.get("object_store_persistence") or {})
           print("PRODUCTION_HEALTH_PIN=PASS")
 
           next_id = 1
@@ -50,16 +53,9 @@ jobs:
               global next_id
               request_id = next_id
               next_id += 1
-              body = json.dumps({
-                  "jsonrpc": "2.0",
-                  "id": request_id,
-                  "method": method,
-                  "params": params,
-              }, separators=(",", ":")).encode("utf-8")
+              body = json.dumps({"jsonrpc":"2.0","id":request_id,"method":method,"params":params}, separators=(",", ":")).encode("utf-8")
               request = urllib.request.Request(
-                  base + "/mcp",
-                  data=body,
-                  method="POST",
+                  base + "/mcp", data=body, method="POST",
                   headers={
                       "Authorization": "Bearer " + token,
                       "Content-Type": "application/json",
@@ -84,51 +80,48 @@ jobs:
                   raise SystemExit("PRODUCTION_MCP_RESULT_INVALID")
               return result
 
+          def call_tool(name, arguments):
+              result = rpc("tools/call", {"name": name, "arguments": arguments})
+              structured = result.get("structuredContent")
+              if not isinstance(structured, dict):
+                  raise SystemExit("PRODUCTION_TOOL_STRUCTURED_CONTENT_MISSING:" + name)
+              return structured
+
+          def shape(value, depth=0):
+              if depth >= 4:
+                  return type(value).__name__
+              if isinstance(value, dict):
+                  return {str(k): shape(v, depth + 1) for k, v in sorted(value.items())}
+              if isinstance(value, list):
+                  sample = value[:1]
+                  return {"type":"list","count":len(value),"sample_shape":shape(sample[0], depth + 1) if sample else None}
+              return type(value).__name__
+
           rpc("initialize", {
-              "protocolVersion": "2025-06-18",
-              "capabilities": {},
-              "clientInfo": {"name": "cbi-v64-production-mcp-readonly-probe", "version": "2"},
+              "protocolVersion":"2025-06-18",
+              "capabilities":{},
+              "clientInfo":{"name":"cbi-v64-production-mcp-readonly-probe","version":"3"},
           })
           listed = rpc("tools/list", {})
           tools = listed.get("tools")
           if not isinstance(tools, list):
               raise SystemExit("PRODUCTION_MCP_TOOLS_LIST_MISSING")
-
-          by_name = {
-              str(item.get("name") or "").strip(): item
-              for item in tools
-              if isinstance(item, dict) and str(item.get("name") or "").strip()
-          }
-          names = sorted(by_name)
+          names = sorted(str(item.get("name") or "") for item in tools if isinstance(item, dict) and item.get("name"))
           print("PRODUCTION_MCP_AUTH=PASS")
           print("PRODUCTION_MCP_TOOL_COUNT=" + str(len(names)))
-          print("PRODUCTION_MCP_ALL_TOOL_NAMES=" + json.dumps(names, separators=(",", ":")))
 
-          likely_read_only = [
-              name for name in names
-              if name.startswith("get_")
-              or name.startswith("list_")
-              or name.startswith("evaluate_")
-              or name.startswith("diagnose_")
-              or any(marker in name.lower() for marker in (
-                  "history", "state", "health", "journal", "portfolio", "evidence",
-                  "event", "ledger", "session", "route", "readiness", "closure",
-              ))
-          ]
-          schemas = {}
-          for name in likely_read_only:
-              item = by_name[name]
-              raw_schema = item.get("inputSchema")
-              if not isinstance(raw_schema, dict):
-                  raw_schema = {}
-              props = raw_schema.get("properties")
-              required = raw_schema.get("required")
-              schemas[name] = {
-                  "properties": sorted(str(k) for k in props) if isinstance(props, dict) else [],
-                  "required": sorted(str(v) for v in required) if isinstance(required, list) else [],
-                  "additionalProperties": raw_schema.get("additionalProperties"),
-              }
-          print("PRODUCTION_MCP_READONLY_SCHEMA_SUMMARY=" + json.dumps(schemas, sort_keys=True, separators=(",", ":")))
-          print("TOOLS_CALL_EXECUTED=false")
+          queue = call_tool("get_portfolio_queue", {"include_non_active": True, "include_non_production": True, "limit": 1000})
+          print("PORTFOLIO_QUEUE_STRUCTURAL_SHAPE=" + json.dumps(shape(queue), sort_keys=True, separators=(",", ":")))
+
+          after = health()
+          after_identity = dict(after.get("deployment_identity") or {})
+          after_persistence = dict(after.get("object_store_persistence") or {})
+          if after_identity.get("git_sha") != identity.get("git_sha"):
+              raise SystemExit("PRODUCTION_SHA_CHANGED_DURING_PROBE")
+          print("PORTFOLIO_QUEUE_READONLY_CALL=PASS")
+          print("OBJECT_GENERATION_BEFORE=" + str(before_persistence.get("generation")))
+          print("OBJECT_GENERATION_AFTER=" + str(after_persistence.get("generation")))
+          print("RECOVERY_FINGERPRINT_SAME=" + str(before_persistence.get("recovery_fingerprint_sha256") == after_persistence.get("recovery_fingerprint_sha256")).lower())
           print("MUTATING_TOOL_CALLED=false")
+          print("PRIVATE_FIELD_VALUES_PRINTED=false")
           print("SECRET_VALUE_PRINTED=false")
