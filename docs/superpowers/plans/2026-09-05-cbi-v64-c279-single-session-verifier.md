@@ -29,8 +29,8 @@
 - Create after RED: `scripts/verify_v64_c279_single_session.py`
 
 **Interfaces:**
-- Produces: `verify_single_session(*, bridge: dict, source_jsonl: Path) -> dict[str, object]`
-- Produces sanitized receipt keys: `status`, `tail_match`, `outreach_readiness`, `closure_closed`, `prepared`, `sends_message`, `source_unchanged`.
+- Produces: `verify_single_session(*, bridge: dict, source_jsonl: Path) -> dict[str, object]`.
+- Receipt keys: `status`, `tail_match`, `outreach_readiness`, `closure_closed`, `prepared`, `sends_message`, `source_unchanged`.
 
 - [ ] **Step 1: Create the proof branch from exact integrated SHA**
 
@@ -38,9 +38,7 @@ Create `cbi-v64-release-candidate-c279-proof-17f4fe16` from `17f4fe160c0908a6022
 
 - [ ] **Step 2: Write the failing synthetic sufficiency test**
 
-The test must import a function that does not exist yet and must exercise the real integrated Runtime. Use a synthetic investigation with every `DEFAULT_CLAIM_CATALOG` claim resolved and with a verified account-owned email route.
-
-Core test shape:
+Create `tests/test_v64_c279_single_session_verifier.py`. The import below must fail before the implementation exists:
 
 ```python
 from pathlib import Path
@@ -52,49 +50,60 @@ from unified_runtime.v6 import DEFAULT_CLAIM_CATALOG
 from scripts.verify_v64_c279_single_session import verify_single_session
 
 
-def build_saturated_fixture(runtime: UnifiedRuntime) -> tuple[str, dict]:
+def _observation(claim_key: str, index: int) -> dict:
+    value: object = {"fixture": claim_key}
+    if claim_key == "contact.company_route":
+        value = {
+            "channel": "EMAIL",
+            "value": "buyer@example.invalid",
+            "verified": True,
+            "current": True,
+            "owned_by_account": True,
+            "masked": False,
+            "guessed": False,
+        }
+    return {
+        "claim_key": claim_key,
+        "result": "POSITIVE",
+        "owner_type": "ACCOUNT",
+        "owner_id": "C-SINGLE-SESSION",
+        "value": value,
+        "source": {
+            "source_family": "synthetic_single_session",
+            "source_type": "OFFICIAL",
+            "reference_type": "PUBLIC_URL",
+            "url": f"https://example.invalid/single/{index}",
+            "locator": f"https://example.invalid/single/{index}#fact",
+            "raw_excerpt": f"Synthetic single-session fixture {index}",
+            "authority_level": "A1_OFFICIAL_PRIMARY",
+            "freshness": "CURRENT",
+            "observed_at": "2026-09-05T00:00:00Z",
+        },
+        "boundary": "Synthetic test fixture only.",
+    }
+
+
+def _build_fixture(runtime: UnifiedRuntime) -> tuple[str, dict]:
     started = runtime.start_investigation({
-        "account": {"account_id": "C-SINGLE-SESSION", "country": "Synthetic", "name": "Single Session Buyer"},
+        "account": {
+            "account_id": "C-SINGLE-SESSION",
+            "country": "Synthetic",
+            "name": "Single Session Buyer",
+        },
         "mode": "EXHAUSTIVE",
         "history": {"events": []},
         "priority_grade": "A",
     })
     investigation_id = started["investigation_id"]
-    observations = []
-    for index, claim_key in enumerate(DEFAULT_CLAIM_CATALOG):
-        value = {"fixture": claim_key}
-        if claim_key == "contact.company_route":
-            value = {
-                "channel": "EMAIL",
-                "value": "buyer@example.invalid",
-                "verified": True,
-                "current": True,
-                "owned_by_account": True,
-                "masked": False,
-                "guessed": False,
-            }
-        observations.append({
-            "claim_key": claim_key,
-            "result": "POSITIVE",
-            "owner_type": "ACCOUNT",
-            "owner_id": "C-SINGLE-SESSION",
-            "value": value,
-            "source": {
-                "source_family": "synthetic_single_session",
-                "source_type": "OFFICIAL",
-                "reference_type": "PUBLIC_URL",
-                "url": f"https://example.invalid/single/{index}",
-                "locator": f"https://example.invalid/single/{index}#fact",
-                "raw_excerpt": f"Synthetic single-session fixture {index}",
-                "authority_level": "A1_OFFICIAL_PRIMARY",
-                "freshness": "CURRENT",
-                "observed_at": "2026-09-05T00:00:00Z",
-            },
-            "boundary": "Synthetic test fixture only.",
-        })
     runtime.compile_and_append_research_bundle({
         "investigation_id": investigation_id,
-        "bundle": {"bundle_id": "BUNDLE-SINGLE-SESSION", "observations": observations},
+        "bundle": {
+            "bundle_id": "BUNDLE-SINGLE-SESSION",
+            "observations": [
+                _observation(claim_key, index)
+                for index, claim_key in enumerate(DEFAULT_CLAIM_CATALOG)
+            ],
+        },
     })
     state = runtime.get_investigation_state({"investigation_id": investigation_id})
     bridge = {
@@ -109,10 +118,10 @@ def build_saturated_fixture(runtime: UnifiedRuntime) -> tuple[str, dict]:
 
 class V64C279SingleSessionVerifierTests(unittest.TestCase):
     def test_one_jsonl_is_sufficient_for_full_isolated_outreach_proof(self):
-        with tempfile.TemporaryDirectory() as temp:
+        with tempfile.TemporaryDirectory(prefix="cbi-v64-single-test-") as temp:
             source_sessions = Path(temp) / "source" / "sessions"
             runtime = UnifiedRuntime(source_sessions)
-            investigation_id, bridge = build_saturated_fixture(runtime)
+            investigation_id, bridge = _build_fixture(runtime)
             source_jsonl = runtime.store.path(investigation_id)
             before = source_jsonl.read_bytes()
 
@@ -135,25 +144,38 @@ Run:
 python -m unittest tests.test_v64_c279_single_session_verifier -v
 ```
 
-Expected: FAIL because `scripts.verify_v64_c279_single_session` does not exist or `verify_single_session` is missing. The failure must be feature-missing, not a fixture syntax failure.
+Expected: import failure because `scripts.verify_v64_c279_single_session` does not exist. Fix only fixture/syntax mistakes if needed; do not add implementation until the failure is specifically feature-missing.
 
 - [ ] **Step 4: Commit RED evidence**
 
-Commit only the failing test. Allow the permanent release CI to run on that exact RED SHA and record the failed job/run ids.
+Commit only the failing test and record the permanent release CI run/job ids for that exact RED SHA.
 
 - [ ] **Step 5: Implement the minimal isolated verifier**
 
-Create `scripts/verify_v64_c279_single_session.py` with a pure callable and CLI. The callable must:
+Create `scripts/verify_v64_c279_single_session.py` with this constant and callable:
 
 ```python
+SAFE_FIRST_TOUCH_BODY = (
+    "Hello, I’m contacting your company from XingHuai New Materials. We manufacture PVC foam board "
+    "and related rigid panel materials for distribution, cabinetry, interior fabrication, signage and "
+    "general sheet applications. I would like to understand whether your purchasing team is open to "
+    "evaluating an additional qualified supply source. We can provide a concise product overview and "
+    "then prepare technical information only against requirements that your team confirms. Could you "
+    "please direct this message to the colleague responsible for purchasing or sourcing sheet materials? "
+    "If this category is not relevant, no further action is needed. Best regards, Mark Zhou"
+)
+
+
 def verify_single_session(*, bridge: dict, source_jsonl: Path) -> dict[str, object]:
     investigation_id = str(bridge["investigation_id"])
     expected = dict(bridge["durable_state"])
+    if source_jsonl.name != f"{investigation_id}.jsonl":
+        raise AssertionError("source session filename does not match bridge")
     source_before = source_jsonl.read_bytes()
     with tempfile.TemporaryDirectory(prefix="cbi-v64-c279-single-") as temp:
         sessions = Path(temp) / "sessions"
         sessions.mkdir(parents=True)
-        isolated_jsonl = sessions / f"{investigation_id}.jsonl"
+        isolated_jsonl = sessions / source_jsonl.name
         isolated_jsonl.write_bytes(source_before)
         runtime = UnifiedRuntime(sessions)
         state = runtime.get_investigation_state({"investigation_id": investigation_id})
@@ -194,15 +216,13 @@ def verify_single_session(*, bridge: dict, source_jsonl: Path) -> dict[str, obje
     }
 ```
 
-`SAFE_FIRST_TOUCH_BODY` must be 80-110 words, contain no private company/contact data, and be identical for synthetic and authoritative regression use.
+Imports are exactly `json`, `os`, `tempfile`, `datetime`, `timedelta`, `timezone`, `Path`, and `UnifiedRuntime` as required by callable/CLI code.
 
 - [ ] **Step 6: Run focused test and witness GREEN**
 
-Run the same focused unittest. Expected: PASS with one JSONL copied into a fresh root, source unchanged, `sends_message == false`.
+Run the same unittest. Expected: one test PASS; source bytes unchanged; `sends_message == false`.
 
 - [ ] **Step 7: Run neighboring runtime regressions**
-
-Run:
 
 ```bash
 python -m unittest tests.test_v61_resume_read_only tests.test_v61_outreach_hardening tests.test_v6_architecture -v
@@ -212,110 +232,129 @@ Expected: all PASS.
 
 - [ ] **Step 8: Commit Task 1 GREEN**
 
-Commit test + verifier with message `test(v64): prove C279 single-session isolated runtime sufficiency`.
+Commit `test(v64): prove C279 single-session isolated runtime sufficiency`.
 
 ---
 
-### Task 2: Authoritative-input wrapper without private repository data
+### Task 2: Authoritative-input CLI without private repository data
 
 **Files:**
 - Modify: `scripts/verify_v64_c279_single_session.py`
 - Create: `tests/test_v64_c279_single_session_authoritative.py`
 
 **Interfaces:**
-- Consumes env paths `CBI_V64_C279_BRIDGE_EVIDENCE` and `CBI_V64_C279_SOURCE_SESSION_JSONL`.
-- Produces sanitized JSON receipt to an explicit output path; receipt never contains investigation id, route value, or tail hash.
+- Reads env paths `CBI_V64_C279_BRIDGE_EVIDENCE` and `CBI_V64_C279_SOURCE_SESSION_JSONL`.
+- CLI argument: `--output <path>`.
+- Output schema: `cbi.v64-c279-single-session-proof.v1`.
 
 - [ ] **Step 1: Write failing CLI-contract tests**
 
-Test missing env, malformed bridge, wrong source filename, tail mismatch, and sanitized receipt keys. The private authoritative test itself must `skipTest` unless both environment paths are supplied.
+Tests must use synthetic temporary bridge/session files and assert these exact behaviors:
 
-- [ ] **Step 2: Verify RED**
+```python
+self.assertEqual(main(["--output", str(output)]), 2)  # missing required env
+self.assertFalse(output.exists())
+```
 
-Run:
+For a successful synthetic run, parse the output and assert its key set equals exactly:
+
+```python
+{
+    "schema",
+    "status",
+    "tail_match",
+    "outreach_readiness",
+    "closure_closed",
+    "prepared",
+    "sends_message",
+    "source_unchanged",
+}
+```
+
+Assert that serialized output does not contain the synthetic investigation id, expected tail hash, or route value `buyer@example.invalid`.
+
+- [ ] **Step 2: Witness RED**
 
 ```bash
 python -m unittest tests.test_v64_c279_single_session_authoritative -v
 ```
 
-Expected: FAIL on missing CLI/env behavior before implementation; the private live case may remain skipped.
+Expected: FAIL because CLI/env adapter does not yet exist.
 
 - [ ] **Step 3: Implement CLI/env adapter**
 
-The CLI must read the bridge and source path, assert `source_jsonl.name == f"{bridge['investigation_id']}.jsonl"`, call `verify_single_session`, and write only:
+`main(argv=None) -> int` reads both env paths, loads JSON bridge, validates the source filename, calls `verify_single_session`, writes only this shape, and returns zero:
 
-```json
-{
-  "schema": "cbi.v64-c279-single-session-proof.v1",
-  "status": "PASS",
-  "tail_match": true,
-  "outreach_readiness": "COMPANY_ROUTE_READY",
-  "closure_closed": true,
-  "prepared": true,
-  "sends_message": false,
-  "source_unchanged": true
+```python
+safe_receipt = {
+    "schema": "cbi.v64-c279-single-session-proof.v1",
+    "status": receipt["status"],
+    "tail_match": receipt["tail_match"],
+    "outreach_readiness": receipt["outreach_readiness"],
+    "closure_closed": receipt["closure_closed"],
+    "prepared": receipt["prepared"],
+    "sends_message": receipt["sends_message"],
+    "source_unchanged": receipt["source_unchanged"],
 }
 ```
 
-No hash/id/route data is written.
+Missing env/invalid input returns 2 and writes no output. Verification failure returns 1 and writes no private data.
 
 - [ ] **Step 4: Verify GREEN and privacy scan**
 
-Run the focused test and `python tests/privacy_scan.py`.
+```bash
+python -m unittest tests.test_v64_c279_single_session_authoritative -v
+python tests/privacy_scan.py
+```
 
 - [ ] **Step 5: Commit Task 2**
 
-Commit with message `feat(v64): add sanitized C279 single-session verifier CLI`.
+Commit `feat(v64): add sanitized C279 single-session verifier CLI`.
 
 ---
 
 ### Task 3: Exact-SHA candidate proof verification
 
 **Files:**
-- No new production files.
+- Create after GREEN: `docs/superpowers/checkpoints/2026-09-05-v64-c279-single-session-verifier-green.md`
 
-- [ ] **Step 1: Wait for the branch's permanent Release CI on the Task 2 exact SHA**
-
-Required contexts:
+- [ ] **Step 1: Require all permanent Release CI contexts on Task 2 exact SHA**
 
 - `regression (ubuntu-latest, py3.10)`
 - `regression (ubuntu-latest, py3.11)`
 - `regression (windows-latest, py3.10)`
 - `regression (windows-latest, py3.11)`
 
-- [ ] **Step 2: Inspect every job**
+- [ ] **Step 2: Inspect jobs**
 
-All unittest regression, load acceptance, MCP tests, privacy scan and Linux Docker smoke must be green.
+Require unittest regression, load acceptance, MCP self-tests, privacy scan and Linux Docker smoke all green.
 
-- [ ] **Step 3: Verify branch topology**
+- [ ] **Step 3: Verify topology**
 
-Compare exact integrated base `17f4fe160...` to candidate-proof head. `behind_by` must be zero; changed files must be limited to verifier/tests and any sanitized receipt documentation required by this plan.
+Compare base `17f4fe160c0908a602224eab95d172ba4eb753c6` to proof head. Require `behind_by == 0`. Changed files before the checkpoint must be only the two verifier tests and `scripts/verify_v64_c279_single_session.py`.
 
 - [ ] **Step 4: Record sanitized checkpoint**
 
-Create `docs/superpowers/checkpoints/2026-09-05-v64-c279-single-session-verifier-green.md` containing exact SHA, RED run evidence, GREEN run evidence, and the statement that no production state was accessed or mutated.
+Record exact RED SHA/run, exact GREEN SHA/run, four matrix results, and `PRODUCTION_STATE_ACCESSED=false`, `PRODUCTION_STATE_MUTATED=false`.
 
 ---
 
 ### Task 4: Hold authoritative C279 execution until ciphertext capture exists
 
-**Files:**
-- None.
+- [ ] **Step 1: Do not substitute non-authoritative inputs**
 
-- [ ] **Step 1: Do not fabricate the current-cloud input**
+Do not use generation-0 migration archives, acceptance namespace artifacts, semantic MCP projections, or reconstructed JSONL.
 
-The authoritative verifier must not run against migration generation 0, acceptance namespace data, semantic MCP projections, or a reconstructed JSONL.
+- [ ] **Step 2: Run only after Plan B yields the decrypted exact JSONL**
 
-- [ ] **Step 2: Gate on exact captured JSONL**
-
-Only after Plan B has safely captured and decrypted the production single-session JSONL may this command run with private file paths:
+The private environment must set real filesystem paths outside Git; the public command is:
 
 ```bash
-CBI_V64_C279_BRIDGE_EVIDENCE=/private/bridge.json \
-CBI_V64_C279_SOURCE_SESSION_JSONL=/private/INV-...jsonl \
-python scripts/verify_v64_c279_single_session.py --output /private/sanitized-receipt.json
+python scripts/verify_v64_c279_single_session.py --output "$CBI_V64_C279_SANITIZED_OUTPUT"
 ```
 
-- [ ] **Step 3: Verify source immutability and `sends_message=false`**
+`CBI_V64_C279_BRIDGE_EVIDENCE`, `CBI_V64_C279_SOURCE_SESSION_JSONL`, and `CBI_V64_C279_SANITIZED_OUTPUT` are supplied through the private execution environment.
 
-No source hash/id is printed or persisted in public CI. Only sanitized proof is eligible for release checkpointing.
+- [ ] **Step 3: Accept only sanitized release evidence**
+
+The public checkpoint may record pass/fail booleans and readiness class but not investigation id, source hash, tail hash, route value, or source path.
