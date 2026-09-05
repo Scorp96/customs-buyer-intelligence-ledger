@@ -1,0 +1,46 @@
+name: CBI v6.4 production R2 anonymous read probe
+
+on:
+  push:
+    branches:
+      - cbi-v64-c279-isolated-regression-4733a9b3
+    paths:
+      - .github/workflows/cbi-v64-production-r2-public-read-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe production pointer with anonymous GET only
+        shell: python
+        run: |
+          import hashlib
+          import urllib.error
+          import urllib.request
+
+          url = "https://650e0986f2379c42507d3fc5ebb597a4.r2.cloudflarestorage.com/cbi-v61-production/cbi-v61/current.json"
+          request = urllib.request.Request(
+              url,
+              method="GET",
+              headers={"Accept":"application/json","User-Agent":"cbi-v64-r2-anonymous-read-probe"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  status = int(response.status)
+                  body = response.read()
+          except urllib.error.HTTPError as exc:
+              status = int(exc.code)
+              body = exc.read()
+          print("PRODUCTION_R2_ANONYMOUS_POINTER_HTTP_STATUS=" + str(status))
+          print("PRODUCTION_R2_ANONYMOUS_POINTER_READABLE=" + ("true" if status == 200 else "false"))
+          if status == 200:
+              print("PRODUCTION_R2_ANONYMOUS_POINTER_BODY_SHA256=" + hashlib.sha256(body).hexdigest())
+          elif status not in {401,403,404}:
+              raise SystemExit("PRODUCTION_R2_ANONYMOUS_UNEXPECTED_STATUS")
+          print("AUTHORIZATION_HEADER_USED=false")
+          print("WRITE_METHOD_USED=false")
+          print("BODY_PRINTED=false")
