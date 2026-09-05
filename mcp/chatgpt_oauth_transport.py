@@ -256,10 +256,24 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
         parsed = urllib.parse.urlsplit(self.path)
         return parsed.path == _C279_EXPORT_PATH, bool(parsed.query or parsed.fragment)
 
+    def _diagnostic_available(self, callback: Callable[[], dict[str, Any]] | None = None) -> bool:
+        selected = self.diagnostic_export if callback is None else callback
+        if selected is None or len(self.diagnostic_static_bearer) < 32:
+            return False
+        checker = getattr(selected, "is_available", None)
+        if checker is None:
+            return True
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker())
+        except Exception:
+            return False
+
     def _diagnostic_post(self) -> None:
         callback = self.diagnostic_export
         is_route, has_suffix = self._diagnostic_parts()
-        if not is_route or callback is None or has_suffix:
+        if not is_route or has_suffix or not self._diagnostic_available(callback):
             self._send_empty(HTTPStatus.NOT_FOUND)
             return
         try:
@@ -283,11 +297,18 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_request"})
             return
 
+        if not self._diagnostic_available(callback):
+            self._send_empty(HTTPStatus.NOT_FOUND)
+            return
+
         try:
             result = callback()
         except Exception as exc:
             status = int(getattr(exc, "http_status", HTTPStatus.SERVICE_UNAVAILABLE))
             code = str(getattr(exc, "code", "DIAGNOSTIC_EXPORT_FAILED"))
+            if status == HTTPStatus.NOT_FOUND:
+                self._send_empty(HTTPStatus.NOT_FOUND)
+                return
             if status not in {HTTPStatus.CONFLICT, HTTPStatus.REQUEST_ENTITY_TOO_LARGE}:
                 status = HTTPStatus.SERVICE_UNAVAILABLE
                 code = "DIAGNOSTIC_EXPORT_FAILED"
@@ -330,7 +351,7 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         is_route, has_suffix = self._diagnostic_parts()
         if is_route:
-            if self.diagnostic_export is None or has_suffix:
+            if has_suffix or not self._diagnostic_available():
                 self._send_empty(HTTPStatus.NOT_FOUND)
             else:
                 self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED)
@@ -412,7 +433,7 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
     def do_DELETE(self) -> None:  # noqa: N802
         is_route, has_suffix = self._diagnostic_parts()
         if is_route:
-            if self.diagnostic_export is None or has_suffix:
+            if has_suffix or not self._diagnostic_available():
                 self._send_empty(HTTPStatus.NOT_FOUND)
             else:
                 self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED)

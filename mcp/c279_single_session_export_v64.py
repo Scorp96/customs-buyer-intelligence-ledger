@@ -9,13 +9,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import stat
-from typing import Mapping
+from typing import Any, Callable, Mapping
 
 from unified_runtime.resilience import digest
 
@@ -49,6 +50,10 @@ class C279ExportError(RuntimeError):
         self.code = str(code)
         self.http_status = int(http_status)
         super().__init__(self.code)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _parse_utc(value: str) -> datetime | None:
@@ -222,8 +227,11 @@ def capture_stable_session(
     except OSError as exc:
         raise C279ExportError("SNAPSHOT_NOT_STABLE", 409) from exc
 
+    first_sha256 = hashlib.sha256(first).digest()
+    second_sha256 = hashlib.sha256(second).digest()
     if (
         first != second
+        or first_sha256 != second_sha256
         or _file_identity(pre) != _file_identity(mid)
         or _file_identity(mid) != _file_identity(post)
     ):
@@ -237,3 +245,42 @@ def capture_stable_session(
         tail_seq=tail_seq,
         tail_event_hash=tail_hash,
     )
+
+
+class _C279ExportCallback:
+    def __init__(self, session_root: Path, config: C279ExportConfig) -> None:
+        self._session_root = Path(session_root)
+        self._config = config
+
+    def is_available(self) -> bool:
+        return _utc_now() < self._config.expires_at
+
+    def __call__(self) -> dict[str, Any]:
+        if not self.is_available():
+            raise C279ExportError("EXPORT_UNAVAILABLE", 404)
+        snapshot = capture_stable_session(self._config, self._session_root)
+        # Do not release plaintext if the request crossed the expiry boundary
+        # while the stable read/hash-chain validation was in progress.
+        if not self.is_available():
+            raise C279ExportError("EXPORT_UNAVAILABLE", 404)
+        return {
+            "schema": "cbi.v64-c279-single-session-export.v1",
+            "snapshot_sha256": snapshot.snapshot_sha256,
+            "byte_length": snapshot.byte_length,
+            "tail_seq": snapshot.tail_seq,
+            "tail_event_hash": snapshot.tail_event_hash,
+            "payload_encoding": "base64",
+            "payload": base64.b64encode(snapshot.payload).decode("ascii"),
+        }
+
+
+def build_export_callback(
+    session_root: Path,
+    env: Mapping[str, str],
+    *,
+    process_started_at: datetime,
+) -> Callable[[], dict[str, Any]] | None:
+    config = load_export_config(env, process_started_at=process_started_at)
+    if config is None:
+        return None
+    return _C279ExportCallback(Path(session_root), config)
