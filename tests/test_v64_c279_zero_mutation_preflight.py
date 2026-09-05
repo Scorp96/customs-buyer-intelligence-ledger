@@ -10,6 +10,7 @@ TAIL = "a" * 64
 WORKFLOW = Path(".github/workflows/cbi-v64-c279-zero-mutation-preflight.yml")
 PREFLIGHT_BRANCH = "cbi-v64-release-candidate-c279-diagnostic-preflight-bab9f71f"
 PRODUCTION_SHA = "a311a2a57ee43a1f1a3b2819bf28946566b05692"
+PRODUCTION_BASE_URL = "https://cbi-v61-preview.onrender.com"
 
 
 class FakeClient:
@@ -143,7 +144,7 @@ class C279ZeroMutationPreflightTests(unittest.TestCase):
             PREFLIGHT_BRANCH,
             "workflow_dispatch:",
             "permissions:\n  contents: read",
-            "CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}",
+            f"CBI_V63_ACCEPTANCE_BASE_URL: {PRODUCTION_BASE_URL}",
             "CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}",
             "scripts/run_v64_c279_zero_mutation_preflight.py",
             PRODUCTION_SHA,
@@ -151,6 +152,7 @@ class C279ZeroMutationPreflightTests(unittest.TestCase):
         ):
             self.assertIn(required, text)
         for forbidden in (
+            "CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}",
             "CBI_V63_RENDER_DEPLOY_HOOK_URL",
             "CBI_V63_RENDER_RESTART_HOOK_URL",
             "CBI_V63_R2_",
