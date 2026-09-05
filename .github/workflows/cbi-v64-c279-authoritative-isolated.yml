@@ -1,0 +1,296 @@
+name: CBI v6.4 C279 authoritative isolated regression
+
+on:
+  push:
+    branches:
+      - "cbi-v64-c279-authoritative-isolated-*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-c279-authoritative-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EXPECTED_RUNTIME_SHA: 17f4fe160c0908a602224eab95d172ba4eb753c6
+  SOURCE_DEPLOYMENT_SHA: 88e00c38d6ade972505c8f9ab584aa81fd0e87ad
+  EXPECTED_INVESTIGATION_ID: INV-20260902T093152Z-5f3526759f65
+  EXPECTED_TAIL_SEQ: "27"
+  EXPECTED_TAIL_HASH: cf5d92ecf7f7d4842306cc39134bdd09aced5fd087179da1ab6b0da5ca19b498
+  PRODUCTION_BASE_URL: https://cbi-v61-preview.onrender.com
+
+jobs:
+  authoritative-c279:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact verifier SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Prove verifier-only delta over exact integrated runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_RUNTIME_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python - <<'PY'
+          import os, subprocess
+          base = os.environ["EXPECTED_RUNTIME_SHA"]
+          head = os.environ["GITHUB_SHA"]
+          changed = set(subprocess.check_output(["git", "diff", "--name-only", base, head], text=True).splitlines())
+          allowed = {
+              ".github/workflows/cbi-v64-c279-authoritative-isolated.yml",
+              "scripts/capture_v64_c279_single_session.py",
+              "tests/test_v64_c279_capture.py",
+              "tests/test_v64_c279_full_runtime.py",
+          }
+          assert changed == allowed, (changed, allowed)
+          assert not any(p.startswith("mcp/") or p.startswith("unified_runtime/") for p in changed)
+          print("C279_VERIFIER_ONLY_DELTA=PASS")
+          PY
+
+      - name: Install and verify pinned cryptography wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c279-crypto"
+          python -m pip download --disable-pip-version-check --no-deps --only-binary=:all: cryptography==50.0.1 -d "$RUNNER_TEMP/c279-crypto"
+          python - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "c279-crypto"
+          files = list(root.glob("cryptography-50.0.1-*.whl"))
+          assert len(files) == 1, files
+          sha = hashlib.sha256(files[0].read_bytes()).hexdigest()
+          allowed = {
+              "51afcfceb15597cf2635068e4ac9a56b2abde622edde17f37d85fd7b5306497a",
+              "51593d180cf6d179bde5c5d065bed81386b1f381656ae7d042b7ffc87a9895ad",
+              "ff838d62ec1bfce4f9ba7fa16f4a7b554cd8d0c299e6be37502161a660c84eef",
+          }
+          assert sha in allowed, sha
+          print("CRYPTOGRAPHY_WHEEL_SHA256_VERIFIED=" + sha)
+          PY
+          python -m pip install --disable-pip-version-check --no-input "$RUNNER_TEMP"/c279-crypto/cryptography-50.0.1-*.whl
+
+      - name: Verify capture client contracts
+        run: python -m unittest tests.test_v64_c279_capture -v
+
+      - name: Pin live diagnostic deployment identity
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          with urllib.request.urlopen(os.environ["PRODUCTION_BASE_URL"] + "/healthz", timeout=10) as response:
+              assert response.status == 200
+              health = json.load(response)
+          identity = health.get("deployment_identity") or {}
+          assert health.get("status") == "ok", health.get("status")
+          assert identity.get("git_sha") == os.environ["SOURCE_DEPLOYMENT_SHA"], identity
+          assert identity.get("git_sha_source") == "RENDER_GIT_COMMIT", identity
+          assert identity.get("object_store_mode") == "r2", identity
+          assert identity.get("acceptance_pin_required") is False, identity
+          print("C279_SOURCE_DEPLOYMENT_IDENTITY=PINNED")
+          PY
+
+      - name: Generate ephemeral recipient key and capture ciphertext only
+        shell: bash
+        env:
+          CBI_V64_C279_CAPTURE_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c279-authoritative/artifact"
+          python - <<'PY'
+          import base64, os
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+          root = Path(os.environ["RUNNER_TEMP"]) / "c279-authoritative"
+          private = X25519PrivateKey.generate()
+          private_path = root / "recipient-private.bin"
+          private_path.write_bytes(private.private_bytes(
+              encoding=serialization.Encoding.Raw,
+              format=serialization.PrivateFormat.Raw,
+              encryption_algorithm=serialization.NoEncryption(),
+          ))
+          private_path.chmod(0o600)
+          public = private.public_key().public_bytes(
+              encoding=serialization.Encoding.Raw,
+              format=serialization.PublicFormat.Raw,
+          )
+          (root / "recipient-public.txt").write_text(base64.b64encode(public).decode("ascii"), encoding="ascii")
+          PY
+          PUB="$(cat "$RUNNER_TEMP/c279-authoritative/recipient-public.txt")"
+          python scripts/capture_v64_c279_single_session.py \
+            --base-url "$PRODUCTION_BASE_URL" \
+            --recipient-public-key-b64 "$PUB" \
+            --output "$RUNNER_TEMP/c279-authoritative/artifact/c279-session-ciphertext.json"
+          echo "C279_CIPHERTEXT_CAPTURE=PASS"
+
+      - name: Decrypt only inside runner and construct isolated source root
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64, hashlib, json, os
+          from pathlib import Path
+          from cryptography.hazmat.primitives import hashes
+          from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+          from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+          from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "c279-authoritative"
+          envelope = json.loads((root / "artifact/c279-session-ciphertext.json").read_text(encoding="utf-8"))
+          assert envelope.get("schema") == "cbi.v64-c279-ciphertext.v1"
+          private = X25519PrivateKey.from_private_bytes((root / "recipient-private.bin").read_bytes())
+          peer = X25519PublicKey.from_public_bytes(base64.b64decode(envelope["ephemeral_public_key"], validate=True))
+          shared = private.exchange(peer)
+          key = HKDF(
+              algorithm=hashes.SHA256(), length=32,
+              salt=base64.b64decode(envelope["salt"], validate=True),
+              info=b"cbi-v64-c279-export-v1",
+          ).derive(shared)
+          sha = str(envelope["snapshot_sha256"])
+          aad = b"cbi.v64-c279-ciphertext.v1|" + sha.encode("ascii")
+          payload = ChaCha20Poly1305(key).decrypt(
+              base64.b64decode(envelope["nonce"], validate=True),
+              base64.b64decode(envelope["ciphertext"], validate=True),
+              aad,
+          )
+          assert hashlib.sha256(payload).hexdigest() == sha
+          rows = [json.loads(line) for line in payload.decode("utf-8").splitlines() if line.strip()]
+          assert rows
+          last = rows[-1]
+          assert int(last.get("seq")) == int(os.environ["EXPECTED_TAIL_SEQ"]), last.get("seq")
+          assert str(last.get("event_hash")) == os.environ["EXPECTED_TAIL_HASH"], last.get("event_hash")
+
+          source_root = root / "source-runtime"
+          sessions = source_root / "sessions"
+          sessions.mkdir(parents=True)
+          investigation_id = os.environ["EXPECTED_INVESTIGATION_ID"]
+          session_path = sessions / f"{investigation_id}.jsonl"
+          session_path.write_bytes(payload)
+          bridge = {
+              "schema": "cbi.v64-c279-authoritative-regression-bridge.v1",
+              "investigation_id": investigation_id,
+              "durable_state": {
+                  "last_safe_seq": int(os.environ["EXPECTED_TAIL_SEQ"]),
+                  "last_safe_event_hash": os.environ["EXPECTED_TAIL_HASH"],
+              },
+              "named_route": {"observation_ids": []},
+              "post_patch_expectation": {
+                  "minimum_outreach_readiness": "COMPANY_ROUTE_READY",
+                  "prepare_outreach_must_succeed": True,
+                  "sends_message": False,
+                  "isolated_runtime_copy_required": True,
+                  "live_source_mutation_allowed": False,
+              },
+          }
+          (root / "bridge.json").write_text(json.dumps(bridge, sort_keys=True), encoding="utf-8")
+          inventory = {
+              "relative_path": f"sessions/{investigation_id}.jsonl",
+              "byte_length": len(payload),
+              "sha256": sha,
+          }
+          (root / "source-inventory-before.json").write_text(json.dumps(inventory, sort_keys=True), encoding="utf-8")
+          print("C279_PLAINTEXT_EPHEMERAL_SOURCE_ROOT=READY")
+          PY
+
+      - name: Run SAFE authoritative C279 full-runtime regression on isolated copy
+        env:
+          CBI_V64_C279_BRIDGE_EVIDENCE: ${{ runner.temp }}/c279-authoritative/bridge.json
+          CBI_V64_C279_SOURCE_RUNTIME_ROOT: ${{ runner.temp }}/c279-authoritative/source-runtime
+        run: >-
+          python -m unittest
+          tests.test_v64_c279_full_runtime.V64C279FullRuntimeRegression.test_c279_canonical_route_can_prepare_outreach_full_runtime
+          -v
+
+      - name: Prove source snapshot unchanged and emit sanitized receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "c279-authoritative"
+          before = json.loads((root / "source-inventory-before.json").read_text(encoding="utf-8"))
+          session_path = root / "source-runtime" / before["relative_path"]
+          payload = session_path.read_bytes()
+          assert len(payload) == before["byte_length"]
+          assert hashlib.sha256(payload).hexdigest() == before["sha256"]
+          files = [p for p in (root / "source-runtime").rglob("*") if p.is_file()]
+          assert files == [session_path], [p.relative_to(root / "source-runtime").as_posix() for p in files]
+          receipt = {
+              "schema": "cbi.v64-c279-authoritative-isolated-regression.v1",
+              "verified": True,
+              "integrated_runtime_sha": os.environ["EXPECTED_RUNTIME_SHA"],
+              "diagnostic_source_deployment_sha": os.environ["SOURCE_DEPLOYMENT_SHA"],
+              "source_snapshot_sha256": before["sha256"],
+              "last_safe_seq": int(os.environ["EXPECTED_TAIL_SEQ"]),
+              "last_safe_event_hash": os.environ["EXPECTED_TAIL_HASH"],
+              "minimum_outreach_readiness_verified": "COMPANY_ROUTE_READY",
+              "prepare_outreach_verified": True,
+              "sends_message": False,
+              "isolated_runtime_copy_used": True,
+              "source_runtime_mutation_detected": False,
+              "plaintext_artifact_retained": False,
+          }
+          out = root / "artifact/c279-authoritative-receipt.json"
+          out.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          print("C279_AUTHORITATIVE_ISOLATED_REGRESSION=VERIFIED")
+          PY
+
+      - name: Destroy plaintext and private key before artifact upload
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/c279-authoritative/source-runtime"
+          rm -f "$RUNNER_TEMP/c279-authoritative/bridge.json"
+          rm -f "$RUNNER_TEMP/c279-authoritative/source-inventory-before.json"
+          rm -f "$RUNNER_TEMP/c279-authoritative/recipient-private.bin"
+          rm -f "$RUNNER_TEMP/c279-authoritative/recipient-public.txt"
+          if find "$RUNNER_TEMP/c279-authoritative" -type f ! -path '*/artifact/*' -print -quit | grep -q .; then
+            echo "unexpected non-artifact file retained" >&2
+            exit 1
+          fi
+
+      - name: Validate artifact is ciphertext plus sanitized receipt only
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "c279-authoritative/artifact"
+          files = sorted(p.name for p in root.glob("*") if p.is_file())
+          allowed = {"c279-session-ciphertext.json", "c279-authoritative-receipt.json"}
+          assert set(files).issubset(allowed), files
+          if "c279-session-ciphertext.json" in files:
+              envelope = json.loads((root / "c279-session-ciphertext.json").read_text(encoding="utf-8"))
+              assert set(envelope) == {"schema", "ephemeral_public_key", "salt", "nonce", "snapshot_sha256", "ciphertext"}
+              assert "payload" not in envelope
+          if "c279-authoritative-receipt.json" in files:
+              receipt = json.loads((root / "c279-authoritative-receipt.json").read_text(encoding="utf-8"))
+              assert receipt.get("plaintext_artifact_retained") is False
+              assert receipt.get("source_runtime_mutation_detected") is False
+              assert receipt.get("sends_message") is False
+          print("C279_ARTIFACT_PRIVACY=PASS")
+          PY
+
+      - name: Upload ciphertext and sanitized receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-c279-authoritative-${{ github.sha }}
+          path: ${{ runner.temp }}/c279-authoritative/artifact
+          if-no-files-found: error
+          retention-days: 7
