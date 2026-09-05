@@ -1,0 +1,27 @@
+name: CBI v6.4 C279 main forwarding fix
+
+on:
+  push:
+    branches:
+      - cbi-v64-c279-task3-main-forwarding-fix-958a01a5
+
+permissions:
+  contents: read
+
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Run forwarding regression
+        run: python -m unittest -v tests.test_chatgpt_oauth_transport.ChatGPTOAuthTransportTests.test_main_forwards_diagnostic_hook_to_serve
+      - name: Run Task2 and Task3 transport regressions
+        run: python -m unittest -v tests.test_chatgpt_oauth_transport tests.test_v64_c279_export_transport tests.test_v64_c279_export_entrypoint_contract
+      - name: Run diff check
+        run: git diff --check
