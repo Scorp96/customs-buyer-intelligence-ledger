@@ -66,6 +66,18 @@ def _request(base_url: str, method: str, path: str, *, body: bytes | None = None
         return int(exc.code), dict(exc.headers.items()), exc.read()
 
 
+class _UnavailableCallback:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def is_available(self) -> bool:
+        return False
+
+    def __call__(self):
+        self.calls += 1
+        raise AssertionError("expired diagnostic callback must never be invoked")
+
+
 class V64C279ExportTransportTests(unittest.TestCase):
     def _callback(self):
         return {
@@ -103,6 +115,21 @@ class V64C279ExportTransportTests(unittest.TestCase):
                     headers={"Content-Type": "application/json"} if body is not None else {},
                 )
                 self.assertEqual(status, 404)
+
+    def test_runtime_unavailable_callback_returns_404_before_auth_for_all_methods(self):
+        callback = _UnavailableCallback()
+        with _server(callback) as base_url:
+            for method, body in (("GET", None), ("DELETE", None), ("POST", b"{}")):
+                status, _headers, response = _request(
+                    base_url,
+                    method,
+                    PATH,
+                    body=body,
+                    headers={"Content-Type": "application/json"} if body is not None else {},
+                )
+                self.assertEqual(status, 404)
+                self.assertNotIn(b"payload", response)
+        self.assertEqual(callback.calls, 0)
 
     def test_enabled_route_rejects_missing_and_wrong_static_bearer_without_callback(self):
         calls: list[int] = []
