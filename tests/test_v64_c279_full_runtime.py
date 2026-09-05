@@ -12,6 +12,76 @@ from unittest.mock import patch
 
 
 _DIAGNOSTIC_CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_EMAIL_CANDIDATE_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PHONE_CANDIDATE_RE = re.compile(r"^\+?[0-9][0-9\s().-]{5,}$")
+_WEB_CANDIDATE_RE = re.compile(r"^https?://[^\s]+$", re.IGNORECASE)
+_MISSING = object()
+_SHAPE_PATHS = (
+    "value",
+    "value.channel",
+    "value.kind",
+    "value.value",
+    "value.verified",
+    "value.masked",
+    "value.guessed",
+    "value.channel_proof",
+    "value.email",
+    "value.phone",
+    "value.whatsapp",
+    "value.zalo",
+    "value.social",
+    "value.form",
+    "value.contact",
+    "value.contact.email",
+    "value.contact.phone",
+    "value.contact.whatsapp",
+    "value.contact.zalo",
+    "value.contact.social",
+    "value.contact.form",
+    "contact",
+    "contact.email",
+    "contact.phone",
+    "contact.whatsapp",
+    "contact.zalo",
+    "contact.social",
+    "contact.form",
+    "contact_info",
+    "contact_info.email",
+    "contact_info.phone",
+    "contact_info.whatsapp",
+    "contact_info.zalo",
+    "contact_info.social",
+    "contact_info.form",
+    "source",
+    "source.freshness",
+)
+_CANDIDATE_PATH_TYPES = (
+    ("value.value", "GENERIC"),
+    ("value.email", "EMAIL"),
+    ("value.phone", "PHONE"),
+    ("value.whatsapp", "WHATSAPP"),
+    ("value.zalo", "WHATSAPP"),
+    ("value.social", "SOCIAL"),
+    ("value.form", "FORM"),
+    ("value.contact.email", "EMAIL"),
+    ("value.contact.phone", "PHONE"),
+    ("value.contact.whatsapp", "WHATSAPP"),
+    ("value.contact.zalo", "WHATSAPP"),
+    ("value.contact.social", "SOCIAL"),
+    ("value.contact.form", "FORM"),
+    ("contact.email", "EMAIL"),
+    ("contact.phone", "PHONE"),
+    ("contact.whatsapp", "WHATSAPP"),
+    ("contact.zalo", "WHATSAPP"),
+    ("contact.social", "SOCIAL"),
+    ("contact.form", "FORM"),
+    ("contact_info.email", "EMAIL"),
+    ("contact_info.phone", "PHONE"),
+    ("contact_info.whatsapp", "WHATSAPP"),
+    ("contact_info.zalo", "WHATSAPP"),
+    ("contact_info.social", "SOCIAL"),
+    ("contact_info.form", "FORM"),
+)
 
 
 def _diagnostic_codes(values: object) -> list[str]:
@@ -41,6 +111,120 @@ def _diagnostic_ids(values: object) -> list[str]:
             raise ValueError("ROUTE_PROJECTION_DIAGNOSTIC_ID_INVALID")
         identifiers.append(identifier)
     return sorted(set(identifiers))
+
+
+def _fixed_path_value(value: object, path: str) -> object:
+    current = value
+    for segment in path.split("."):
+        if not isinstance(current, dict) or segment not in current:
+            return _MISSING
+        current = current[segment]
+    return current
+
+
+def _shape_classification(value: object) -> str:
+    if value is _MISSING:
+        return "MISSING"
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "BOOLEAN"
+    if isinstance(value, str):
+        return "STRING"
+    if isinstance(value, dict):
+        return "OBJECT"
+    if isinstance(value, list):
+        return "ARRAY"
+    if isinstance(value, (int, float)):
+        return "NUMBER"
+    return "OTHER"
+
+
+def _recognizable_candidate(value: object, expected_type: str) -> tuple[str, bool]:
+    if not isinstance(value, str):
+        return expected_type, False
+    if expected_type == "GENERIC":
+        if _EMAIL_CANDIDATE_RE.fullmatch(value):
+            return "EMAIL", True
+        if _PHONE_CANDIDATE_RE.fullmatch(value):
+            return "PHONE", True
+        return "GENERIC", False
+    if expected_type == "EMAIL":
+        return expected_type, _EMAIL_CANDIDATE_RE.fullmatch(value) is not None
+    if expected_type in {"PHONE", "WHATSAPP"}:
+        return expected_type, _PHONE_CANDIDATE_RE.fullmatch(value) is not None
+    if expected_type in {"SOCIAL", "FORM"}:
+        return expected_type, _WEB_CANDIDATE_RE.fullmatch(value) is not None
+    raise ValueError("ROUTE_SCHEMA_SHAPE_PATH_INVALID")
+
+
+def _sanitize_route_schema_shape_diagnostics(
+    route_projection: object,
+    state: object,
+) -> dict[str, object]:
+    projection = dict(route_projection) if isinstance(route_projection, dict) else {}
+    runtime_state = dict(state) if isinstance(state, dict) else {}
+    if projection.get("contains_route_values") is not False:
+        raise ValueError("ROUTE_PROJECTION_CONTAINS_VALUES")
+
+    start = runtime_state.get("start")
+    account = start.get("account") if isinstance(start, dict) else None
+    account_id = str(account.get("account_id") or "") if isinstance(account, dict) else ""
+    observations = runtime_state.get("observations")
+    observation_map = observations if isinstance(observations, dict) else {}
+    shape_rows: list[dict[str, object]] = []
+    for observation_id in _diagnostic_ids(projection.get("claim_observation_ids")):
+        observation = observation_map.get(observation_id)
+        if not isinstance(observation, dict):
+            shape_rows.append({
+                "observation_id": observation_id,
+                "observation_available": False,
+                "field_path_classifications": [],
+                "candidate_pattern_counts": {"EMAIL": 0, "PHONE": 0, "WHATSAPP": 0, "SOCIAL": 0, "FORM": 0},
+                "candidate_bindings": [],
+            })
+            continue
+
+        source = observation.get("source")
+        freshness = str(source.get("freshness") or "").strip().upper() if isinstance(source, dict) else ""
+        account_bound = (
+            observation.get("owner_type") == "ACCOUNT"
+            and str(observation.get("owner_id") or "") == account_id
+        )
+        evidence_bound = bool(str(observation.get("evidence_id") or "").strip())
+        strong_direct_freshness = freshness in {"CURRENT", "CURRENT_CONFIRMED"}
+        field_paths = [
+            {"path": path, "classification": _shape_classification(_fixed_path_value(observation, path))}
+            for path in _SHAPE_PATHS
+        ]
+        counts = {"EMAIL": 0, "PHONE": 0, "WHATSAPP": 0, "SOCIAL": 0, "FORM": 0}
+        candidates: list[dict[str, object]] = []
+        for path, expected_type in _CANDIDATE_PATH_TYPES:
+            candidate_type, recognizable = _recognizable_candidate(
+                _fixed_path_value(observation, path), expected_type
+            )
+            if recognizable and candidate_type in counts:
+                counts[candidate_type] += 1
+            candidates.append({
+                "path": path,
+                "candidate_type": candidate_type,
+                "recognizable": recognizable,
+                "bound_to_account": account_bound,
+                "bound_to_evidence": evidence_bound,
+                "strong_direct_freshness": strong_direct_freshness,
+            })
+        shape_rows.append({
+            "observation_id": observation_id,
+            "observation_available": True,
+            "field_path_classifications": field_paths,
+            "candidate_pattern_counts": counts,
+            "candidate_bindings": candidates,
+        })
+    return {
+        "schema": "cbi.v64-c279-route-schema-shape-diagnostic.v1",
+        "contains_route_values": False,
+        "observations": shape_rows,
+    }
 
 
 def _sanitize_route_projection_diagnostics(
@@ -169,6 +353,83 @@ class V64C279RouteProjectionDiagnosticsTests(unittest.TestCase):
                 {"outreach_readiness": "IDENTITY_ONLY"},
             )
 
+    def test_schema_shape_diagnostics_classify_only_fixed_legacy_slots_without_values(self):
+        private_values = {
+            "email": "private.route@example.invalid",
+            "phone": "+15550101999",
+            "whatsapp": "+15550101888",
+            "social": "https://social.example.invalid/private-profile",
+            "form": "https://example.invalid/private-contact-form",
+            "token": "do-not-emit-token",
+            "url": "https://example.invalid/private-source",
+        }
+        projection = {
+            "contains_route_values": False,
+            "claim_observation_ids": ["OBS-C279-SHAPE"],
+        }
+        state = {
+            "start": {"account": {"account_id": "ACCOUNT-C279"}},
+            "observations": {
+                "OBS-C279-SHAPE": {
+                    "owner_type": "ACCOUNT",
+                    "owner_id": "ACCOUNT-C279",
+                    "evidence_id": "EVD-C279-SHAPE",
+                    "source": {"freshness": "CURRENT_CONFIRMED", "url": private_values["url"]},
+                    "value": {
+                        "channel": "EMAIL",
+                        "value": private_values["email"],
+                        "contact": {
+                            "phone": private_values["phone"],
+                            "whatsapp": private_values["whatsapp"],
+                            "unexpected": private_values["token"],
+                        },
+                    },
+                    "contact": {
+                        "social": private_values["social"],
+                        "form": private_values["form"],
+                        "unexpected": private_values["token"],
+                    },
+                    "contact_info": {"email": private_values["email"]},
+                    "unexpected_top_level": private_values["token"],
+                }
+            },
+        }
+
+        result = _sanitize_route_schema_shape_diagnostics(projection, state)
+
+        self.assertEqual(set(result), {"schema", "contains_route_values", "observations"})
+        self.assertFalse(result["contains_route_values"])
+        row = result["observations"][0]
+        self.assertEqual(set(row), {
+            "observation_id", "observation_available", "field_path_classifications",
+            "candidate_pattern_counts", "candidate_bindings",
+        })
+        self.assertEqual(row["candidate_pattern_counts"], {
+            "EMAIL": 2,
+            "PHONE": 1,
+            "WHATSAPP": 1,
+            "SOCIAL": 1,
+            "FORM": 1,
+        })
+        bindings = {item["path"]: item for item in row["candidate_bindings"]}
+        self.assertEqual(bindings["value.value"]["candidate_type"], "EMAIL")
+        self.assertTrue(bindings["value.value"]["recognizable"])
+        self.assertTrue(bindings["value.contact.phone"]["bound_to_account"])
+        self.assertTrue(bindings["value.contact.phone"]["bound_to_evidence"])
+        self.assertTrue(bindings["value.contact.phone"]["strong_direct_freshness"])
+        classifications = {item["path"]: item["classification"] for item in row["field_path_classifications"]}
+        self.assertEqual(set(classifications), set(_SHAPE_PATHS))
+        self.assertEqual(classifications["value.contact.phone"], "STRING")
+        self.assertEqual(classifications["contact.form"], "STRING")
+        self.assertEqual(
+            {item["path"] for item in row["candidate_bindings"]},
+            {path for path, _candidate_type in _CANDIDATE_PATH_TYPES},
+        )
+        self.assertNotIn("unexpected_top_level", json.dumps(result, sort_keys=True))
+        serialized = json.dumps(result, sort_keys=True)
+        for value in private_values.values():
+            self.assertNotIn(value, serialized)
+
 
 class V64C279FullRuntimeRegression(unittest.TestCase):
     def test_c279_canonical_route_can_prepare_outreach_full_runtime(self):
@@ -212,6 +473,10 @@ class V64C279FullRuntimeRegression(unittest.TestCase):
                 diagnostics = _sanitize_route_projection_diagnostics(
                     account_state.get("route_projection_diagnostics"),
                     readiness,
+                )
+                diagnostics["route_schema_shape_diagnostics"] = _sanitize_route_schema_shape_diagnostics(
+                    account_state.get("route_projection_diagnostics"),
+                    runtime._v6_state(investigation_id),
                 )
                 diagnostics_path = str(os.environ.get("CBI_V64_C279_ROUTE_PROJECTION_DIAGNOSTICS") or "").strip()
                 if diagnostics_path:

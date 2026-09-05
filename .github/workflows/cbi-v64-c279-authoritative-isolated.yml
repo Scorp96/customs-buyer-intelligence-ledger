@@ -235,7 +235,7 @@ jobs:
               "route_projection_diagnostics", "readiness", "block_reason_codes",
               "canonical_route_count", "canonical_route_source_types",
               "canonical_route_observation_ids", "canonical_route_information_ids",
-              "canonical_route_evidence_ids",
+              "canonical_route_evidence_ids", "route_schema_shape_diagnostics",
           }
           assert set(diagnostics) == expected_diagnostics
           projection = diagnostics["route_projection_diagnostics"]
@@ -244,6 +244,10 @@ jobs:
               "observations", "contains_route_values", "mutates_history",
           }
           assert projection["contains_route_values"] is False
+          shape = diagnostics["route_schema_shape_diagnostics"]
+          assert set(shape) == {"schema", "contains_route_values", "observations"}
+          assert shape["schema"] == "cbi.v64-c279-route-schema-shape-diagnostic.v1"
+          assert shape["contains_route_values"] is False
           session_path = root / "source-runtime" / before["relative_path"]
           payload = session_path.read_bytes()
           assert len(payload) == before["byte_length"]
@@ -315,7 +319,7 @@ jobs:
                   "route_projection_diagnostics", "readiness", "block_reason_codes",
                   "canonical_route_count", "canonical_route_source_types",
                   "canonical_route_observation_ids", "canonical_route_information_ids",
-                  "canonical_route_evidence_ids",
+                  "canonical_route_evidence_ids", "route_schema_shape_diagnostics",
               }
               projection = diagnostics["route_projection_diagnostics"]
               assert set(projection) == {
@@ -323,6 +327,10 @@ jobs:
                   "observations", "contains_route_values", "mutates_history",
               }
               assert projection["contains_route_values"] is False
+              shape = diagnostics["route_schema_shape_diagnostics"]
+              assert set(shape) == {"schema", "contains_route_values", "observations"}
+              assert shape["schema"] == "cbi.v64-c279-route-schema-shape-diagnostic.v1"
+              assert shape["contains_route_values"] is False
           print("C279_ARTIFACT_PRIVACY=PASS")
           PY
 
