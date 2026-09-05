@@ -41,7 +41,8 @@ class V63AdapterPatchCompilerTests(unittest.TestCase):
         matches = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name]
         if len(matches) != 1:
             raise AssertionError(f"expected one {name}")
-        return ast.get_source_segment(source, matches[0]) or ""
+        segment = ast.get_source_segment(source, matches[0]) or ""
+        return segment.replace("\r\n", "\n").replace("\r", "\n")
 
     def test_compiler_generates_candidate_without_modifying_checkout(self):
         from unified_runtime.adapter_patch_compiler_v63 import compile_v63_adapter_patch_candidate
@@ -115,7 +116,6 @@ class V63AdapterPatchCompilerTests(unittest.TestCase):
             self.assertEqual(set(result["durable_mutations"]), set(V63_MUTATION_TOOL_NAMES))
             self.assertEqual(set(result["read_only_tools"]), set(V63_READ_ONLY_TOOL_NAMES))
 
-
     def test_full_production_snapshot_drift_blocks_codegen_even_when_base_server_is_unchanged(self):
         from unified_runtime.adapter_patch_compiler_v63 import compile_v63_adapter_patch_candidate
         from unified_runtime.production_source_snapshot_v63 import build_v63_production_source_snapshot
@@ -147,9 +147,9 @@ class V63AdapterPatchCompilerTests(unittest.TestCase):
             self.assertTrue(result["source_snapshot_validation"]["valid"])
 
 
-
 if __name__ == "__main__":
     unittest.main()
+
 
 class V63DelegatedAdapterPatchCompilerTests(V63AdapterPatchCompilerTests):
     def _repo(self, root: Path) -> Path:
