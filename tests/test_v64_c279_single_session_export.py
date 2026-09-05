@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -20,6 +19,8 @@ from mcp.c279_single_session_export_v64 import (
 
 UTC = dt.timezone.utc
 STARTED = dt.datetime(2026, 9, 5, 9, 0, tzinfo=UTC)
+VALID_ID = "INV-20260905T090000Z-aaaaaaaaaaaa"
+TARGET_ID = "INV-20260905T090001Z-bbbbbbbbbbbb"
 
 
 class V64C279SingleSessionExportTests(unittest.TestCase):
@@ -59,7 +60,7 @@ class V64C279SingleSessionExportTests(unittest.TestCase):
         invalid_expiry = {
             "CBI_V64_C279_EXPORT_ENABLED": "true",
             "CBI_V64_C279_EXPORT_EXPIRES_AT": "2026-09-05T10:00:00Z",
-            "CBI_V64_C279_EXPORT_INVESTIGATION_ID": "INV-TEST-001",
+            "CBI_V64_C279_EXPORT_INVESTIGATION_ID": VALID_ID,
             "CBI_V64_C279_EXPORT_EXPECTED_TAIL_SEQ": "1",
             "CBI_V64_C279_EXPORT_EXPECTED_TAIL_HASH": "0" * 64,
         }
@@ -69,7 +70,7 @@ class V64C279SingleSessionExportTests(unittest.TestCase):
         env = {
             "CBI_V64_C279_EXPORT_ENABLED": "true",
             "CBI_V64_C279_EXPORT_EXPIRES_AT": "2026-09-05T09:20:00Z",
-            "CBI_V64_C279_EXPORT_INVESTIGATION_ID": "INV-TEST-001",
+            "CBI_V64_C279_EXPORT_INVESTIGATION_ID": VALID_ID,
             "CBI_V64_C279_EXPORT_EXPECTED_TAIL_SEQ": "7",
             "CBI_V64_C279_EXPORT_EXPECTED_TAIL_HASH": "a" * 64,
         }
@@ -146,10 +147,9 @@ class V64C279SingleSessionExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="cbi-v64-c279-target-") as temp:
             sessions = Path(temp) / "sessions"
             sessions.mkdir()
-            investigation_id = "INV-TARGET-001"
-            (sessions / f"{investigation_id}.jsonl").mkdir()
+            (sessions / f"{TARGET_ID}.jsonl").mkdir()
             config = C279ExportConfig(
-                investigation_id=investigation_id,
+                investigation_id=TARGET_ID,
                 expected_tail_seq=1,
                 expected_tail_hash="0" * 64,
                 expires_at=STARTED + dt.timedelta(minutes=15),
