@@ -11,10 +11,21 @@ from scripts.verify_v64_c279_single_session import verify_single_session
 
 def _observation(claim_key: str, index: int) -> dict:
     value: object = {"fixture": claim_key}
-    if claim_key == "contact.company_route":
+    if claim_key == "contact.named_route":
         value = {
             "channel": "EMAIL",
             "value": "buyer@example.invalid",
+            "person_name": "Synthetic Decision Maker",
+            "verified": True,
+            "current": True,
+            "owned_by_account": True,
+            "masked": False,
+            "guessed": False,
+        }
+    elif claim_key == "contact.company_route":
+        value = {
+            "channel": "EMAIL",
+            "value": "info@example.invalid",
             "verified": True,
             "current": True,
             "owned_by_account": True,
