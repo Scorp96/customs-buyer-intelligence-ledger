@@ -64,6 +64,8 @@ The production v6 MCP tool surface exposes semantic projections such as health, 
 
 It does not expose a raw append-event stream, session JSONL download, runtime-root export, object-store archive download, snapshot download or backup-byte interface. Consequently the authoritative session cannot be reconstructed byte-for-byte from production MCP projections.
 
+The HTTP transport also confirms that `/mcp` GET is disabled and that the remote transport does not implement an independent MCP resource-download surface such as `resources/list` or `resources/read`.
+
 ## Render control-plane path closed under current connection
 
 Fresh Render service metadata confirms:
@@ -78,7 +80,31 @@ Fresh Render service metadata confirms:
 
 No Render deploy, restart hook or environment mutation was triggered.
 
-## Artifact / Library recovery path closed
+## GitHub Actions artifact bytes audited
+
+The current-cloud C279 preflight artifact was downloaded and inspected directly:
+
+- artifact id: `9960768288`
+- ZIP SHA256: `44fe4e8fa1c72cb7bb3814cf4c1b2edd75e7b18a5871fddd34c2a4e5ac8e2042`
+- ZIP entries: exactly one file, `CBI_V64_C279_CURRENT_CLOUD_PREFLIGHT.json`
+- uncompressed JSON size: `1337` bytes
+- contents are sanitized production SHA/generation/fingerprint/semantic-preflight metadata; no runtime root, session JSONL or archive payload exists in the artifact
+
+Historical source-SHA exact-checkout live acceptance was also inspected:
+
+- run `33760447567`
+- artifact `9895310327`
+- ZIP contains exactly four JSON acceptance/correlation/recovery-receipt files; no runtime archive or session JSONL
+
+All four historical `cbi-v63-render-r2-pvc-acceptance` workflow-dispatch runs were enumerated. Their artifacts were either tiny failure-status files or isolated acceptance receipts. The two successful artifacts were inspected directly and used the isolated prefix `cbi-v63-acceptance-20260903-r01`, not production `cbi-v61`:
+
+- run `33756309554`, artifact `9893653145`: generation `8`, isolated acceptance prefix, `production_ready=false`
+- run `33753317687`, artifact `9892512260`: generation `0 -> 8`, isolated acceptance prefix, `production_ready=false`
+- failed runs `33743183878` / `33735379824`: artifact sizes only `394` / `498` bytes
+
+Therefore historical GitHub Actions artifacts do not contain an authoritative production generation-669 runtime archive.
+
+## Library recovery path closed
 
 Searches did not find:
 
