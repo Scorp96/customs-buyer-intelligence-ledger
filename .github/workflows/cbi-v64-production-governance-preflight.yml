@@ -17,6 +17,7 @@ concurrency:
 env:
   CBI_PRODUCTION_BRANCH: cbi-v6-cloud-runtime-20260901
   CBI_PRODUCTION_SHA: a311a2a57ee43a1f1a3b2819bf28946566b05692
+  CBI_RELEASE_CANDIDATE_BRANCH: cbi-v64-release-candidate-58e14973
   CBI_RELEASE_CANDIDATE_SHA: 4733a9b3e7286b58828750542c7ad54057cfb8ad
   CBI_RELEASE_CI_RUN_ID: '33936239839'
 
@@ -37,10 +38,9 @@ jobs:
           from pathlib import Path
 
           repo = "Scorp96/customs-buyer-intelligence-ledger"
-          token = os.environ["GH_TOKEN"]
           headers = {
               "Accept":"application/vnd.github+json",
-              "Authorization":"Bearer " + token,
+              "Authorization":"Bearer " + os.environ["GH_TOKEN"],
               "X-GitHub-Api-Version":"2022-11-28",
               "User-Agent":"cbi-v64-production-governance-preflight",
           }
@@ -49,6 +49,12 @@ jobs:
               with urllib.request.urlopen(req, timeout=30) as response:
                   return json.loads(response.read().decode("utf-8"))
 
+          required = [
+              "regression (ubuntu-latest, py3.10)",
+              "regression (ubuntu-latest, py3.11)",
+              "regression (windows-latest, py3.10)",
+              "regression (windows-latest, py3.11)",
+          ]
           rulesets = get(f"/repos/{repo}/rulesets?includes_parents=true")
           by_name = {str(row.get("name") or ""): row for row in rulesets}
           main = by_name.get("protect-main")
@@ -57,24 +63,18 @@ jobs:
           main_detail = get(f"/repos/{repo}/rulesets/{main['id']}")
           if ((main_detail.get("conditions") or {}).get("ref_name") or {}).get("include") != ["~DEFAULT_BRANCH"]:
               raise SystemExit("PROTECT_MAIN_TARGET_DRIFT")
-          # current_user_can_bypass is viewer-relative; bypass_actors is the
-          # durable repository rule and is stable across API identities.
-          if main_detail.get("bypass_actors") != []:
+          main_bypass_visible = "bypass_actors" in main_detail
+          if main_bypass_visible and main_detail["bypass_actors"] != []:
               raise SystemExit("PROTECT_MAIN_BYPASS_ACTORS_DRIFT")
 
-          required = [
-              "regression (ubuntu-latest, py3.10)",
-              "regression (ubuntu-latest, py3.11)",
-              "regression (windows-latest, py3.10)",
-              "regression (windows-latest, py3.11)",
-          ]
           rules_by_type = {str(row.get("type") or ""): row for row in (main_detail.get("rules") or [])}
-          if "deletion" not in rules_by_type or "non_fast_forward" not in rules_by_type or "pull_request" not in rules_by_type:
-              raise SystemExit("PROTECT_MAIN_SAFETY_RULE_DRIFT")
-          pr = (rules_by_type["pull_request"].get("parameters") or {})
+          for required_rule in ("deletion", "non_fast_forward", "pull_request", "required_status_checks"):
+              if required_rule not in rules_by_type:
+                  raise SystemExit("PROTECT_MAIN_RULE_MISSING:" + required_rule)
+          pr = dict(rules_by_type["pull_request"].get("parameters") or {})
           if pr.get("required_approving_review_count") != 0 or pr.get("required_review_thread_resolution") is not True:
               raise SystemExit("PROTECT_MAIN_PR_RULE_DRIFT")
-          status = ((rules_by_type.get("required_status_checks") or {}).get("parameters") or {})
+          status = dict(rules_by_type["required_status_checks"].get("parameters") or {})
           contexts = [str(row.get("context") or "") for row in (status.get("required_status_checks") or [])]
           if contexts != required or status.get("strict_required_status_checks_policy") is not True:
               raise SystemExit("PROTECT_MAIN_REQUIRED_CONTEXT_DRIFT")
@@ -85,24 +85,25 @@ jobs:
 
           target = by_name.get("protect-cbi-production")
           target_valid = False
+          target_bypass_visible = False
           if target is not None:
               target_detail = get(f"/repos/{repo}/rulesets/{target['id']}")
               include = (((target_detail.get("conditions") or {}).get("ref_name") or {}).get("include") or [])
               target_rules = {str(row.get("type") or ""): row for row in (target_detail.get("rules") or [])}
-              target_status = ((target_rules.get("required_status_checks") or {}).get("parameters") or {})
+              target_status = dict((target_rules.get("required_status_checks") or {}).get("parameters") or {})
               target_contexts = [str(row.get("context") or "") for row in (target_status.get("required_status_checks") or [])]
-              target_pr = ((target_rules.get("pull_request") or {}).get("parameters") or {})
+              target_pr = dict((target_rules.get("pull_request") or {}).get("parameters") or {})
+              target_bypass_visible = "bypass_actors" in target_detail
+              target_bypass_safe = (not target_bypass_visible) or target_detail["bypass_actors"] == []
               target_valid = (
                   target_detail.get("enforcement") == "active"
                   and f"refs/heads/{os.environ['CBI_PRODUCTION_BRANCH']}" in include
-                  and "deletion" in target_rules
-                  and "non_fast_forward" in target_rules
-                  and "pull_request" in target_rules
+                  and all(name in target_rules for name in ("deletion", "non_fast_forward", "pull_request", "required_status_checks"))
                   and target_pr.get("required_approving_review_count") == 0
                   and target_pr.get("required_review_thread_resolution") is True
                   and target_status.get("strict_required_status_checks_policy") is True
                   and target_contexts == required
-                  and target_detail.get("bypass_actors") == []
+                  and target_bypass_safe
               )
 
           result = "GREEN" if target_valid else "BLOCKED_EXTERNAL"
@@ -113,12 +114,14 @@ jobs:
               "blocker":blocker,
               "protect_main_id":main.get("id"),
               "protect_main_active":True,
+              "protect_main_bypass_actors_visible":main_bypass_visible,
               "required_status_contexts":required,
               "production_branch":os.environ["CBI_PRODUCTION_BRANCH"],
               "production_sha":os.environ["CBI_PRODUCTION_SHA"],
               "production_branch_protected_flag":bool(prod.get("protected")),
               "protect_cbi_production_present":target is not None,
               "protect_cbi_production_valid":target_valid,
+              "protect_cbi_production_bypass_actors_visible":target_bypass_visible if target is not None else None,
               "repository_governance_mutated":False,
           }
           Path(os.environ["RUNNER_TEMP"]).joinpath("governance.json").write_text(json.dumps(safe, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -133,6 +136,7 @@ jobs:
           import os
           import urllib.request
           from pathlib import Path
+
           repo = "Scorp96/customs-buyer-intelligence-ledger"
           headers = {
               "Accept":"application/vnd.github+json",
@@ -144,11 +148,12 @@ jobs:
               req = urllib.request.Request("https://api.github.com" + path, headers=headers)
               with urllib.request.urlopen(req, timeout=30) as response:
                   return json.loads(response.read().decode("utf-8"))
+
           run_id = os.environ["CBI_RELEASE_CI_RUN_ID"]
           run = get(f"/repos/{repo}/actions/runs/{run_id}")
           if run.get("head_sha") != os.environ["CBI_RELEASE_CANDIDATE_SHA"] or run.get("conclusion") != "success":
               raise SystemExit("RELEASE_CI_EXACT_SHA_EVIDENCE_DRIFT")
-          jobs = (get(f"/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100").get("jobs") or [])
+          jobs = get(f"/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100").get("jobs") or []
           required = {
               "regression (ubuntu-latest, py3.10)",
               "regression (ubuntu-latest, py3.11)",
@@ -160,7 +165,9 @@ jobs:
           if missing:
               raise SystemExit("RELEASE_CI_REQUIRED_JOB_MISSING:" + ",".join(missing))
           safe = {
-              "run_id":int(run_id),"head_sha":run.get("head_sha"),"conclusion":run.get("conclusion"),
+              "run_id":int(run_id),
+              "head_sha":run.get("head_sha"),
+              "conclusion":run.get("conclusion"),
               "required_matrix_jobs_green":sorted(required),
           }
           Path(os.environ["RUNNER_TEMP"]).joinpath("release-ci.json").write_text(json.dumps(safe, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -169,7 +176,8 @@ jobs:
       - name: Emit combined governance evidence
         shell: python
         run: |
-          import json, os
+          import json
+          import os
           from pathlib import Path
           root = Path(os.environ["RUNNER_TEMP"])
           governance = json.loads((root / "governance.json").read_text(encoding="utf-8"))
@@ -200,7 +208,7 @@ jobs:
         run: |
           set -euo pipefail
           prod="$(git ls-remote https://github.com/Scorp96/customs-buyer-intelligence-ledger refs/heads/$CBI_PRODUCTION_BRANCH | cut -f1)"
-          cand="$(git ls-remote https://github.com/Scorp96/customs-buyer-intelligence-ledger refs/heads/cbi-v64-release-candidate-58e14973 | cut -f1)"
+          cand="$(git ls-remote https://github.com/Scorp96/customs-buyer-intelligence-ledger refs/heads/$CBI_RELEASE_CANDIDATE_BRANCH | cut -f1)"
           test "$prod" = "$CBI_PRODUCTION_SHA"
           test "$cand" = "$CBI_RELEASE_CANDIDATE_SHA"
           echo "CBI_PRODUCTION_REF_UNCHANGED=$prod"
