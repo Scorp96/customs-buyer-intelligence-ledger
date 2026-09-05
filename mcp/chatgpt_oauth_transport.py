@@ -30,6 +30,7 @@ _OAUTH_SCOPES = ("read:user", "offline_access")
 _GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 _GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 _STATE_TTL_SECONDS = 10 * 60
+_C279_EXPORT_PATH = "/internal/v64/c279-session-export"
 
 
 def _shared_github_verifier(logins: tuple[str, ...], api_url: str) -> GitHubOAuthVerifier:
@@ -243,6 +244,84 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
     def public_base(self) -> str:
         return self.server.public_base  # type: ignore[attr-defined]
 
+    @property
+    def diagnostic_export(self) -> Callable[[], dict[str, Any]] | None:
+        return getattr(self.server, "diagnostic_export", None)  # type: ignore[attr-defined]
+
+    @property
+    def diagnostic_static_bearer(self) -> str:
+        return str(getattr(self.server, "diagnostic_static_bearer", "") or "")  # type: ignore[attr-defined]
+
+    def _diagnostic_parts(self) -> tuple[bool, bool]:
+        parsed = urllib.parse.urlsplit(self.path)
+        return parsed.path == _C279_EXPORT_PATH, bool(parsed.query or parsed.fragment)
+
+    def _diagnostic_available(self, callback: Callable[[], dict[str, Any]] | None = None) -> bool:
+        selected = self.diagnostic_export if callback is None else callback
+        if selected is None or len(self.diagnostic_static_bearer) < 32:
+            return False
+        checker = getattr(selected, "is_available", None)
+        if checker is None:
+            return True
+        if not callable(checker):
+            return False
+        try:
+            return bool(checker())
+        except Exception:
+            return False
+
+    def _diagnostic_post(self) -> None:
+        callback = self.diagnostic_export
+        is_route, has_suffix = self._diagnostic_parts()
+        if not is_route or has_suffix or not self._diagnostic_available(callback):
+            self._send_empty(HTTPStatus.NOT_FOUND)
+            return
+        try:
+            base.require_static_bearer(self.headers, self.diagnostic_static_bearer)
+        except base.RemoteTransportError as exc:
+            self._send_json(exc.http_status, {"error": str(exc)})
+            return
+
+        try:
+            content_type = str(self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if content_type != "application/json":
+                raise ValueError("Content-Type must be application/json")
+            length = int(str(self.headers.get("Content-Length") or "0"))
+            if length <= 0 or length > 4096:
+                raise ValueError("invalid diagnostic request body size")
+            raw = self.rfile.read(length)
+            request = json.loads(raw.decode("utf-8"))
+            if not isinstance(request, dict) or request:
+                raise ValueError("diagnostic request body must be an empty JSON object")
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_request"})
+            return
+
+        if not self._diagnostic_available(callback):
+            self._send_empty(HTTPStatus.NOT_FOUND)
+            return
+
+        try:
+            result = callback()
+        except Exception as exc:
+            status = int(getattr(exc, "http_status", HTTPStatus.SERVICE_UNAVAILABLE))
+            code = str(getattr(exc, "code", "DIAGNOSTIC_EXPORT_FAILED"))
+            if status == HTTPStatus.NOT_FOUND:
+                self._send_empty(HTTPStatus.NOT_FOUND)
+                return
+            if status not in {HTTPStatus.CONFLICT, HTTPStatus.REQUEST_ENTITY_TOO_LARGE}:
+                status = HTTPStatus.SERVICE_UNAVAILABLE
+                code = "DIAGNOSTIC_EXPORT_FAILED"
+            self._send_json(status, {"error": code})
+            return
+        if not isinstance(result, dict):
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "DIAGNOSTIC_EXPORT_FAILED"},
+            )
+            return
+        self._send_json(HTTPStatus.OK, result)
+
     def _send_json(
         self,
         status: int,
@@ -270,6 +349,13 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
         return {key: values[-1] for key, values in urllib.parse.parse_qs(parsed.query, keep_blank_values=True).items()}
 
     def do_GET(self) -> None:  # noqa: N802
+        is_route, has_suffix = self._diagnostic_parts()
+        if is_route:
+            if has_suffix or not self._diagnostic_available():
+                self._send_empty(HTTPStatus.NOT_FOUND)
+            else:
+                self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED)
+            return
         path = self._path()
         if path in {
             "/.well-known/oauth-protected-resource",
@@ -344,7 +430,21 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
             return
         super().do_GET()
 
+    def do_DELETE(self) -> None:  # noqa: N802
+        is_route, has_suffix = self._diagnostic_parts()
+        if is_route:
+            if has_suffix or not self._diagnostic_available():
+                self._send_empty(HTTPStatus.NOT_FOUND)
+            else:
+                self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED)
+            return
+        super().do_DELETE()
+
     def do_POST(self) -> None:  # noqa: N802
+        is_route, _has_suffix = self._diagnostic_parts()
+        if is_route:
+            self._diagnostic_post()
+            return
         if self._path() != "/oauth/token":
             super().do_POST()
             return
@@ -418,6 +518,8 @@ def serve(
     health: Callable[[], dict[str, Any]] | None = None,
     host: str | None = None,
     port: int | None = None,
+    diagnostic_export: Callable[[], dict[str, Any]] | None = None,
+    diagnostic_static_bearer: str = "",
 ) -> int:
     auth = ChatGPTRemoteAuthConfig.from_env()
     public_base = _public_base_url()
@@ -428,6 +530,8 @@ def serve(
     server = base._ReusableThreadingHTTPServer((bind_host, bind_port), ChatGPTOAuthRequestHandler)
     server.app = app  # type: ignore[attr-defined]
     server.public_base = public_base  # type: ignore[attr-defined]
+    server.diagnostic_export = diagnostic_export  # type: ignore[attr-defined]
+    server.diagnostic_static_bearer = str(diagnostic_static_bearer or "")  # type: ignore[attr-defined]
     try:
         server.serve_forever(poll_interval=0.25)
     except KeyboardInterrupt:
@@ -440,6 +544,16 @@ def serve(
 def main(
     dispatch: Callable[[str, dict[str, Any]], Any],
     health: Callable[[], dict[str, Any]] | None = None,
+    *,
+    diagnostic_export: Callable[[], dict[str, Any]] | None = None,
+    diagnostic_static_bearer: str = "",
 ) -> int:
     args = base._parser().parse_args()
-    return serve(dispatch, health=health, host=args.host, port=args.port)
+    return serve(
+        dispatch,
+        health=health,
+        host=args.host,
+        port=args.port,
+        diagnostic_export=diagnostic_export,
+        diagnostic_static_bearer=diagnostic_static_bearer,
+    )
