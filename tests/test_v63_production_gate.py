@@ -87,6 +87,7 @@ class V63ProductionGateTests(unittest.TestCase):
                 },
             },
             "render_r2_pvc_acceptance_verified": True,
+            "backup_retention_verified": True,
             "exact_v63_recovery_acceptance_verified": True,
             "live_v63_backend_correlation_acceptance_verified": True,
             "live_v63_backend_correlation_acceptance_snapshot_sha256": "a" * 64,
