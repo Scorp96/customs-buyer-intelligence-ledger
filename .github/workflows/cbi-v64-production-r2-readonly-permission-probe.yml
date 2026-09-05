@@ -1,0 +1,97 @@
+name: CBI v6.4 production R2 read-only permission probe
+
+on:
+  push:
+    branches:
+      - cbi-v64-c279-isolated-regression-4733a9b3
+    paths:
+      - .github/workflows/cbi-v64-production-r2-readonly-permission-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      R2_ACCESS_KEY_ID: ${{ secrets.CBI_V63_R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.CBI_V63_R2_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Test existing acceptance credentials against production pointer read-only
+        shell: python
+        run: |
+          import datetime as dt
+          import hashlib
+          import hmac
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          access = os.environ.get("R2_ACCESS_KEY_ID") or ""
+          secret = os.environ.get("R2_SECRET_ACCESS_KEY") or ""
+          if not access or not secret:
+              raise SystemExit("R2_ACCEPTANCE_CREDENTIALS_PRESENT=false")
+          print("R2_ACCEPTANCE_CREDENTIALS_PRESENT=true")
+
+          endpoint = "https://650e0986f2379c42507d3fc5ebb597a4.r2.cloudflarestorage.com"
+          bucket = "cbi-v61-production"
+          key = "cbi-v61/current.json"
+          region = "auto"
+          path = "/" + urllib.parse.quote(bucket, safe="-_.~") + "/" + "/".join(
+              urllib.parse.quote(part, safe="-_.~") for part in key.split("/")
+          )
+          now = dt.datetime.now(dt.timezone.utc)
+          amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+          stamp = now.strftime("%Y%m%d")
+          payload_hash = hashlib.sha256(b"").hexdigest()
+          host = urllib.parse.urlsplit(endpoint).netloc
+          signed = {"host":host,"x-amz-content-sha256":payload_hash,"x-amz-date":amz_date}
+          canonical_headers = "".join(f"{name}:{signed[name]}\n" for name in sorted(signed))
+          signed_headers = ";".join(sorted(signed))
+          canonical_request = "\n".join(["GET",path,"",canonical_headers,signed_headers,payload_hash])
+          scope = f"{stamp}/{region}/s3/aws4_request"
+          string_to_sign = "\n".join([
+              "AWS4-HMAC-SHA256",amz_date,scope,
+              hashlib.sha256(canonical_request.encode()).hexdigest(),
+          ])
+          def sign(key_bytes, text):
+              return hmac.new(key_bytes, text.encode(), hashlib.sha256).digest()
+          k_date = sign(("AWS4" + secret).encode(), stamp)
+          k_region = sign(k_date, region)
+          k_service = sign(k_region, "s3")
+          k_signing = sign(k_service, "aws4_request")
+          signature = hmac.new(k_signing, string_to_sign.encode(), hashlib.sha256).hexdigest()
+          authorization = (
+              "AWS4-HMAC-SHA256 "
+              f"Credential={access}/{scope},SignedHeaders={signed_headers},Signature={signature}"
+          )
+          request = urllib.request.Request(
+              endpoint + path,
+              method="GET",
+              headers={
+                  "Host":host,
+                  "X-Amz-Date":amz_date,
+                  "X-Amz-Content-Sha256":payload_hash,
+                  "Authorization":authorization,
+              },
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  body = response.read()
+                  status = int(response.status)
+          except urllib.error.HTTPError as exc:
+              status = int(exc.code)
+              body = exc.read()
+
+          print("PRODUCTION_R2_POINTER_HTTP_STATUS=" + str(status))
+          if status == 200:
+              print("PRODUCTION_R2_POINTER_READABLE_WITH_EXISTING_ACCEPTANCE_CREDENTIAL=true")
+              print("PRODUCTION_R2_POINTER_BODY_SHA256=" + hashlib.sha256(body).hexdigest())
+          elif status in {401,403,404}:
+              print("PRODUCTION_R2_POINTER_READABLE_WITH_EXISTING_ACCEPTANCE_CREDENTIAL=false")
+          else:
+              raise SystemExit("PRODUCTION_R2_POINTER_UNEXPECTED_HTTP_STATUS")
+          print("R2_WRITE_METHOD_USED=false")
+          print("SECRET_VALUE_PRINTED=false")
