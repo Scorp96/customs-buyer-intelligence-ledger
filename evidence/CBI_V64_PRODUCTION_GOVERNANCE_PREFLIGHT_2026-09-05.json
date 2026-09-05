@@ -1,0 +1,41 @@
+{
+  "schema": "cbi.v64-production-governance-preflight-checkpoint.v1",
+  "captured_at_utc": "2026-09-05T02:05:52Z",
+  "workflow_run_id": 33938088880,
+  "workflow_job_id": 101229853368,
+  "workflow_head_sha": "d637191e78231199f9fb3fcbb621065a22fe4f2c",
+  "artifact_id": 9960839198,
+  "artifact_name": "cbi-v64-production-governance-d637191e78231199f9fb3fcbb621065a22fe4f2c",
+  "artifact_sha256": "fd580dcf3f9a32be7faba053c43dacc329cb1875191fd56d16b4566b0313282e",
+  "result": "BLOCKED_EXTERNAL",
+  "blocker": "PRODUCTION_RULESET_MISSING",
+  "protect_main": {
+    "id": 21810779,
+    "active": true,
+    "required_status_contexts": [
+      "regression (ubuntu-latest, py3.10)",
+      "regression (ubuntu-latest, py3.11)",
+      "regression (windows-latest, py3.10)",
+      "regression (windows-latest, py3.11)"
+    ]
+  },
+  "production": {
+    "branch": "cbi-v6-cloud-runtime-20260901",
+    "sha": "a311a2a57ee43a1f1a3b2819bf28946566b05692",
+    "branch_protected_flag": false,
+    "protect_cbi_production_present": false,
+    "protect_cbi_production_valid": false
+  },
+  "release_candidate_ci": {
+    "branch": "cbi-v64-release-candidate-58e14973",
+    "sha": "4733a9b3e7286b58828750542c7ad54057cfb8ad",
+    "run_id": 33936239839,
+    "conclusion": "success",
+    "four_required_matrix_jobs_green": true
+  },
+  "safety_boundary": {
+    "repository_governance_mutated": false,
+    "production_branch_updated": false,
+    "release_candidate_updated": false
+  }
+}
