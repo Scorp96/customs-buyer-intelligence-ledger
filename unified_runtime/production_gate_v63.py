@@ -90,6 +90,8 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
 
     if not bool(payload.get("render_r2_pvc_acceptance_verified")):
         blockers.append("V63_RENDER_R2_PVC_ACCEPTANCE_NOT_VERIFIED")
+    if not bool(payload.get("backup_retention_verified")):
+        blockers.append("BACKUP_RETENTION_NOT_VERIFIED")
 
     if not bool(payload.get("exact_v63_recovery_acceptance_verified")):
         blockers.append("V63_EXACT_RECOVERY_ACCEPTANCE_NOT_VERIFIED")
@@ -119,6 +121,7 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
         "blockers": blockers,
         "required_v63_mutations": sorted(_REQUIRED_MUTATIONS),
         "checked_render_r2_pvc_acceptance": bool(payload.get("render_r2_pvc_acceptance_verified")),
+        "checked_backup_retention": bool(payload.get("backup_retention_verified")),
         "checked_exact_v63_recovery_acceptance": bool(payload.get("exact_v63_recovery_acceptance_verified")),
         "checked_live_v63_backend_correlation_acceptance": bool(payload.get("live_v63_backend_correlation_acceptance_verified")),
         "checked_live_v63_recovery_overlay_acceptance": bool(payload.get("live_v63_recovery_overlay_acceptance_verified")),

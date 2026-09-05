@@ -466,7 +466,7 @@ def run_exact_checkout_validation_suite(
         }
 
     checks["v63_staging_tests"] = _run_logged_command(
-        [python_executable, "-m", "unittest", "discover", "-s", str(payload / "tests"), "-p", "test_v63_*.py"],
+        [python_executable, "-m", "unittest", "discover", "-s", str(payload / "tests"), "-p", "test_*.py"],
         cwd=root,
         env=env,
     )
