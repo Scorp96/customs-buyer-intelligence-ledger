@@ -30,8 +30,10 @@ jobs:
           import json
           import os
           import pathlib
+          import sys
           import urllib.request
 
+          sys.path.insert(0, os.environ["GITHUB_WORKSPACE"])
           from mcp.object_store_persistence import S3CompatibleClient, S3Config
           from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
 
@@ -154,8 +156,7 @@ jobs:
           )
           if completed.returncode != 0:
               print("C279_TARGETED_REGRESSION=FAIL")
-              # Do not echo stdout/stderr: they may contain private runtime details.
-              print("C279_STDOUT_SHA256_REDACTED=true")
+              print("C279_STDOUT_REDACTED=true")
               raise SystemExit(completed.returncode)
           print("C279_TARGETED_REGRESSION=PASS")
           print("C279_LIVE_SOURCE_MUTATED=false")
