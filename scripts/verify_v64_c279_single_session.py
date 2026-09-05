@@ -78,6 +78,11 @@ def verify_single_session(*, bridge: dict, source_jsonl: Path) -> dict[str, obje
                 datetime.now(timezone.utc) + timedelta(minutes=15)
             ).isoformat().replace("+00:00", "Z"),
         })
+        if not prepared.get("prepared"):
+            raise AssertionError(
+                "synthetic prepare_outreach blocked: "
+                + ",".join(str(item) for item in prepared.get("block_reasons", []))
+            )
 
     source_after = source_jsonl.read_bytes()
     return {
