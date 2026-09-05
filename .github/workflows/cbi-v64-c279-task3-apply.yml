@@ -1,0 +1,147 @@
+name: CBI v6.4 C279 Task3 apply
+
+on:
+  push:
+    branches:
+      - cbi-v64-release-candidate-c279-diagnostic-a311a2a5
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cbi-v64-c279-task3-apply-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, 'feat(v64): bind C279 diagnostic export to production session root') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: cbi-v64-release-candidate-c279-diagnostic-a311a2a5
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Apply exact Task3 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement target, got {count}: {old[:80]!r}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          exporter = Path("mcp/c279_single_session_export_v64.py")
+          replace_once(exporter, "import hashlib\n", "import base64\nimport hashlib\n")
+          replace_once(exporter, "from typing import Mapping\n", "from typing import Any, Callable, Mapping\n")
+          replace_once(
+              exporter,
+              "class C279ExportError(RuntimeError):\n    def __init__(self, code: str, http_status: int) -> None:\n        self.code = str(code)\n        self.http_status = int(http_status)\n        super().__init__(self.code)\n\n\n",
+              "class C279ExportError(RuntimeError):\n    def __init__(self, code: str, http_status: int) -> None:\n        self.code = str(code)\n        self.http_status = int(http_status)\n        super().__init__(self.code)\n\n\ndef _utc_now() -> datetime:\n    return datetime.now(timezone.utc)\n\n\n",
+          )
+          replace_once(
+              exporter,
+              "    if (\n        first != second\n        or _file_identity(pre) != _file_identity(mid)\n        or _file_identity(mid) != _file_identity(post)\n    ):\n",
+              "    first_sha256 = hashlib.sha256(first).digest()\n    second_sha256 = hashlib.sha256(second).digest()\n    if (\n        first != second\n        or first_sha256 != second_sha256\n        or _file_identity(pre) != _file_identity(mid)\n        or _file_identity(mid) != _file_identity(post)\n    ):\n",
+          )
+          with exporter.open("a", encoding="utf-8", newline="\n") as handle:
+              handle.write('''\n\nclass _C279ExportCallback:\n    def __init__(self, session_root: Path, config: C279ExportConfig) -> None:\n        self._session_root = Path(session_root)\n        self._config = config\n\n    def is_available(self) -> bool:\n        return _utc_now() < self._config.expires_at\n\n    def __call__(self) -> dict[str, Any]:\n        if not self.is_available():\n            raise C279ExportError("EXPORT_UNAVAILABLE", 404)\n        snapshot = capture_stable_session(self._config, self._session_root)\n        # Do not release plaintext if the request crossed the expiry boundary\n        # while the stable read/hash-chain validation was in progress.\n        if not self.is_available():\n            raise C279ExportError("EXPORT_UNAVAILABLE", 404)\n        return {\n            "schema": "cbi.v64-c279-single-session-export.v1",\n            "snapshot_sha256": snapshot.snapshot_sha256,\n            "byte_length": snapshot.byte_length,\n            "tail_seq": snapshot.tail_seq,\n            "tail_event_hash": snapshot.tail_event_hash,\n            "payload_encoding": "base64",\n            "payload": base64.b64encode(snapshot.payload).decode("ascii"),\n        }\n\n\ndef build_export_callback(\n    session_root: Path,\n    env: Mapping[str, str],\n    *,\n    process_started_at: datetime,\n) -> Callable[[], dict[str, Any]] | None:\n    config = load_export_config(env, process_started_at=process_started_at)\n    if config is None:\n        return None\n    return _C279ExportCallback(Path(session_root), config)\n''')
+
+          transport = Path("mcp/chatgpt_oauth_transport.py")
+          replace_once(
+              transport,
+              "    def _diagnostic_parts(self) -> tuple[bool, bool]:\n        parsed = urllib.parse.urlsplit(self.path)\n        return parsed.path == _C279_EXPORT_PATH, bool(parsed.query or parsed.fragment)\n\n    def _diagnostic_post(self) -> None:\n",
+              "    def _diagnostic_parts(self) -> tuple[bool, bool]:\n        parsed = urllib.parse.urlsplit(self.path)\n        return parsed.path == _C279_EXPORT_PATH, bool(parsed.query or parsed.fragment)\n\n    def _diagnostic_available(self, callback: Callable[[], dict[str, Any]] | None = None) -> bool:\n        selected = self.diagnostic_export if callback is None else callback\n        if selected is None or len(self.diagnostic_static_bearer) < 32:\n            return False\n        checker = getattr(selected, \"is_available\", None)\n        if checker is None:\n            return True\n        if not callable(checker):\n            return False\n        try:\n            return bool(checker())\n        except Exception:\n            return False\n\n    def _diagnostic_post(self) -> None:\n",
+          )
+          replace_once(
+              transport,
+              "        if not is_route or callback is None or has_suffix:\n",
+              "        if not is_route or has_suffix or not self._diagnostic_available(callback):\n",
+          )
+          replace_once(
+              transport,
+              "        try:\n            result = callback()\n        except Exception as exc:\n",
+              "        if not self._diagnostic_available(callback):\n            self._send_empty(HTTPStatus.NOT_FOUND)\n            return\n\n        try:\n            result = callback()\n        except Exception as exc:\n",
+          )
+          replace_once(
+              transport,
+              "            if status not in {HTTPStatus.CONFLICT, HTTPStatus.REQUEST_ENTITY_TOO_LARGE}:\n                status = HTTPStatus.SERVICE_UNAVAILABLE\n                code = \"DIAGNOSTIC_EXPORT_FAILED\"\n            self._send_json(status, {\"error\": code})\n",
+              "            if status == HTTPStatus.NOT_FOUND:\n                self._send_empty(HTTPStatus.NOT_FOUND)\n                return\n            if status not in {HTTPStatus.CONFLICT, HTTPStatus.REQUEST_ENTITY_TOO_LARGE}:\n                status = HTTPStatus.SERVICE_UNAVAILABLE\n                code = \"DIAGNOSTIC_EXPORT_FAILED\"\n            self._send_json(status, {\"error\": code})\n",
+          )
+          old_method_gate = "            if self.diagnostic_export is None or has_suffix:\n                self._send_empty(HTTPStatus.NOT_FOUND)\n            else:\n                self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED)\n"
+          new_method_gate = "            if has_suffix or not self._diagnostic_available():\n                self._send_empty(HTTPStatus.NOT_FOUND)\n            else:\n                self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED)\n"
+          text = transport.read_text(encoding="utf-8")
+          if text.count(old_method_gate) != 2:
+              raise SystemExit(f"{transport}: expected two GET/DELETE route gates")
+          transport.write_text(text.replace(old_method_gate, new_method_gate), encoding="utf-8")
+
+          server = Path("mcp/server_v61_remote.py")
+          replace_once(server, "import json\n", "from datetime import datetime, timezone\nimport json\n")
+          replace_once(
+              server,
+              "_DEPLOYMENT_IDENTITY_SCHEMA = \"cbi.remote-deployment-identity.v6.3\"\n\n\n",
+              "_DEPLOYMENT_IDENTITY_SCHEMA = \"cbi.remote-deployment-identity.v6.3\"\n_PROCESS_STARTED_AT = datetime.now(timezone.utc)\n\n\n",
+          )
+          replace_once(
+              server,
+              "from mcp.chatgpt_oauth_transport import main as _remote_transport_main  # noqa: E402\n",
+              "from mcp.c279_single_session_export_v64 import build_export_callback  # noqa: E402\nfrom mcp.chatgpt_oauth_transport import main as _remote_transport_main  # noqa: E402\n",
+          )
+          replace_once(
+              server,
+              "_RUNTIME = _production._RUNTIME\n_BASE_DISPATCH = _production._v61._server.handle\n_PERSISTENCE = RecoveryObjectStoreStateManagerV63.from_env()\n",
+              "_RUNTIME = _production._RUNTIME\n_BASE_DISPATCH = _production._v61._server.handle\n_DIAGNOSTIC_STATIC_BEARER = str(os.environ.get(\"CBI_REMOTE_BEARER_TOKEN\") or \"\")\n_DIAGNOSTIC_EXPORT = build_export_callback(\n    _RUNTIME.store.root,\n    os.environ,\n    process_started_at=_PROCESS_STARTED_AT,\n)\nif len(_DIAGNOSTIC_STATIC_BEARER) < 32:\n    _DIAGNOSTIC_EXPORT = None\n_PERSISTENCE = RecoveryObjectStoreStateManagerV63.from_env()\n",
+          )
+          replace_once(
+              server,
+              "    return _remote_transport_main(_dispatch, health=_health)\n",
+              "    return _remote_transport_main(\n        _dispatch,\n        health=_health,\n        diagnostic_export=_DIAGNOSTIC_EXPORT,\n        diagnostic_static_bearer=_DIAGNOSTIC_STATIC_BEARER,\n    )\n",
+          )
+          PY
+
+      - name: Run Task3 targeted contracts
+        run: python -m unittest -v tests.test_v64_c279_single_session_export tests.test_v64_c279_export_transport tests.test_v64_c279_export_entrypoint_contract
+
+      - name: Run remote transport regressions
+        run: python -m unittest discover -s tests -p "test_*remote*transport*.py" -v
+
+      - name: Run read-only and crash regressions
+        run: python -m unittest -v tests.test_v61_resume_read_only tests.test_v6_properties_and_crash
+
+      - name: Run protocol regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python mcp/v6_protocol_test.py
+          python mcp/v61_hardening_protocol_test.py
+
+      - name: Run privacy and diff checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/privacy_scan.py
+          git diff --check
+
+      - name: Commit GREEN and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/cbi-v64-c279-task3-apply.yml
+          git add mcp/c279_single_session_export_v64.py mcp/chatgpt_oauth_transport.py mcp/server_v61_remote.py
+          git diff --cached --check
+          git commit -m "feat(v64): bind C279 diagnostic export to production session root"
+          git push origin HEAD:cbi-v64-release-candidate-c279-diagnostic-a311a2a5
