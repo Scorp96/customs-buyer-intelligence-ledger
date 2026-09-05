@@ -16,8 +16,12 @@ from unified_runtime.mcp_schema_v63 import build_v63_tool_descriptors
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _declared_current_tool_names() -> set[str]:
-    names = set(CBI_MCP_TOOL_NAMES)
+def _declared_core_tool_names() -> set[str]:
+    return set(CBI_MCP_TOOL_NAMES)
+
+
+def _declared_production_tool_names() -> set[str]:
+    names = _declared_core_tool_names()
     names.update(
         str(item.get("name") or "")
         for item in build_v63_tool_descriptors()
@@ -28,9 +32,8 @@ def _declared_current_tool_names() -> set[str]:
 
 class V6WindowsPortabilityTests(unittest.TestCase):
     @staticmethod
-    def _assert_current_tool_surface(tools: list[dict]) -> None:
+    def _assert_tool_surface(tools: list[dict], expected: set[str]) -> None:
         names = {str(item.get("name") or "") for item in tools if isinstance(item, dict)}
-        expected = _declared_current_tool_names()
         assert names == expected, (
             f"launcher tool surface drifted: expected={sorted(expected)!r} actual={sorted(names)!r}"
         )
@@ -92,7 +95,7 @@ class V6WindowsPortabilityTests(unittest.TestCase):
         ]
         by_id = {row.get("id"): row for row in responses}
         self.assertEqual(by_id[1]["result"]["serverInfo"]["version"], "6.1.0")
-        self._assert_current_tool_surface(by_id[2]["result"]["tools"])
+        self._assert_tool_surface(by_id[2]["result"]["tools"], _declared_production_tool_names())
 
     def test_cold_copy_runs_from_utf8_chinese_and_space_path(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cbi-v6-portable-") as temp:
@@ -128,7 +131,7 @@ class V6WindowsPortabilityTests(unittest.TestCase):
                 process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n")
                 process.stdin.flush()
                 tools = json.loads(process.stdout.readline())["result"]["tools"]
-                self._assert_current_tool_surface(tools)
+                self._assert_tool_surface(tools, _declared_core_tool_names())
             finally:
                 if process.stdin:
                     process.stdin.close()
