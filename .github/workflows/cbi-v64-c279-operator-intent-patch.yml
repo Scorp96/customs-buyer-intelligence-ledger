@@ -1,0 +1,113 @@
+name: CBI v6.4 C279 operator-intent patch runner
+
+on:
+  push:
+    branches:
+      - "cbi-v64-release-candidate-c279-diagnostic-production-minimal-a311"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cbi-v64-c279-operator-intent-patch
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: ${{ !startsWith(github.event.head_commit.message, 'fix(v64): allow operator-auth C279 export with exact intent') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Apply exact-anchor minimal patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              return text.replace(old, new, 1)
+
+          path = Path('mcp/chatgpt_oauth_transport.py')
+          text = path.read_text(encoding='utf-8')
+          text = replace_once(
+              text,
+              '''    @property\n    def diagnostic_static_bearer(self) -> str:\n        return str(getattr(self.server, "diagnostic_static_bearer", "") or "")  # type: ignore[attr-defined]\n''',
+              '''    @property\n    def diagnostic_static_bearer(self) -> str:\n        return str(getattr(self.server, "diagnostic_static_bearer", "") or "")  # type: ignore[attr-defined]\n\n    @property\n    def diagnostic_operator_intent(self) -> str:\n        return str(getattr(self.server, "diagnostic_operator_intent", "") or "")  # type: ignore[attr-defined]\n''',
+              'handler property',
+          )
+          text = replace_once(
+              text,
+              '''        selected = self.diagnostic_export if callback is None else callback\n        if selected is None or len(self.diagnostic_static_bearer) < 32:\n            return False\n''',
+              '''        selected = self.diagnostic_export if callback is None else callback\n        if selected is None:\n            return False\n        if len(self.diagnostic_operator_intent) < 32 and len(self.diagnostic_static_bearer) < 32:\n            return False\n''',
+              'availability',
+          )
+          text = replace_once(
+              text,
+              '''        try:\n            base.require_static_bearer(self.headers, self.diagnostic_static_bearer)\n        except base.RemoteTransportError as exc:\n            self._send_json(exc.http_status, {"error": str(exc)})\n            return\n\n        try:\n            content_type = str(self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()\n''',
+              '''        operator_intent = self.diagnostic_operator_intent\n        if len(operator_intent) >= 32:\n            supplied_intent = str(\n                self.headers.get("X-CBI-Diagnostic-Intent")\n                or self.headers.get("x-cbi-diagnostic-intent")\n                or ""\n            ).strip()\n            if not supplied_intent or not hmac.compare_digest(supplied_intent, operator_intent):\n                self._send_empty(HTTPStatus.NOT_FOUND)\n                return\n            try:\n                self.app._auth.authorize(self.headers)\n            except base.RemoteTransportError as exc:\n                self._send_json(exc.http_status, {"error": str(exc)})\n                return\n        else:\n            try:\n                base.require_static_bearer(self.headers, self.diagnostic_static_bearer)\n            except base.RemoteTransportError as exc:\n                self._send_json(exc.http_status, {"error": str(exc)})\n                return\n\n        try:\n            content_type = str(self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()\n''',
+              'diagnostic auth',
+          )
+          text = replace_once(
+              text,
+              '''    diagnostic_export: Callable[[], dict[str, Any]] | None = None,\n    diagnostic_static_bearer: str = "",\n) -> int:\n''',
+              '''    diagnostic_export: Callable[[], dict[str, Any]] | None = None,\n    diagnostic_static_bearer: str = "",\n    diagnostic_operator_intent: str = "",\n) -> int:\n''',
+              'serve signature',
+          )
+          text = replace_once(
+              text,
+              '''    server.diagnostic_export = diagnostic_export  # type: ignore[attr-defined]\n    server.diagnostic_static_bearer = str(diagnostic_static_bearer or "")  # type: ignore[attr-defined]\n''',
+              '''    server.diagnostic_export = diagnostic_export  # type: ignore[attr-defined]\n    server.diagnostic_static_bearer = str(diagnostic_static_bearer or "")  # type: ignore[attr-defined]\n    server.diagnostic_operator_intent = str(diagnostic_operator_intent or "")  # type: ignore[attr-defined]\n''',
+              'server binding',
+          )
+          text = replace_once(
+              text,
+              '''    diagnostic_export: Callable[[], dict[str, Any]] | None = None,\n    diagnostic_static_bearer: str = "",\n) -> int:\n    args = base._parser().parse_args()\n    return serve(\n        dispatch,\n        health=health,\n        host=args.host,\n        port=args.port,\n        diagnostic_export=diagnostic_export,\n        diagnostic_static_bearer=diagnostic_static_bearer,\n    )\n''',
+              '''    diagnostic_export: Callable[[], dict[str, Any]] | None = None,\n    diagnostic_static_bearer: str = "",\n    diagnostic_operator_intent: str = "",\n) -> int:\n    args = base._parser().parse_args()\n    if diagnostic_operator_intent:\n        return serve(\n            dispatch,\n            health=health,\n            host=args.host,\n            port=args.port,\n            diagnostic_export=diagnostic_export,\n            diagnostic_static_bearer=diagnostic_static_bearer,\n            diagnostic_operator_intent=diagnostic_operator_intent,\n        )\n    return serve(\n        dispatch,\n        health=health,\n        host=args.host,\n        port=args.port,\n        diagnostic_export=diagnostic_export,\n        diagnostic_static_bearer=diagnostic_static_bearer,\n    )\n''',
+              'main forwarding',
+          )
+          path.write_text(text, encoding='utf-8')
+
+          path = Path('mcp/server_v61_remote.py')
+          text = path.read_text(encoding='utf-8')
+          text = replace_once(
+              text,
+              '''_DIAGNOSTIC_STATIC_BEARER = str(os.environ.get("CBI_REMOTE_BEARER_TOKEN") or "")\n_DIAGNOSTIC_EXPORT = build_export_callback(\n''',
+              '''_DIAGNOSTIC_STATIC_BEARER = str(os.environ.get("CBI_REMOTE_BEARER_TOKEN") or "")\n_DIAGNOSTIC_OPERATOR_INTENT = str(os.environ.get("CBI_V64_C279_EXPORT_INTENT") or "").strip()\n_DIAGNOSTIC_EXPORT = build_export_callback(\n''',
+              'entrypoint intent env',
+          )
+          text = replace_once(
+              text,
+              '''        diagnostic_export=_DIAGNOSTIC_EXPORT,\n        diagnostic_static_bearer=_DIAGNOSTIC_STATIC_BEARER,\n    )\n''',
+              '''        diagnostic_export=_DIAGNOSTIC_EXPORT,\n        diagnostic_static_bearer=_DIAGNOSTIC_STATIC_BEARER,\n        diagnostic_operator_intent=_DIAGNOSTIC_OPERATOR_INTENT,\n    )\n''',
+              'entrypoint forwarding',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Run focused operator-intent and legacy diagnostic contracts
+        run: >-
+          python -m unittest -v
+          tests.test_v64_c279_export_operator_intent
+          tests.test_v64_c279_export_transport
+          tests.test_v64_c279_transport_main_forwarding
+          tests.test_v64_c279_export_entrypoint_contract
+
+      - name: Commit implementation to diagnostic branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Scorp96"
+          git config user.email "130877686+Scorp96@users.noreply.github.com"
+          git add mcp/chatgpt_oauth_transport.py mcp/server_v61_remote.py
+          git diff --cached --check
+          git commit -m "fix(v64): allow operator-auth C279 export with exact intent"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
