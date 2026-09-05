@@ -1,0 +1,47 @@
+name: CBI v6.4 Stream B staging pattern fix
+
+on:
+  push:
+    branches: [cbi-v64-semantic-forward-port-58e14973]
+    paths: [.cbi-v64-stream-b/PATTERN_FIX_READY]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: cbi-v64-semantic-forward-port-58e14973
+      - name: Replace exact staging selector
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('release_ops_v63/exact_checkout_candidate_builder.py')
+          t=p.read_text(encoding='utf-8')
+          old='test_v63_*.py'
+          if t.count(old) != 1:
+              raise SystemExit(f'expected exactly one staging selector, found {t.count(old)}')
+          p.write_text(t.replace(old,'test_*.py',1),encoding='utf-8')
+          PY
+          git diff --check
+          grep -n "test_\\*.py" release_ops_v63/exact_checkout_candidate_builder.py
+      - name: Commit fix and self-clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add release_ops_v63/exact_checkout_candidate_builder.py
+          git commit -m 'fix(v64): run all staging release-gate tests'
+          git rm -f .github/workflows/cbi-v64-stream-b-pattern-fix.yml .cbi-v64-stream-b/PATTERN_FIX_READY
+          git commit -m 'chore(v64): remove staging pattern fix bootstrap'
+          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
+          test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
+          git push origin HEAD:refs/heads/cbi-v64-semantic-forward-port-58e14973
