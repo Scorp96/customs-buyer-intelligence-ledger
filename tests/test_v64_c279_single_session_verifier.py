@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
 
 from unified_runtime import UnifiedRuntime
 from unified_runtime.v6 import DEFAULT_CLAIM_CATALOG
-from scripts.verify_v64_c279_single_session import verify_single_session
+from scripts.verify_v64_c279_single_session import main, verify_single_session
 
 
 def _observation(claim_key: str, index: int) -> dict:
@@ -86,6 +89,13 @@ def _build_fixture(runtime: UnifiedRuntime) -> tuple[str, dict]:
     return investigation_id, bridge
 
 
+def _run_cli(argv: list[str]) -> tuple[int, dict]:
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        return_code = main(argv)
+    return return_code, json.loads(output.getvalue())
+
+
 class V64C279SingleSessionVerifierTests(unittest.TestCase):
     def test_one_jsonl_is_sufficient_for_full_isolated_outreach_proof(self):
         with tempfile.TemporaryDirectory(prefix="cbi-v64-single-test-") as temp:
@@ -104,6 +114,90 @@ class V64C279SingleSessionVerifierTests(unittest.TestCase):
             self.assertFalse(receipt["sends_message"])
             self.assertTrue(receipt["source_unchanged"])
             self.assertEqual(source_jsonl.read_bytes(), before)
+
+    def test_cli_emits_only_sanitized_receipt_fields(self):
+        with tempfile.TemporaryDirectory(prefix="cbi-v64-single-cli-") as temp:
+            root = Path(temp)
+            runtime = UnifiedRuntime(root / "source" / "sessions")
+            investigation_id, bridge = _build_fixture(runtime)
+            source_jsonl = runtime.store.path(investigation_id)
+            bridge_path = root / "bridge.json"
+            bridge_path.write_text(json.dumps(bridge), encoding="utf-8")
+
+            return_code, receipt = _run_cli([
+                "--bridge", str(bridge_path),
+                "--source-session", str(source_jsonl),
+            ])
+
+            self.assertEqual(return_code, 0)
+            self.assertEqual(set(receipt), {
+                "schema",
+                "status",
+                "tail_match",
+                "outreach_readiness",
+                "closure_closed",
+                "prepared",
+                "sends_message",
+                "source_unchanged",
+            })
+            self.assertEqual(receipt["schema"], "cbi.v64-c279-single-session-proof.v1")
+            serialized = json.dumps(receipt, sort_keys=True)
+            self.assertNotIn(investigation_id, serialized)
+            self.assertNotIn(str(source_jsonl), serialized)
+            self.assertNotIn("buyer@example.invalid", serialized)
+            self.assertNotIn("info@example.invalid", serialized)
+
+    def test_cli_tail_mismatch_fails_closed_with_sanitized_blocker(self):
+        with tempfile.TemporaryDirectory(prefix="cbi-v64-single-cli-mismatch-") as temp:
+            root = Path(temp)
+            runtime = UnifiedRuntime(root / "source" / "sessions")
+            investigation_id, bridge = _build_fixture(runtime)
+            source_jsonl = runtime.store.path(investigation_id)
+            bridge["durable_state"]["last_safe_event_hash"] = "0" * 64
+            bridge_path = root / "bridge.json"
+            bridge_path.write_text(json.dumps(bridge), encoding="utf-8")
+
+            return_code, receipt = _run_cli([
+                "--bridge", str(bridge_path),
+                "--source-session", str(source_jsonl),
+            ])
+
+            self.assertEqual(return_code, 2)
+            self.assertEqual(receipt, {
+                "schema": "cbi.v64-c279-single-session-proof.v1",
+                "status": "BLOCKED",
+                "blocker": "AUTHORITATIVE_TAIL_MISMATCH",
+            })
+            serialized = json.dumps(receipt, sort_keys=True)
+            self.assertNotIn(investigation_id, serialized)
+            self.assertNotIn(str(source_jsonl), serialized)
+
+    def test_cli_rejects_non_jsonl_source_without_opening_private_content(self):
+        with tempfile.TemporaryDirectory(prefix="cbi-v64-single-cli-suffix-") as temp:
+            root = Path(temp)
+            bridge_path = root / "bridge.json"
+            bridge_path.write_text(json.dumps({
+                "investigation_id": "INV-PRIVATE-SENTINEL",
+                "durable_state": {
+                    "last_safe_seq": 1,
+                    "last_safe_event_hash": "1" * 64,
+                },
+            }), encoding="utf-8")
+            source_path = root / "private-session.txt"
+            source_path.write_text("PRIVATE-SENTINEL-CONTENT", encoding="utf-8")
+
+            return_code, receipt = _run_cli([
+                "--bridge", str(bridge_path),
+                "--source-session", str(source_path),
+            ])
+
+            self.assertEqual(return_code, 2)
+            self.assertEqual(receipt, {
+                "schema": "cbi.v64-c279-single-session-proof.v1",
+                "status": "BLOCKED",
+                "blocker": "SOURCE_SESSION_JSONL_REQUIRED",
+            })
+            self.assertNotIn("PRIVATE-SENTINEL-CONTENT", json.dumps(receipt))
 
 
 if __name__ == "__main__":
