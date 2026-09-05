@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from unified_runtime.mcp_schema_v63 import V63_MUTATION_TOOL_NAMES, V63_READ_ONLY_TOOL_NAMES
+
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 
@@ -71,7 +73,12 @@ class V6WindowsPortabilityTests(unittest.TestCase):
         ]
         by_id = {row.get("id"): row for row in responses}
         self.assertEqual(by_id[1]["result"]["serverInfo"]["version"], "6.1.0")
-        self.assertEqual(len(by_id[2]["result"]["tools"]), 42)
+        tools = by_id[2]["result"]["tools"]
+        names = {str(row.get("name") or "") for row in tools if isinstance(row, dict)}
+        required_v63 = set(V63_MUTATION_TOOL_NAMES) | set(V63_READ_ONLY_TOOL_NAMES)
+        self.assertTrue(required_v63.issubset(names), sorted(required_v63 - names))
+        self.assertIn("start_investigation", names)
+        self.assertGreaterEqual(len(tools), 42)
 
     def test_cold_copy_runs_from_utf8_chinese_and_space_path(self) -> None:
         with tempfile.TemporaryDirectory(prefix="cbi-v6-portable-") as temp:

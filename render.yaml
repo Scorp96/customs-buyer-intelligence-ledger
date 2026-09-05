@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: cbi-v61-preview
+    runtime: docker
+    repo: https://github.com/Scorp96/customs-buyer-intelligence-ledger
+    branch: cbi-v6-cloud-runtime-20260901
+    region: singapore
+    plan: free
+    dockerfilePath: ./deploy/cloud/Dockerfile
+    dockerContext: .
+    dockerCommand: python -B -Xutf8 mcp/render_bootstrap.py
+    autoDeployTrigger: checksPass
+    healthCheckPath: /healthz
+    renderSubdomainPolicy: enabled
+    envVars:
+      - key: CBI_RENDER_LIVE_ROOT
+        value: /var/lib/cbi/live
+      - key: CBI_SESSION_ROOT
+        value: /var/lib/cbi/live/sessions
+      - key: CBI_BACKUP_ROOT
+        value: /var/lib/cbi/live/backups-v61
+      - key: CBI_REMOTE_HOST
+        value: 0.0.0.0
+      - key: CBI_REMOTE_PUBLIC_BASE_URL
+        value: https://cbi-v61-preview.onrender.com
+      - key: CBI_REMOTE_AUTH_MODE
+        value: bearer
+      - key: CBI_REMOTE_BEARER_TOKEN
+        sync: false
+      - key: CBI_REMOTE_GITHUB_ALLOWED_LOGINS
+        value: Scorp96
+      - key: CBI_REMOTE_MAX_BODY_BYTES
+        value: "8388608"
