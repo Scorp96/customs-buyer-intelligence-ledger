@@ -1,0 +1,101 @@
+name: CBI v6.4 production MCP schema probe
+
+on:
+  push:
+    branches:
+      - cbi-v64-c279-isolated-regression-4733a9b3
+    paths:
+      - .github/workflows/cbi-v64-production-mcp-schema-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ACCEPTANCE_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+    steps:
+      - name: Inspect read-oriented production tool schemas only
+        shell: python
+        run: |
+          import json
+          import os
+          import urllib.request
+
+          token = os.environ.get("ACCEPTANCE_BEARER") or ""
+          if not token:
+              raise SystemExit("ACCEPTANCE_BEARER_PRESENT=false")
+          base = "https://cbi-v61-preview.onrender.com"
+
+          with urllib.request.urlopen(
+              urllib.request.Request(
+                  base + "/healthz",
+                  headers={"Accept":"application/json","User-Agent":"cbi-v64-production-mcp-schema-probe"},
+                  method="GET",
+              ), timeout=45,
+          ) as response:
+              before = json.load(response)
+          identity = dict(before.get("deployment_identity") or {})
+          persistence = dict(before.get("object_store_persistence") or {})
+          if before.get("status") != "ok" or identity.get("git_sha") != "a311a2a57ee43a1f1a3b2819bf28946566b05692":
+              raise SystemExit("PRODUCTION_HEALTH_OR_SHA_PIN_FAILED")
+
+          def rpc(request_id, method, params):
+              body = json.dumps({"jsonrpc":"2.0","id":request_id,"method":method,"params":params}, separators=(",", ":")).encode()
+              req = urllib.request.Request(
+                  base + "/mcp", data=body, method="POST",
+                  headers={
+                      "Authorization":"Bearer " + token,
+                      "Content-Type":"application/json",
+                      "Accept":"application/json",
+                      "MCP-Protocol-Version":"2026-07-28",
+                      "User-Agent":"cbi-v64-production-mcp-schema-probe",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=120) as response:
+                  payload = json.load(response)
+              if payload.get("jsonrpc") != "2.0" or payload.get("id") != request_id or isinstance(payload.get("error"), dict):
+                  raise SystemExit("PRODUCTION_MCP_JSONRPC_REJECTED")
+              result = payload.get("result")
+              if not isinstance(result, dict):
+                  raise SystemExit("PRODUCTION_MCP_RESULT_INVALID")
+              return result
+
+          rpc(1, "initialize", {"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cbi-v64-production-mcp-schema-probe","version":"1"}})
+          result = rpc(2, "tools/list", {})
+          tools = result.get("tools") if isinstance(result.get("tools"), list) else []
+          needles = ("export","backup","recovery","restore","snapshot","state","history","journal","portfolio","investigation","runtime")
+          selected = []
+          for row in tools:
+              if not isinstance(row, dict):
+                  continue
+              name = str(row.get("name") or "")
+              if any(token in name.casefold() for token in needles):
+                  selected.append({
+                      "name": name,
+                      "description": str(row.get("description") or "")[:240],
+                      "inputSchema": row.get("inputSchema") if isinstance(row.get("inputSchema"), dict) else {},
+                  })
+          print("PRODUCTION_TOOL_COUNT=" + str(len(tools)))
+          print("READ_OR_EXPORT_CANDIDATE_COUNT=" + str(len(selected)))
+          print("READ_OR_EXPORT_CANDIDATE_SCHEMAS=" + json.dumps(selected, sort_keys=True, separators=(",", ":")))
+
+          with urllib.request.urlopen(
+              urllib.request.Request(
+                  base + "/healthz",
+                  headers={"Accept":"application/json","User-Agent":"cbi-v64-production-mcp-schema-probe"},
+                  method="GET",
+              ), timeout=45,
+          ) as response:
+              after = json.load(response)
+          after_persistence = dict(after.get("object_store_persistence") or {})
+          if after_persistence.get("generation") != persistence.get("generation"):
+              raise SystemExit("PRODUCTION_GENERATION_CHANGED_DURING_SCHEMA_PROBE")
+          if after_persistence.get("recovery_fingerprint_sha256") != persistence.get("recovery_fingerprint_sha256"):
+              raise SystemExit("PRODUCTION_RECOVERY_FINGERPRINT_CHANGED_DURING_SCHEMA_PROBE")
+          print("OBJECT_GENERATION=" + str(after_persistence.get("generation")))
+          print("RECOVERY_FINGERPRINT_STABLE=true")
+          print("TOOLS_CALLED=false")
+          print("SECRET_VALUE_PRINTED=false")
