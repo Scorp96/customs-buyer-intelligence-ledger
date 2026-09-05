@@ -1,0 +1,54 @@
+name: CBI v6.4 Stream B release fixture fix v2
+
+on:
+  push:
+    branches: [cbi-v64-semantic-forward-port-58e14973]
+    paths: [.cbi-v64-stream-b/FIXTURE_FIX2_READY]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: cbi-v64-semantic-forward-port-58e14973
+      - name: Extend complete fixtures only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tests/test_v63_release_evidence_assembler.py')
+          t=p.read_text(encoding='utf-8')
+          helper='''\n    def _backup_retention_report(self, sha="a" * 64):\n        snapshot_id = "SNAP-20260901T061755Z-0813157703d0"\n        return {\n            "schema": "cbi.v64-backup-retention-evidence.v1",\n            "verified": True,\n            "production_source_snapshot_sha256": sha,\n            "preexisting_snapshot_observed": True,\n            "snapshot_id_before_deploy": snapshot_id,\n            "snapshot_id_after_restart": snapshot_id,\n            "snapshot_ids_after_deploy": [snapshot_id],\n            "backup_history_preserved_after_restart": True,\n            "backup_history_preserved_after_deploy": True,\n            "backup_root_persistence_mode": "OBJECT_STORE_REPLICATED",\n            "external_replication_verified": True,\n            "external_snapshot_locator": f"s3://cbi-prod/backups-v61/{snapshot_id}",\n            "restore_target_isolated": True,\n            "restore_overwrites_live_root": False,\n            "observed_at": "2026-09-04T00:00:00Z",\n            "source": "HOST_BACKUP_RETENTION_HEALTH_SEQUENCE",\n        }\n'''
+          marker='\n    def _bundle(self):\n'
+          if '_backup_retention_report(' not in t:
+              if t.count(marker)!=1: raise SystemExit('bundle helper anchor mismatch')
+              t=t.replace(marker,helper+marker,1)
+          old='            "render_r2_pvc_acceptance_report": self._render_r2_pvc_receipt(),\n'
+          new=old+'            "backup_retention_evidence_report": self._backup_retention_report(),\n'
+          if '"backup_retention_evidence_report": self._backup_retention_report(),' not in t:
+              if t.count(old)!=1: raise SystemExit('bundle report anchor mismatch')
+              t=t.replace(old,new,1)
+          p.write_text(t,encoding='utf-8')
+          PY
+          python -m unittest -q tests/test_v63_release_evidence_assembler.py tests/test_v63_release_evidence_cli.py tests/test_v63_release_render_r2_dependency.py
+          git diff --check
+      - name: Commit fixtures and clean fixture bootstraps
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/test_v63_release_evidence_assembler.py
+          git commit -m 'test(v64): include backup retention in complete release fixtures'
+          git rm -f .github/workflows/cbi-v64-stream-b-fixture-fix.yml .github/workflows/cbi-v64-stream-b-fixture-fix2.yml .cbi-v64-stream-b/FIXTURE_FIX_READY .cbi-v64-stream-b/FIXTURE_FIX2_READY
+          git commit -m 'chore(v64): remove release fixture bootstraps'
+          test "$(git ls-remote origin refs/heads/cbi-v6-3-demand-expansion | awk '{print $1}')" = '58e14973c62cca5a9daefa7b4012e427135736d5'
+          test "$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')" = 'a311a2a57ee43a1f1a3b2819bf28946566b05692'
+          git push origin HEAD:refs/heads/cbi-v64-semantic-forward-port-58e14973
