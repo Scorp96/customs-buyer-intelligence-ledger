@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from pathlib import Path
 import unittest
 
 from scripts import run_v64_c279_zero_mutation_preflight as preflight
 
 
 TAIL = "a" * 64
+WORKFLOW = Path(".github/workflows/cbi-v64-c279-zero-mutation-preflight.yml")
+PREFLIGHT_BRANCH = "cbi-v64-release-candidate-c279-diagnostic-preflight-bab9f71f"
+PRODUCTION_SHA = "a311a2a57ee43a1f1a3b2819bf28946566b05692"
 
 
 class FakeClient:
@@ -131,6 +135,29 @@ class C279ZeroMutationPreflightTests(unittest.TestCase):
             with self.subTest(client=client):
                 with self.assertRaisesRegex(preflight.PreflightError, "C279_PREPATCH_BASELINE_MISMATCH"):
                     preflight.run_preflight(client)
+
+    def test_workflow_is_branch_scoped_read_only_and_has_no_deploy_or_r2_path(self) -> None:
+        self.assertTrue(WORKFLOW.is_file(), "zero-mutation preflight workflow is missing")
+        text = WORKFLOW.read_text(encoding="utf-8")
+        for required in (
+            PREFLIGHT_BRANCH,
+            "workflow_dispatch:",
+            "permissions:\n  contents: read",
+            "CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}",
+            "CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}",
+            "scripts/run_v64_c279_zero_mutation_preflight.py",
+            PRODUCTION_SHA,
+            "cbi-v6-cloud-runtime-20260901",
+        ):
+            self.assertIn(required, text)
+        for forbidden in (
+            "CBI_V63_RENDER_DEPLOY_HOOK_URL",
+            "CBI_V63_RENDER_RESTART_HOOK_URL",
+            "CBI_V63_R2_",
+            "prepare_outreach",
+            "trigger_deploy",
+        ):
+            self.assertNotIn(forbidden, text)
 
 
 if __name__ == "__main__":
