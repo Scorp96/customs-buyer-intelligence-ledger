@@ -1,4 +1,4 @@
-name: CBI v6.4 C279 unsigned production R2 probe
+name: CBI v6.4 C279 unsigned production R2 classification
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
           import json, urllib.request
           req = urllib.request.Request(
               "https://cbi-v61-preview.onrender.com/healthz",
-              headers={"Accept":"application/json","User-Agent":"cbi-v64-c279-r2-unsigned"},
+              headers={"Accept":"application/json","User-Agent":"cbi-v64-c279-r2-unsigned-classifier"},
           )
           with urllib.request.urlopen(req, timeout=20) as response:
               payload = json.loads(response.read().decode("utf-8"))
@@ -30,28 +30,49 @@ jobs:
           assert persistence.get("recovery_fingerprint_sha256") == "3a3014f6bba6986cfc46bab676acdc087985f1fdbe6535a4317f6d0670cf0422"
           print("C279_CURRENT_CLOUD_IDENTITY=PINNED")
 
-      - name: Probe unsigned R2 current pointer access without credentials
+      - name: Classify unsigned R2 current pointer rejection without credentials
         shell: python
         run: |
+          import xml.etree.ElementTree as ET
           import urllib.error, urllib.request
+
           url = "https://650e0986f2379c42507d3fc5ebb597a4.r2.cloudflarestorage.com/cbi-v61-production/cbi-v61/current.json"
+          observed = []
           for method in ("HEAD", "GET"):
-              req = urllib.request.Request(url, method=method, headers={"User-Agent":"cbi-v64-c279-r2-unsigned"})
+              req = urllib.request.Request(url, method=method, headers={"User-Agent":"cbi-v64-c279-r2-unsigned-classifier"})
+              body = b""
               try:
                   with urllib.request.urlopen(req, timeout=20) as response:
-                      code = int(response.status)
-                      if method == "GET":
-                          response.read(1)
+                      status = int(response.status)
+                      body = response.read(4096) if method == "GET" else b""
               except urllib.error.HTTPError as exc:
-                  code = int(exc.code)
-              print(f"C279_UNSIGNED_R2_{method}_HTTP={code}")
-              if code == 200:
+                  status = int(exc.code)
+                  body = exc.read(4096) if method == "GET" else b""
+              error_code = ""
+              if body:
+                  try:
+                      root = ET.fromstring(body)
+                      node = root.find("Code")
+                      if node is not None and node.text:
+                          error_code = node.text.strip()[:80]
+                  except ET.ParseError:
+                      error_code = "NON_XML_ERROR"
+              print(f"C279_UNSIGNED_R2_{method}_HTTP={status}")
+              print(f"C279_UNSIGNED_R2_{method}_ERROR_CODE={error_code or 'NONE'}")
+              if status == 200:
                   raise SystemExit("C279_PRODUCTION_R2_UNEXPECTEDLY_PUBLIC")
-              if code not in {401,403,404,405}:
-                  raise SystemExit(f"C279_UNSIGNED_R2_UNEXPECTED_HTTP_{code}")
-          print("C279_UNSIGNED_R2_ACCESS=NOT_PUBLIC")
+              observed.append((method, status, error_code))
+
+          # An unsigned S3-compatible request must not reveal the object bytes.
+          # 400/401/403/404/405 are all fail-closed outcomes here; for GET we
+          # additionally retain only the S3/Cloudflare error Code, never body text.
+          for method, status, _error_code in observed:
+              if status not in {400, 401, 403, 404, 405}:
+                  raise SystemExit(f"C279_UNSIGNED_R2_UNEXPECTED_HTTP_{method}_{status}")
+          print("C279_UNSIGNED_R2_OBJECT_BYTES=UNAVAILABLE_WITHOUT_CREDENTIALS")
 
       - name: Assert production ref remains unchanged
+        if: ${{ always() }}
         shell: bash
         run: |
           set -euo pipefail
