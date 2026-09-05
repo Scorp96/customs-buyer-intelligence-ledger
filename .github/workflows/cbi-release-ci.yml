@@ -1,0 +1,244 @@
+name: CBI release candidate CI
+
+on:
+  push:
+    branches:
+      - "cbi-v*-release-candidate-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-release-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: regression (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+        python-version:
+          - "3.10"
+          - "3.11"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Validate JSON manifests
+        run: >-
+          python -c "import json, pathlib; [json.loads(pathlib.Path(p).read_text(encoding='utf-8-sig')) for p in ['.codex-plugin/plugin.json','.mcp.json','skills/investigate-customs-buyers/references/buyer-intelligence-schema.json','skills/investigate-customs-buyers/references/enrichment-schema.json','skills/investigate-customs-buyers/references/evidence-bundle-schema.json','skills/investigate-customs-buyers/references/intelligence-rules.json','skills/investigate-customs-buyers/references/runtime-policy.json','skills/investigate-customs-buyers/references/unified-runtime-schema.json']]; print('JSON manifests: PASS')"
+
+      - name: Install YAML parser in ephemeral CI only
+        run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.2
+
+      - name: Validate agent YAML
+        run: >-
+          python -c "import pathlib, yaml; p=pathlib.Path('skills/investigate-customs-buyers/agents/openai.yaml'); data=yaml.safe_load(p.read_text(encoding='utf-8-sig')); assert isinstance(data, dict); print('Agent YAML: PASS')"
+
+      - name: Validate Render Blueprint
+        run: >-
+          python -c "import pathlib,yaml; d=yaml.safe_load(pathlib.Path('render.yaml').read_text(encoding='utf-8-sig')); s=d['services'][0]; assert s['type']=='web' and s['runtime']=='docker' and s['region']=='singapore' and s['plan']=='free'; assert s['healthCheckPath']=='/healthz' and s['autoDeployTrigger']=='checksPass'; assert 'disk' not in s; env={x['key']:x for x in s['envVars']}; assert env['CBI_REMOTE_AUTH_MODE']['value']=='bearer' and env['CBI_REMOTE_BEARER_TOKEN']['sync'] is False; print('Render Free Preview Blueprint: PASS')"
+
+      - name: Run unittest regression suite
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Run 100-Evidence performance acceptance
+        run: python scripts/run_v6_load_acceptance.py --profile smoke --enforce-targets
+
+      - name: Run MCP compatibility self-test
+        run: python mcp/self_test.py
+
+      - name: Run MCP v6 protocol test
+        run: python mcp/v6_protocol_test.py
+
+      - name: Run MCP v6.1 production-adapter protocol test
+        run: python mcp/v61_hardening_protocol_test.py
+
+      - name: Build and smoke-test cloud Runtime container
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="cbi-cloud-runtime:${GITHUB_SHA}"
+          name="cbi-cloud-smoke-${GITHUB_RUN_ID}"
+          docker build -f deploy/cloud/Dockerfile -t "$image" .
+          cleanup() {
+            docker logs "$name" 2>/dev/null || true
+            docker rm -f "$name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d \
+            --name "$name" \
+            --read-only \
+            --tmpfs /tmp:size=64m,mode=1777 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            -e CBI_REMOTE_AUTH_MODE=none \
+            -e PORT=8788 \
+            -p 127.0.0.1:18787:8788 \
+            "$image"
+
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          base = "http://127.0.0.1:18787"
+          last = None
+          for _ in range(60):
+              try:
+                  with urllib.request.urlopen(base + "/healthz", timeout=1) as response:
+                      health = json.load(response)
+                  if health.get("status") == "ok" and health.get("durable_root_bound") is True:
+                      break
+              except Exception as exc:
+                  last = exc
+              time.sleep(0.25)
+          else:
+              raise SystemExit(f"cloud Runtime health did not become ready: {last}")
+
+          def post(method, request_id, params, extra_headers=None):
+              body = json.dumps({
+                  "jsonrpc": "2.0",
+                  "id": request_id,
+                  "method": method,
+                  "params": params,
+              }).encode("utf-8")
+              headers = {
+                  "Content-Type": "application/json",
+                  "Accept": "application/json, text/event-stream",
+                  "MCP-Protocol-Version": "2026-07-28",
+                  "Mcp-Method": method,
+              }
+              headers.update(extra_headers or {})
+              request = urllib.request.Request(base + "/mcp", data=body, headers=headers, method="POST")
+              with urllib.request.urlopen(request, timeout=5) as response:
+                  payload = json.load(response)
+              if "error" in payload:
+                  raise SystemExit(f"{method} returned error: {payload['error']}")
+              return payload["result"]
+
+          discover = post(
+              "server/discover",
+              "discover-1",
+              {"_meta": {
+                  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                  "io.modelcontextprotocol/clientCapabilities": {},
+              }},
+          )
+          assert discover["resultType"] == "complete", discover
+          assert "2026-07-28" in discover["supportedVersions"], discover
+          assert "tools" in discover["capabilities"], discover
+
+          tools = post(
+              "tools/list",
+              "tools-1",
+              {"_meta": {
+                  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                  "io.modelcontextprotocol/clientCapabilities": {},
+              }},
+          )
+          names = {row.get("name") for row in tools.get("tools", [])}
+          for required in {
+              "get_runtime_health",
+              "start_investigation",
+              "compile_and_append_research_bundle",
+          }:
+              assert required in names, (required, sorted(names))
+
+          health_call = post(
+              "tools/call",
+              "health-1",
+              {"name": "get_runtime_health", "arguments": {}},
+              {"Mcp-Name": "get_runtime_health"},
+          )
+          assert "content" in health_call, health_call
+          print("Cloud Runtime Docker HTTP smoke: PASS")
+          PY
+
+          docker rm -f "$name" >/dev/null
+          name="cbi-render-bootstrap-${GITHUB_RUN_ID}"
+          docker run -d \
+            --name "$name" \
+            --read-only \
+            --tmpfs /tmp:size=64m,mode=1777 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            -e PORT=8789 \
+            -e CBI_RENDER_LIVE_ROOT=/var/lib/cbi/live \
+            -e CBI_SESSION_ROOT=/var/lib/cbi/live/sessions \
+            -e CBI_BACKUP_ROOT=/var/lib/cbi/live/backups-v61 \
+            -p 127.0.0.1:18788:8789 \
+            "$image" \
+            python -B -Xutf8 mcp/render_bootstrap.py
+
+          python - <<'PY'
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = "http://127.0.0.1:18788"
+          last = None
+          for _ in range(60):
+              try:
+                  with urllib.request.urlopen(base + "/healthz", timeout=1) as response:
+                      health = json.load(response)
+                  if health.get("status") == "bootstrap_required":
+                      assert health.get("durable_state_loaded") is False, health
+                      assert health.get("mcp_enabled") is False, health
+                      break
+              except Exception as exc:
+                  last = exc
+              time.sleep(0.25)
+          else:
+              raise SystemExit(f"Render bootstrap health did not become ready: {last}")
+
+          request = urllib.request.Request(
+              base + "/mcp",
+              data=b'{"jsonrpc":"2.0","id":"x","method":"tools/list","params":{}}',
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          try:
+              urllib.request.urlopen(request, timeout=3)
+          except urllib.error.HTTPError as exc:
+              payload = json.load(exc)
+              assert exc.code == 503, (exc.code, payload)
+              assert payload["error"]["code"] == -32004, payload
+          else:
+              raise SystemExit("Render bootstrap unexpectedly enabled MCP")
+          print("Render bootstrap fail-closed smoke: PASS")
+          PY
+
+      - name: Run privacy scan
+        run: python tests/privacy_scan.py
+
+      - name: Run compatibility parser self-test
+        run: python skills/investigate-customs-buyers/scripts/self_test.py
+
+      - name: Run intelligence self-test
+        run: python skills/investigate-customs-buyers/scripts/intelligence_self_test.py
+
+      - name: Run outreach self-test
+        run: python skills/investigate-customs-buyers/scripts/outreach_self_test.py
+
+      - name: Run strategic self-test
+        run: python skills/investigate-customs-buyers/scripts/strategic_self_test.py
+
+      - name: Run v3 compatibility self-test
+        run: python skills/investigate-customs-buyers/scripts/v3_self_test.py
