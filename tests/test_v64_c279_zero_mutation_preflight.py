@@ -4,6 +4,10 @@ from pathlib import Path
 import unittest
 
 from scripts import run_v64_c279_zero_mutation_preflight as preflight
+from unified_runtime.render_r2_acceptance_client_v63 import (
+    RenderR2AcceptanceClientConfig,
+    RenderR2AcceptanceClientError,
+)
 
 
 TAIL = "a" * 64
@@ -136,6 +140,28 @@ class C279ZeroMutationPreflightTests(unittest.TestCase):
             with self.subTest(client=client):
                 with self.assertRaisesRegex(preflight.PreflightError, "C279_PREPATCH_BASELINE_MISMATCH"):
                     preflight.run_preflight(client)
+
+    def test_production_client_pins_exact_sha_r2_and_requires_acceptance_pin_disabled(self) -> None:
+        config = RenderR2AcceptanceClientConfig(
+            base_url=PRODUCTION_BASE_URL,
+            bearer_token="x" * 32,
+            expected_git_sha=PRODUCTION_SHA,
+        )
+        client = preflight.ProductionReadOnlyMcpClient(config)
+        identity = {
+            "schema": "cbi.remote-deployment-identity.v6.3",
+            "git_sha": PRODUCTION_SHA,
+            "git_sha_source": "RENDER_GIT_COMMIT",
+            "acceptance_pin_required": False,
+            "object_store_mode": "r2",
+        }
+        client._pin_health({"status": "ok", "deployment_identity": identity})
+        self.assertIs(client._deployment_pinned, True)
+        bad = dict(identity)
+        bad["acceptance_pin_required"] = True
+        other = preflight.ProductionReadOnlyMcpClient(config)
+        with self.assertRaisesRegex(RenderR2AcceptanceClientError, "PRODUCTION_ACCEPTANCE_PIN_UNEXPECTED"):
+            other._pin_health({"status": "ok", "deployment_identity": bad})
 
     def test_workflow_is_branch_scoped_read_only_and_has_no_deploy_or_r2_path(self) -> None:
         self.assertTrue(WORKFLOW.is_file(), "zero-mutation preflight workflow is missing")
