@@ -4,12 +4,17 @@ import contextlib
 import io
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
 from unified_runtime import UnifiedRuntime
 from unified_runtime.v6 import DEFAULT_CLAIM_CATALOG
 from scripts.verify_v64_c279_single_session import main, verify_single_session
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _observation(claim_key: str, index: int) -> dict:
@@ -114,6 +119,23 @@ class V64C279SingleSessionVerifierTests(unittest.TestCase):
             self.assertFalse(receipt["sends_message"])
             self.assertTrue(receipt["source_unchanged"])
             self.assertEqual(source_jsonl.read_bytes(), before)
+
+    def test_direct_cli_help_runs_from_repository_root(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "verify_v64_c279_single_session.py"),
+                "--help",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--bridge", completed.stdout)
+        self.assertIn("--source-session", completed.stdout)
 
     def test_cli_emits_only_sanitized_receipt_fields(self):
         with tempfile.TemporaryDirectory(prefix="cbi-v64-single-cli-") as temp:
