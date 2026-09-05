@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - cbi-v64-c279-isolated-regression-4733a9b3
+    paths:
+      - .github/workflows/cbi-v64-c279-isolated-regression.yml
+      - tests/test_v64_c279_full_runtime.py
 
 permissions:
   contents: read
