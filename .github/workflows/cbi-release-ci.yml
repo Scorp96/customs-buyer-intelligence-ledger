@@ -80,18 +80,149 @@ jobs:
             docker rm -f "$name" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
-          docker run -d --name "$name" --read-only --tmpfs /tmp:size=64m,mode=1777 --cap-drop ALL --security-opt no-new-privileges:true -e CBI_REMOTE_AUTH_MODE=none -e PORT=8788 -p 127.0.0.1:18787:8788 "$image"
+
+          docker run -d \
+            --name "$name" \
+            --read-only \
+            --tmpfs /tmp:size=64m,mode=1777 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            -e CBI_REMOTE_AUTH_MODE=none \
+            -e PORT=8788 \
+            -p 127.0.0.1:18787:8788 \
+            "$image"
+
           python - <<'PY'
-          import json,time,urllib.request
-          base="http://127.0.0.1:18787"; last=None
+          import json
+          import time
+          import urllib.request
+
+          base = "http://127.0.0.1:18787"
+          last = None
           for _ in range(60):
               try:
-                  with urllib.request.urlopen(base+"/healthz",timeout=1) as response: health=json.load(response)
-                  if health.get("status")=="ok" and health.get("durable_root_bound") is True: break
-              except Exception as exc: last=exc
+                  with urllib.request.urlopen(base + "/healthz", timeout=1) as response:
+                      health = json.load(response)
+                  if health.get("status") == "ok" and health.get("durable_root_bound") is True:
+                      break
+              except Exception as exc:
+                  last = exc
               time.sleep(0.25)
-          else: raise SystemExit(f"cloud Runtime health did not become ready: {last}")
+          else:
+              raise SystemExit(f"cloud Runtime health did not become ready: {last}")
+
+          def post(method, request_id, params, extra_headers=None):
+              body = json.dumps({
+                  "jsonrpc": "2.0",
+                  "id": request_id,
+                  "method": method,
+                  "params": params,
+              }).encode("utf-8")
+              headers = {
+                  "Content-Type": "application/json",
+                  "Accept": "application/json, text/event-stream",
+                  "MCP-Protocol-Version": "2026-07-28",
+                  "Mcp-Method": method,
+              }
+              headers.update(extra_headers or {})
+              request = urllib.request.Request(base + "/mcp", data=body, headers=headers, method="POST")
+              with urllib.request.urlopen(request, timeout=5) as response:
+                  payload = json.load(response)
+              if "error" in payload:
+                  raise SystemExit(f"{method} returned error: {payload['error']}")
+              return payload["result"]
+
+          discover = post(
+              "server/discover",
+              "discover-1",
+              {"_meta": {
+                  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                  "io.modelcontextprotocol/clientCapabilities": {},
+              }},
+          )
+          assert discover["resultType"] == "complete", discover
+          assert "2026-07-28" in discover["supportedVersions"], discover
+          assert "tools" in discover["capabilities"], discover
+
+          tools = post(
+              "tools/list",
+              "tools-1",
+              {"_meta": {
+                  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                  "io.modelcontextprotocol/clientCapabilities": {},
+              }},
+          )
+          names = {row.get("name") for row in tools.get("tools", [])}
+          for required in {
+              "get_runtime_health",
+              "start_investigation",
+              "compile_and_append_research_bundle",
+          }:
+              assert required in names, (required, sorted(names))
+
+          health_call = post(
+              "tools/call",
+              "health-1",
+              {"name": "get_runtime_health", "arguments": {}},
+              {"Mcp-Name": "get_runtime_health"},
+          )
+          assert "content" in health_call, health_call
           print("Cloud Runtime Docker HTTP smoke: PASS")
+          PY
+
+          docker rm -f "$name" >/dev/null
+          name="cbi-render-bootstrap-${GITHUB_RUN_ID}"
+          docker run -d \
+            --name "$name" \
+            --read-only \
+            --tmpfs /tmp:size=64m,mode=1777 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            -e PORT=8789 \
+            -e CBI_RENDER_LIVE_ROOT=/var/lib/cbi/live \
+            -e CBI_SESSION_ROOT=/var/lib/cbi/live/sessions \
+            -e CBI_BACKUP_ROOT=/var/lib/cbi/live/backups-v61 \
+            -p 127.0.0.1:18788:8789 \
+            "$image" \
+            python -B -Xutf8 mcp/render_bootstrap.py
+
+          python - <<'PY'
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = "http://127.0.0.1:18788"
+          last = None
+          for _ in range(60):
+              try:
+                  with urllib.request.urlopen(base + "/healthz", timeout=1) as response:
+                      health = json.load(response)
+                  if health.get("status") == "bootstrap_required":
+                      assert health.get("durable_state_loaded") is False, health
+                      assert health.get("mcp_enabled") is False, health
+                      break
+              except Exception as exc:
+                  last = exc
+              time.sleep(0.25)
+          else:
+              raise SystemExit(f"Render bootstrap health did not become ready: {last}")
+
+          request = urllib.request.Request(
+              base + "/mcp",
+              data=b'{"jsonrpc":"2.0","id":"x","method":"tools/list","params":{}}',
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          try:
+              urllib.request.urlopen(request, timeout=3)
+          except urllib.error.HTTPError as exc:
+              payload = json.load(exc)
+              assert exc.code == 503, (exc.code, payload)
+              assert payload["error"]["code"] == -32004, payload
+          else:
+              raise SystemExit("Render bootstrap unexpectedly enabled MCP")
+          print("Render bootstrap fail-closed smoke: PASS")
           PY
 
       - name: Run privacy scan
@@ -113,13 +244,20 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import datetime,pathlib,sys
-          scripts=pathlib.Path("skills/investigate-customs-buyers/scripts").resolve(); sys.path.insert(0,str(scripts))
+          import datetime
+          import pathlib
+          import sys
+
+          scripts = pathlib.Path("skills/investigate-customs-buyers/scripts").resolve()
+          sys.path.insert(0, str(scripts))
           import v3_engine
+
           class FixtureDate(datetime.date):
               @classmethod
-              def today(cls): return cls(2026,8,3)
-          v3_engine.date=FixtureDate
+              def today(cls):
+                  return cls(2026, 8, 3)
+
+          v3_engine.date = FixtureDate
           import v3_self_test
           raise SystemExit(v3_self_test.main())
           PY
