@@ -1,0 +1,70 @@
+name: CBI v6.4 C279 diagnostic crypto CI
+
+on:
+  push:
+    branches:
+      - "cbi-v64-release-candidate-c279-diagnostic-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-c279-crypto-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture-crypto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Verify exact capture requirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          value = Path('requirements/cbi-v64-c279-capture.txt').read_text(encoding='utf-8')
+          assert value == 'cryptography==50.0.1\n', repr(value)
+          print('C279_CAPTURE_REQUIREMENT_EXACT=PASS')
+          PY
+
+      - name: Download and verify pinned cryptography wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/c279-crypto"
+          mkdir -p "$RUNNER_TEMP/c279-crypto"
+          python -m pip download --disable-pip-version-check --no-deps --only-binary=:all: cryptography==50.0.1 -d "$RUNNER_TEMP/c279-crypto"
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'c279-crypto'
+          files = list(root.glob('cryptography-50.0.1-*.whl'))
+          assert len(files) == 1, files
+          sha = hashlib.sha256(files[0].read_bytes()).hexdigest()
+          allowed = {
+              '51afcfceb15597cf2635068e4ac9a56b2abde622edde17f37d85fd7b5306497a',
+              '51593d180cf6d179bde5c5d065bed81386b1f381656ae7d042b7ffc87a9895ad',
+              'ff838d62ec1bfce4f9ba7fa16f4a7b554cd8d0c299e6be37502161a660c84eef',
+          }
+          assert sha in allowed, sha
+          print('CRYPTOGRAPHY_WHEEL_SHA256_VERIFIED=' + sha)
+          PY
+          python -m pip install --disable-pip-version-check --no-input "$RUNNER_TEMP"/c279-crypto/cryptography-50.0.1-*.whl
+          python -c "from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey; from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305; print('C279_CAPTURE_CRYPTO_IMPORT=PASS')"
+
+      - name: Run C279 ciphertext capture contract
+        run: python -m unittest tests.test_v64_c279_capture -v
+
+      - name: Run privacy scan
+        run: python tests/privacy_scan.py
