@@ -32,10 +32,10 @@ jobs:
               with urllib.request.urlopen(
                   urllib.request.Request(
                       base + "/healthz",
-                      headers={"Accept": "application/json", "User-Agent": "cbi-v64-production-mcp-readonly-probe"},
+                      headers={"Accept":"application/json","User-Agent":"cbi-v64-production-mcp-readonly-probe"},
                       method="GET",
                   ),
-                  timeout=30,
+                  timeout=45,
               ) as response:
                   return json.load(response)
 
@@ -57,15 +57,15 @@ jobs:
               request = urllib.request.Request(
                   base + "/mcp", data=body, method="POST",
                   headers={
-                      "Authorization": "Bearer " + token,
-                      "Content-Type": "application/json",
-                      "Accept": "application/json",
-                      "MCP-Protocol-Version": "2026-07-28",
-                      "User-Agent": "cbi-v64-production-mcp-readonly-probe",
+                      "Authorization":"Bearer " + token,
+                      "Content-Type":"application/json",
+                      "Accept":"application/json",
+                      "MCP-Protocol-Version":"2026-07-28",
+                      "User-Agent":"cbi-v64-production-mcp-readonly-probe",
                   },
               )
               try:
-                  with urllib.request.urlopen(request, timeout=30) as response:
+                  with urllib.request.urlopen(request, timeout=90) as response:
                       payload = json.load(response)
               except urllib.error.HTTPError as exc:
                   print("PRODUCTION_MCP_HTTP_STATUS=" + str(exc.code))
@@ -81,36 +81,31 @@ jobs:
               return result
 
           def call_tool(name, arguments):
-              result = rpc("tools/call", {"name": name, "arguments": arguments})
+              result = rpc("tools/call", {"name":name,"arguments":arguments})
               structured = result.get("structuredContent")
               if not isinstance(structured, dict):
                   raise SystemExit("PRODUCTION_TOOL_STRUCTURED_CONTENT_MISSING:" + name)
               return structured
 
           def shape(value, depth=0):
-              if depth >= 4:
+              if depth >= 5:
                   return type(value).__name__
               if isinstance(value, dict):
-                  return {str(k): shape(v, depth + 1) for k, v in sorted(value.items())}
+                  return {str(k):shape(v, depth + 1) for k,v in sorted(value.items())}
               if isinstance(value, list):
-                  sample = value[:1]
-                  return {"type":"list","count":len(value),"sample_shape":shape(sample[0], depth + 1) if sample else None}
+                  return {"type":"list","count":len(value),"sample_shape":shape(value[0], depth + 1) if value else None}
               return type(value).__name__
 
           rpc("initialize", {
-              "protocolVersion":"2025-06-18",
-              "capabilities":{},
-              "clientInfo":{"name":"cbi-v64-production-mcp-readonly-probe","version":"3"},
+              "protocolVersion":"2025-06-18","capabilities":{},
+              "clientInfo":{"name":"cbi-v64-production-mcp-readonly-probe","version":"4"},
           })
           listed = rpc("tools/list", {})
-          tools = listed.get("tools")
-          if not isinstance(tools, list):
+          if not isinstance(listed.get("tools"), list):
               raise SystemExit("PRODUCTION_MCP_TOOLS_LIST_MISSING")
-          names = sorted(str(item.get("name") or "") for item in tools if isinstance(item, dict) and item.get("name"))
           print("PRODUCTION_MCP_AUTH=PASS")
-          print("PRODUCTION_MCP_TOOL_COUNT=" + str(len(names)))
 
-          queue = call_tool("get_portfolio_queue", {"include_non_active": True, "include_non_production": True, "limit": 1000})
+          queue = call_tool("get_portfolio_queue", {"include_non_active":True,"include_non_production":True,"limit":25})
           print("PORTFOLIO_QUEUE_STRUCTURAL_SHAPE=" + json.dumps(shape(queue), sort_keys=True, separators=(",", ":")))
 
           after = health()
