@@ -1,0 +1,23 @@
+name: CBI v6.4 Wave5 semantic assets validation
+
+on:
+  push:
+    branches:
+      - cbi-v64-wave5-assets-validation-4733a9b3
+
+permissions:
+  contents: read
+
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Run semantic Wave5 verifier contract
+        run: python -m unittest -v tests.test_v64_authoritative_forward_port_verifier
+      - name: Run C279 public test without private inputs
+        run: python -m unittest -v tests.test_v64_c279_full_runtime
