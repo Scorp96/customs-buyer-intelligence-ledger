@@ -1,0 +1,287 @@
+name: CBI v6.4 C279 authoritative R2 read-only gate
+
+on:
+  push:
+    branches:
+      - cbi-v64-c279-health-probe-a311a2a
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-c279-authoritative-r2-gate
+  cancel-in-progress: false
+
+env:
+  CBI_V64_PRODUCTION_SHA: a311a2a57ee43a1f1a3b2819bf28946566b05692
+  CBI_V64_RELEASE_CANDIDATE_SHA: 4733a9b3e7286b58828750542c7ad54057cfb8ad
+  CBI_V64_C279_INVESTIGATION_ID: INV-20260902T093152Z-5f3526759f65
+  CBI_V64_C279_EXPECTED_SEQ: '27'
+  CBI_V64_C279_EXPECTED_HASH: cf5d92ecf7f7d4842306cc39134bdd09aced5fd087179da1ab6b0da5ca19b498
+  CBI_V64_BRIDGE_SHA256: 67de3b6eabc59936090ef01fd909d4252790b38acf60be7c2b1a7cba2ef1f2c1
+  CBI_V64_C279_TEST_SHA256: 2b57ede8d2aa563130063afa6d586a33fdd36ffcc21a91220354cd4bbb12d498
+
+jobs:
+  authoritative-c279:
+    name: C279 current-cloud isolated full-runtime regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout diagnostic control plane
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cbi-v64-c279-health-probe-a311a2a
+          path: control
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify exact SAFE bridge and test bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          bridge="control/evidence/C279_READONLY_REGRESSION_BRIDGE_SANITIZED.json"
+          test_file="control/diagnostics/test_v64_c279_full_runtime.py"
+          test "$(sha256sum "$bridge" | cut -d' ' -f1)" = "$CBI_V64_BRIDGE_SHA256"
+          test "$(sha256sum "$test_file" | cut -d' ' -f1)" = "$CBI_V64_C279_TEST_SHA256"
+          echo "C279_SAFE_BRIDGE_AND_TEST_BYTES=VERIFIED"
+
+      - name: Pin current production deployment before source acquisition
+        shell: python
+        run: |
+          import json, os, urllib.request
+          from pathlib import Path
+          req = urllib.request.Request(
+              "https://cbi-v61-preview.onrender.com/healthz",
+              headers={"Accept":"application/json","User-Agent":"cbi-v64-c279-authoritative-r2-gate"},
+          )
+          with urllib.request.urlopen(req, timeout=20) as response:
+              payload = json.loads(response.read().decode("utf-8"))
+          ident = dict(payload.get("deployment_identity") or {})
+          persistence = dict(payload.get("object_store_persistence") or {})
+          safe = {
+              "status":payload.get("status"),
+              "git_sha":ident.get("git_sha"),
+              "generation":persistence.get("generation"),
+              "restore_generation":ident.get("restore_generation"),
+              "schema":ident.get("object_state_schema"),
+              "archive_format":persistence.get("archive_format"),
+              "recovery_fingerprint_sha256":persistence.get("recovery_fingerprint_sha256"),
+              "prefix":persistence.get("prefix"),
+          }
+          if safe["status"] not in {"ok","degraded"}: raise SystemExit("C279_PRODUCTION_NOT_LIVE")
+          if safe["git_sha"] != os.environ["CBI_V64_PRODUCTION_SHA"]: raise SystemExit("C279_PRODUCTION_SHA_DRIFT")
+          if safe["schema"] != "cbi.object-store-state.v2" or safe["archive_format"] != "object_state_v2": raise SystemExit("C279_OBJECT_STATE_SCHEMA_DRIFT")
+          if safe["generation"] != safe["restore_generation"]: raise SystemExit("C279_GENERATION_LINEAGE_DRIFT")
+          if safe["prefix"] != "cbi-v61": raise SystemExit("C279_PREFIX_DRIFT")
+          fp = str(safe["recovery_fingerprint_sha256"] or "").lower()
+          if len(fp) != 64 or any(ch not in "0123456789abcdef" for ch in fp): raise SystemExit("C279_RECOVERY_FINGERPRINT_INVALID")
+          Path(os.environ["RUNNER_TEMP"]).joinpath("health-before.json").write_text(json.dumps(safe, sort_keys=True), encoding="utf-8")
+          print("C279_SOURCE_IDENTITY_BEFORE=" + json.dumps(safe, sort_keys=True, separators=(",",":")))
+
+      - name: Checkout exact release candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 4733a9b3e7286b58828750542c7ad54057cfb8ad
+          path: candidate
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Detect dedicated production R2 read-only credential
+        id: credential
+        shell: bash
+        env:
+          ACCESS_KEY_ID: ${{ secrets.CBI_V64_PRODUCTION_R2_READONLY_ACCESS_KEY_ID }}
+          SECRET_ACCESS_KEY: ${{ secrets.CBI_V64_PRODUCTION_R2_READONLY_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "$ACCESS_KEY_ID" ] && [ -n "$SECRET_ACCESS_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "C279_PRODUCTION_R2_READONLY_CREDENTIAL=AVAILABLE"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "C279_PRODUCTION_R2_READONLY_CREDENTIAL=UNAVAILABLE"
+          fi
+
+      - name: Restore authoritative current generation into runner temp only
+        if: ${{ steps.credential.outputs.available == 'true' }}
+        shell: bash
+        env:
+          CBI_OBJECT_STORE_MODE: r2
+          CBI_OBJECT_STORE_ENDPOINT: https://650e0986f2379c42507d3fc5ebb597a4.r2.cloudflarestorage.com
+          CBI_OBJECT_STORE_BUCKET: cbi-v61-production
+          CBI_OBJECT_STORE_ACCESS_KEY_ID: ${{ secrets.CBI_V64_PRODUCTION_R2_READONLY_ACCESS_KEY_ID }}
+          CBI_OBJECT_STORE_SECRET_ACCESS_KEY: ${{ secrets.CBI_V64_PRODUCTION_R2_READONLY_SECRET_ACCESS_KEY }}
+          CBI_OBJECT_STORE_REGION: auto
+          CBI_OBJECT_STORE_PREFIX: cbi-v61
+        run: |
+          set -euo pipefail
+          cd candidate
+          PYTHONPATH=. python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
+
+          before = json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("health-before.json").read_text(encoding="utf-8"))
+          manager = RecoveryObjectStoreStateManagerV63.from_env()
+          if manager is None:
+              raise SystemExit("C279_R2_MANAGER_NOT_CONFIGURED")
+          pointer = manager.read_pointer(required=True)
+          if getattr(pointer, "generation", None) != before["generation"]:
+              raise SystemExit("C279_R2_POINTER_GENERATION_MISMATCH")
+          if getattr(pointer, "archive_format", None) != "object_state_v2":
+              raise SystemExit("C279_R2_POINTER_FORMAT_MISMATCH")
+          if getattr(pointer, "recovery_fingerprint_sha256", None) != before["recovery_fingerprint_sha256"]:
+              raise SystemExit("C279_R2_POINTER_FINGERPRINT_MISMATCH")
+
+          target = Path(os.environ["RUNNER_TEMP"]) / "c279-authoritative-root"
+          if target.exists():
+              raise SystemExit("C279_RESTORE_TARGET_MUST_NOT_EXIST")
+          if not manager.restore_into(target):
+              raise SystemExit("C279_R2_RESTORE_RETURNED_FALSE")
+          manifest = json.loads((target / "export-manifest.json").read_text(encoding="utf-8"))
+          if manifest.get("restored_generation") != before["generation"]:
+              raise SystemExit("C279_RESTORED_GENERATION_MISMATCH")
+          if manifest.get("recovery_fingerprint_sha256") != before["recovery_fingerprint_sha256"]:
+              raise SystemExit("C279_RESTORED_FINGERPRINT_MISMATCH")
+          if not (target / "sessions").is_dir() or not (target / "mcp-idempotency-v61").is_dir():
+              raise SystemExit("C279_RESTORED_COMPONENT_MISSING")
+          print("C279_AUTHORITATIVE_R2_RESTORE=VERIFIED")
+          PY
+
+      - name: Bind restored C279 JSONL tail to SAFE bridge
+        if: ${{ steps.credential.outputs.available == 'true' }}
+        shell: python
+        run: |
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "c279-authoritative-root"
+          path = root / "sessions" / f"{os.environ['CBI_V64_C279_INVESTIGATION_ID']}.jsonl"
+          if not path.is_file(): raise SystemExit("C279_SOURCE_SESSION_JSONL_MISSING")
+          last = None
+          for raw in path.read_text(encoding="utf-8-sig").splitlines():
+              if raw.strip(): last = json.loads(raw)
+          if not isinstance(last, dict): raise SystemExit("C279_SOURCE_SESSION_EMPTY")
+          if last.get("seq") != int(os.environ["CBI_V64_C279_EXPECTED_SEQ"]): raise SystemExit("C279_SOURCE_TAIL_SEQ_MISMATCH")
+          if last.get("event_hash") != os.environ["CBI_V64_C279_EXPECTED_HASH"]: raise SystemExit("C279_SOURCE_TAIL_HASH_MISMATCH")
+          print("C279_SOURCE_JSONL_TAIL=BRIDGE_MATCH")
+
+      - name: Re-pin production identity after source acquisition
+        if: ${{ steps.credential.outputs.available == 'true' }}
+        shell: python
+        run: |
+          import json, os, urllib.request
+          from pathlib import Path
+          before = json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("health-before.json").read_text(encoding="utf-8"))
+          req = urllib.request.Request(
+              "https://cbi-v61-preview.onrender.com/healthz",
+              headers={"Accept":"application/json","User-Agent":"cbi-v64-c279-authoritative-r2-gate"},
+          )
+          with urllib.request.urlopen(req, timeout=20) as response:
+              payload = json.loads(response.read().decode("utf-8"))
+          ident = dict(payload.get("deployment_identity") or {})
+          persistence = dict(payload.get("object_store_persistence") or {})
+          after = {
+              "git_sha":ident.get("git_sha"),
+              "generation":persistence.get("generation"),
+              "restore_generation":ident.get("restore_generation"),
+              "recovery_fingerprint_sha256":persistence.get("recovery_fingerprint_sha256"),
+          }
+          for key in ("git_sha","generation","restore_generation","recovery_fingerprint_sha256"):
+              if after.get(key) != before.get(key): raise SystemExit("C279_SOURCE_IDENTITY_CHANGED_DURING_ACQUISITION:" + key)
+          print("C279_SOURCE_IDENTITY_STABLE_DURING_ACQUISITION=VERIFIED")
+
+      - name: Run exact SAFE C279 full-runtime regression on isolated copy
+        if: ${{ steps.credential.outputs.available == 'true' }}
+        shell: bash
+        env:
+          CBI_V64_C279_BRIDGE_EVIDENCE: ${{ github.workspace }}/control/evidence/C279_READONLY_REGRESSION_BRIDGE_SANITIZED.json
+          CBI_V64_C279_SOURCE_RUNTIME_ROOT: ${{ runner.temp }}/c279-authoritative-root
+        run: |
+          set -euo pipefail
+          cp control/diagnostics/test_v64_c279_full_runtime.py candidate/tests/test_v64_c279_full_runtime.py
+          cd candidate
+          PYTHONPATH=. python tests/test_v64_c279_full_runtime.py -v
+          echo "C279_AUTHORITATIVE_FULL_RUNTIME_REGRESSION=GREEN"
+          echo "C279_PREPARE_OUTREACH_SENDS_MESSAGE=FALSE_ASSERTED"
+
+      - name: Emit sanitized GREEN report
+        if: ${{ steps.credential.outputs.available == 'true' && success() }}
+        shell: python
+        run: |
+          import json, os
+          from pathlib import Path
+          before = json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("health-before.json").read_text(encoding="utf-8"))
+          report = {
+              "schema":"cbi.v64-c279-authoritative-r2-gate.v1",
+              "result":"GREEN",
+              "c279_full_runtime_regression_verified":True,
+              "sends_message":False,
+              "source_acquisition":"R2_BUCKET_SCOPED_READ_ONLY",
+              "production_sha":before["git_sha"],
+              "object_state_generation":before["generation"],
+              "recovery_fingerprint_sha256":before["recovery_fingerprint_sha256"],
+              "c279_last_safe_seq":int(os.environ["CBI_V64_C279_EXPECTED_SEQ"]),
+              "c279_last_safe_event_hash":os.environ["CBI_V64_C279_EXPECTED_HASH"],
+              "release_candidate_sha":os.environ["CBI_V64_RELEASE_CANDIDATE_SHA"],
+              "production_mutated":False,
+              "raw_runtime_bytes_uploaded":False,
+          }
+          Path(os.environ["RUNNER_TEMP"]).joinpath("CBI_V64_C279_AUTHORITATIVE_GATE.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print("C279_AUTHORITATIVE_GATE_RESULT=GREEN")
+
+      - name: Emit sanitized blocked report when read-only credential is absent
+        if: ${{ steps.credential.outputs.available != 'true' }}
+        shell: python
+        run: |
+          import json, os
+          from pathlib import Path
+          before = json.loads(Path(os.environ["RUNNER_TEMP"]).joinpath("health-before.json").read_text(encoding="utf-8"))
+          report = {
+              "schema":"cbi.v64-c279-authoritative-r2-gate.v1",
+              "result":"BLOCKED_EXTERNAL",
+              "blocker":"PRODUCTION_R2_READONLY_CREDENTIAL_UNAVAILABLE",
+              "c279_full_runtime_regression_verified":False,
+              "production_sha":before["git_sha"],
+              "object_state_generation":before["generation"],
+              "recovery_fingerprint_sha256":before["recovery_fingerprint_sha256"],
+              "required_secret_names":[
+                  "CBI_V64_PRODUCTION_R2_READONLY_ACCESS_KEY_ID",
+                  "CBI_V64_PRODUCTION_R2_READONLY_SECRET_ACCESS_KEY"
+              ],
+              "required_credential_scope":"Cloudflare R2 Object Read, bucket cbi-v61-production only",
+              "production_mutated":False,
+              "raw_runtime_bytes_uploaded":False,
+          }
+          Path(os.environ["RUNNER_TEMP"]).joinpath("CBI_V64_C279_AUTHORITATIVE_GATE.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print("C279_AUTHORITATIVE_GATE_RESULT=BLOCKED_EXTERNAL")
+          print("C279_AUTHORITATIVE_GATE_BLOCKER=PRODUCTION_R2_READONLY_CREDENTIAL_UNAVAILABLE")
+
+      - name: Upload sanitized gate evidence only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-c279-authoritative-gate-${{ github.sha }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: ${{ runner.temp }}/CBI_V64_C279_AUTHORITATIVE_GATE.json
+
+      - name: Delete transient authoritative source bytes
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/c279-authoritative-root"
+          echo "C279_TRANSIENT_SOURCE_BYTES_DELETED=TRUE"
+
+      - name: Assert production and candidate refs unchanged
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          prod="$(git ls-remote https://github.com/Scorp96/customs-buyer-intelligence-ledger refs/heads/cbi-v6-cloud-runtime-20260901 | cut -f1)"
+          cand="$(git ls-remote https://github.com/Scorp96/customs-buyer-intelligence-ledger refs/heads/cbi-v64-release-candidate-58e14973 | cut -f1)"
+          test "$prod" = "$CBI_V64_PRODUCTION_SHA"
+          test "$cand" = "$CBI_V64_RELEASE_CANDIDATE_SHA"
+          echo "CBI_PRODUCTION_REF_UNCHANGED=$prod"
+          echo "CBI_RELEASE_CANDIDATE_REF_UNCHANGED=$cand"
