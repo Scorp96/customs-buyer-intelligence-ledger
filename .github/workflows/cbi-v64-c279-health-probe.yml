@@ -1,4 +1,4 @@
-name: CBI v6.4 C279 current-cloud read-only probe
+name: CBI v6.4 C279 current-cloud read-only schema probe
 
 on:
   push:
@@ -13,137 +13,74 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Fetch public health metadata only
+      - name: Pin public production identity
         shell: python
         run: |
-          import json
-          import os
-          import urllib.request
-          from pathlib import Path
-
-          url = "https://cbi-v61-preview.onrender.com/healthz"
-          request = urllib.request.Request(
-              url,
-              headers={"Accept": "application/json", "User-Agent": "cbi-v64-c279-health-probe"},
-              method="GET",
+          import json, urllib.request
+          req = urllib.request.Request(
+              "https://cbi-v61-preview.onrender.com/healthz",
+              headers={"Accept":"application/json","User-Agent":"cbi-v64-c279-schema-probe"},
           )
-          with urllib.request.urlopen(request, timeout=20) as response:
+          with urllib.request.urlopen(req, timeout=20) as response:
               payload = json.loads(response.read().decode("utf-8"))
-          identity = dict(payload.get("deployment_identity") or {})
-          persistence = dict(payload.get("object_store_persistence") or {})
-          safe = {
-              "status": payload.get("status"),
-              "git_sha": identity.get("git_sha"),
-              "object_store_mode": identity.get("object_store_mode"),
-              "object_state_schema": identity.get("object_state_schema"),
-              "object_state_generation": identity.get("object_state_generation"),
-              "restore_generation": identity.get("restore_generation"),
-              "archive_format": persistence.get("archive_format"),
-              "generation": persistence.get("generation"),
-              "recovery_fingerprint_sha256": persistence.get("recovery_fingerprint_sha256"),
-              "prefix": persistence.get("prefix"),
-          }
-          print("C279_HEALTH_SAFE=" + json.dumps(safe, sort_keys=True, separators=(",", ":")))
-          assert safe["status"] in {"ok", "degraded"}
-          assert safe["git_sha"] == "a311a2a57ee43a1f1a3b2819bf28946566b05692"
-          assert safe["object_store_mode"] == "r2"
-          assert safe["object_state_schema"] == "cbi.object-store-state.v2"
-          assert safe["archive_format"] == "object_state_v2"
-          assert safe["generation"] == safe["object_state_generation"]
-          assert safe["prefix"] == "cbi-v61"
-          Path(os.environ["RUNNER_TEMP"]).joinpath("c279-health.json").write_text(
-              json.dumps(safe, sort_keys=True), encoding="utf-8"
-          )
+          ident = payload.get("deployment_identity") or {}
+          persistence = payload.get("object_store_persistence") or {}
+          assert ident.get("git_sha") == "a311a2a57ee43a1f1a3b2819bf28946566b05692"
+          assert ident.get("object_state_generation") == 669
+          assert persistence.get("recovery_fingerprint_sha256") == "3a3014f6bba6986cfc46bab676acdc087985f1fdbe6535a4317f6d0670cf0422"
+          print("C279_CURRENT_CLOUD_IDENTITY=PINNED")
 
-      - name: Probe production MCP read-only tools only
+      - name: Inspect only target read-only tool schemas
         shell: python
         env:
           CBI_READONLY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
         run: |
-          import json
-          import os
-          import urllib.error
-          import urllib.request
-
-          base = "https://cbi-v61-preview.onrender.com"
+          import json, os, urllib.request
           token = os.environ.get("CBI_READONLY_BEARER", "")
           if len(token) < 32:
               raise SystemExit("C279_READONLY_BEARER_UNAVAILABLE")
-
-          request_id = 0
-          def rpc(method, params):
-              global request_id
-              request_id += 1
-              body = json.dumps({
-                  "jsonrpc": "2.0", "id": request_id,
-                  "method": method, "params": params,
-              }, separators=(",", ":")).encode("utf-8")
-              req = urllib.request.Request(
-                  base + "/mcp", data=body, method="POST",
-                  headers={
-                      "Authorization": "Bearer " + token,
-                      "Content-Type": "application/json",
-                      "Accept": "application/json",
-                      "MCP-Protocol-Version": "2026-07-28",
-                      "User-Agent": "cbi-v64-c279-readonly-probe",
-                  },
-              )
-              try:
-                  with urllib.request.urlopen(req, timeout=30) as response:
-                      payload = json.loads(response.read().decode("utf-8"))
-              except urllib.error.HTTPError as exc:
-                  raise SystemExit(f"C279_PRODUCTION_MCP_AUTH_FAILED_HTTP_{exc.code}")
-              if payload.get("id") != request_id or payload.get("jsonrpc") != "2.0":
-                  raise SystemExit("C279_PRODUCTION_MCP_PROTOCOL_INVALID")
-              if payload.get("error"):
-                  raise SystemExit("C279_PRODUCTION_MCP_RPC_ERROR")
-              return payload.get("result") or {}
-
-          def call_readonly(name, arguments):
-              result = rpc("tools/call", {"name": name, "arguments": arguments})
-              structured = result.get("structuredContent")
-              if not isinstance(structured, dict):
-                  raise SystemExit("C279_PRODUCTION_MCP_STRUCTURED_CONTENT_MISSING")
-              return structured
-
-          health = call_readonly("get_runtime_health", {})
-          safe_health = {
-              "status": health.get("status"),
-              "runtime_version": health.get("runtime_version"),
-              "build_id": health.get("build_id"),
-              "checked_sessions": health.get("checked_sessions"),
-              "wal_prepared": ((health.get("mutation_wal") or {}).get("prepared_count")),
-              "wal_invalid": ((health.get("mutation_wal") or {}).get("invalid_count")),
-              "wal_reconciliation_required": ((health.get("mutation_wal") or {}).get("reconciliation_required")),
-          }
-          print("C279_MCP_RUNTIME_HEALTH_SAFE=" + json.dumps(safe_health, sort_keys=True, separators=(",", ":")))
-
-          state = call_readonly(
-              "get_investigation_state",
-              {"investigation_id": "INV-20260902T093152Z-5f3526759f65"},
+          body = json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}, separators=(",",":")).encode()
+          req = urllib.request.Request(
+              "https://cbi-v61-preview.onrender.com/mcp", data=body, method="POST",
+              headers={
+                  "Authorization":"Bearer " + token,
+                  "Content-Type":"application/json",
+                  "Accept":"application/json",
+                  "MCP-Protocol-Version":"2026-07-28",
+                  "User-Agent":"cbi-v64-c279-schema-probe",
+              },
           )
-          safe_state = {
-              "last_safe_seq": state.get("last_safe_seq"),
-              "last_safe_event_hash": state.get("last_safe_event_hash"),
-              "status": state.get("status"),
+          with urllib.request.urlopen(req, timeout=30) as response:
+              payload = json.loads(response.read().decode("utf-8"))
+          result = payload.get("result") or {}
+          wanted = {
+              "get_claims",
+              "get_account_state",
+              "get_information_history",
+              "evaluate_outreach_readiness",
+              "get_investigation_state",
           }
-          print("C279_MCP_DURABLE_TAIL_SAFE=" + json.dumps(safe_state, sort_keys=True, separators=(",", ":")))
-          if safe_state["last_safe_seq"] != 27:
-              raise SystemExit("C279_CURRENT_TAIL_SEQ_DRIFT")
-          if safe_state["last_safe_event_hash"] != "cf5d92ecf7f7d4842306cc39134bdd09aced5fd087179da1ab6b0da5ca19b498":
-              raise SystemExit("C279_CURRENT_TAIL_HASH_DRIFT")
-          print("C279_PRODUCTION_MCP_READONLY_TAIL=VERIFIED")
+          seen = set()
+          for tool in result.get("tools") or []:
+              name = tool.get("name")
+              if name not in wanted:
+                  continue
+              seen.add(name)
+              schema = tool.get("inputSchema") or {}
+              safe = {
+                  "name": name,
+                  "required": schema.get("required") or [],
+                  "properties": sorted((schema.get("properties") or {}).keys()),
+              }
+              print("C279_READONLY_SCHEMA=" + json.dumps(safe, sort_keys=True, separators=(",",":")))
+          missing = wanted - seen
+          if missing:
+              raise SystemExit("C279_READONLY_TOOL_SCHEMA_MISSING:" + ",".join(sorted(missing)))
 
-      - name: Checkout exact production source and assert ref unchanged
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: a311a2a57ee43a1f1a3b2819bf28946566b05692
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Assert production ref was not mutated
+      - name: Assert production ref remains unchanged
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "a311a2a57ee43a1f1a3b2819bf28946566b05692"
-          echo "C279_PRODUCTION_SOURCE_SHA_UNCHANGED=$(git rev-parse HEAD)"
+          remote="$(git ls-remote https://github.com/Scorp96/customs-buyer-intelligence-ledger refs/heads/cbi-v6-cloud-runtime-20260901 | cut -f1)"
+          test "$remote" = "a311a2a57ee43a1f1a3b2819bf28946566b05692"
+          echo "C279_PRODUCTION_REF_UNCHANGED=$remote"
