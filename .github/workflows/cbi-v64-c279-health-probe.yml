@@ -1,4 +1,4 @@
-name: CBI v6.4 C279 current-cloud read-only schema probe
+name: CBI v6.4 C279 current-cloud read-only semantic probe
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
           import json, urllib.request
           req = urllib.request.Request(
               "https://cbi-v61-preview.onrender.com/healthz",
-              headers={"Accept":"application/json","User-Agent":"cbi-v64-c279-schema-probe"},
+              headers={"Accept":"application/json","User-Agent":"cbi-v64-c279-semantic-probe"},
           )
           with urllib.request.urlopen(req, timeout=20) as response:
               payload = json.loads(response.read().decode("utf-8"))
@@ -30,52 +30,87 @@ jobs:
           assert persistence.get("recovery_fingerprint_sha256") == "3a3014f6bba6986cfc46bab676acdc087985f1fdbe6535a4317f6d0670cf0422"
           print("C279_CURRENT_CLOUD_IDENTITY=PINNED")
 
-      - name: Inspect only target read-only tool schemas
+      - name: Inspect C279 prepatch semantics using read-only tools only
         shell: python
         env:
           CBI_READONLY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
         run: |
-          import json, os, urllib.request
+          import json, os, re, urllib.request
+
+          INV = "INV-20260902T093152Z-5f3526759f65"
           token = os.environ.get("CBI_READONLY_BEARER", "")
           if len(token) < 32:
               raise SystemExit("C279_READONLY_BEARER_UNAVAILABLE")
-          body = json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}, separators=(",",":")).encode()
-          req = urllib.request.Request(
-              "https://cbi-v61-preview.onrender.com/mcp", data=body, method="POST",
-              headers={
-                  "Authorization":"Bearer " + token,
-                  "Content-Type":"application/json",
-                  "Accept":"application/json",
-                  "MCP-Protocol-Version":"2026-07-28",
-                  "User-Agent":"cbi-v64-c279-schema-probe",
-              },
-          )
-          with urllib.request.urlopen(req, timeout=30) as response:
-              payload = json.loads(response.read().decode("utf-8"))
-          result = payload.get("result") or {}
-          wanted = {
-              "get_claims",
-              "get_account_state",
-              "get_information_history",
-              "evaluate_outreach_readiness",
-              "get_investigation_state",
-          }
-          seen = set()
-          for tool in result.get("tools") or []:
-              name = tool.get("name")
-              if name not in wanted:
-                  continue
-              seen.add(name)
-              schema = tool.get("inputSchema") or {}
-              safe = {
-                  "name": name,
-                  "required": schema.get("required") or [],
-                  "properties": sorted((schema.get("properties") or {}).keys()),
-              }
-              print("C279_READONLY_SCHEMA=" + json.dumps(safe, sort_keys=True, separators=(",",":")))
-          missing = wanted - seen
-          if missing:
-              raise SystemExit("C279_READONLY_TOOL_SCHEMA_MISSING:" + ",".join(sorted(missing)))
+
+          request_id = 0
+          def rpc(method, params):
+              global request_id
+              request_id += 1
+              body = json.dumps({"jsonrpc":"2.0","id":request_id,"method":method,"params":params}, separators=(",",":")).encode()
+              req = urllib.request.Request(
+                  "https://cbi-v61-preview.onrender.com/mcp", data=body, method="POST",
+                  headers={
+                      "Authorization":"Bearer " + token,
+                      "Content-Type":"application/json",
+                      "Accept":"application/json",
+                      "MCP-Protocol-Version":"2026-07-28",
+                      "User-Agent":"cbi-v64-c279-semantic-probe",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              if payload.get("error"):
+                  raise SystemExit("C279_READONLY_RPC_ERROR")
+              return payload.get("result") or {}
+
+          def call(name, arguments):
+              result = rpc("tools/call", {"name":name,"arguments":arguments})
+              structured = result.get("structuredContent")
+              if not isinstance(structured, dict):
+                  raise SystemExit("C279_STRUCTURED_CONTENT_MISSING:" + name)
+              return structured
+
+          claims = call("get_claims", {"investigation_id":INV})
+          account = call("get_account_state", {"investigation_id":INV})
+          readiness = call("evaluate_outreach_readiness", {"investigation_id":INV})
+          state = call("get_investigation_state", {"investigation_id":INV})
+          history = call("get_information_history", {"investigation_id":INV,"related_account_id":"C279"})
+
+          def enumish(value):
+              return isinstance(value, str) and bool(re.fullmatch(r"[A-Z][A-Z0-9_+.-]{1,80}", value))
+
+          def walk(node, path=""):
+              if isinstance(node, dict):
+                  for key, value in node.items():
+                      p = f"{path}.{key}" if path else key
+                      lk = key.lower()
+                      if "route" in lk or "canonical" in lk or "readiness" in lk or "block" in lk or "claim" in lk:
+                          if isinstance(value, (list, dict)):
+                              print("C279_SAFE_SHAPE=" + json.dumps({"path":p,"type":type(value).__name__,"count":len(value)}, sort_keys=True, separators=(",",":")))
+                          elif isinstance(value, bool) or value is None or isinstance(value, int) or enumish(value):
+                              print("C279_SAFE_ENUM=" + json.dumps({"path":p,"value":value}, sort_keys=True, separators=(",",":")))
+                      walk(value, p)
+              elif isinstance(node, list):
+                  for idx, value in enumerate(node):
+                      walk(value, f"{path}[{idx}]")
+
+          for label, payload in (("claims",claims),("account",account),("readiness",readiness),("state",state),("history",history)):
+              print("C279_SAFE_TOP=" + json.dumps({"name":label,"keys":sorted(payload.keys())}, sort_keys=True, separators=(",",":")))
+              walk(payload, label)
+
+          claims_text = json.dumps(claims, sort_keys=True)
+          readiness_text = json.dumps(readiness, sort_keys=True)
+          if "contact.company_route" not in claims_text:
+              raise SystemExit("C279_COMPANY_ROUTE_CLAIM_MISSING")
+          if "SUPPORTED" not in claims_text:
+              raise SystemExit("C279_COMPANY_ROUTE_SUPPORTED_MARKER_MISSING")
+          if "IDENTITY_ONLY" not in readiness_text:
+              raise SystemExit("C279_PREPATCH_IDENTITY_ONLY_MARKER_MISSING")
+          if "VERIFIED_ACCOUNT_OWNED_ROUTE_REQUIRED" not in readiness_text:
+              raise SystemExit("C279_PREPATCH_ROUTE_BLOCKER_MISSING")
+          if state.get("last_safe_seq") != 27 or state.get("last_safe_event_hash") != "cf5d92ecf7f7d4842306cc39134bdd09aced5fd087179da1ab6b0da5ca19b498":
+              raise SystemExit("C279_DURABLE_TAIL_DRIFT")
+          print("C279_PREPATCH_READONLY_SEMANTICS=BASELINE_MARKERS_VERIFIED")
 
       - name: Assert production ref remains unchanged
         shell: bash
