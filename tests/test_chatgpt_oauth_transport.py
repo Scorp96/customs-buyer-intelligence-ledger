@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from mcp import remote_transport
+from mcp import chatgpt_oauth_transport, remote_transport
 from mcp.chatgpt_oauth_transport import (
     ChatGPTRemoteAuthConfig,
     _authorization_server_metadata,
@@ -165,6 +166,33 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
             clear=True,
         ):
             self.assertEqual("https://cbi-v61-preview.onrender.com", _public_base_url())
+
+    def test_main_forwards_diagnostic_hook_to_serve(self) -> None:
+        dispatch = mock.Mock(name="dispatch")
+        health = mock.Mock(name="health")
+        callback = mock.Mock(name="diagnostic_export")
+        token = "S" * 64
+        parser = mock.Mock()
+        parser.parse_args.return_value = SimpleNamespace(host="127.0.0.1", port=18787)
+        with (
+            mock.patch.object(remote_transport, "_parser", return_value=parser),
+            mock.patch.object(chatgpt_oauth_transport, "serve", return_value=17) as serve_mock,
+        ):
+            result = chatgpt_oauth_transport.main(
+                dispatch,
+                health=health,
+                diagnostic_export=callback,
+                diagnostic_static_bearer=token,
+            )
+        self.assertEqual(result, 17)
+        serve_mock.assert_called_once_with(
+            dispatch,
+            health=health,
+            host="127.0.0.1",
+            port=18787,
+            diagnostic_export=callback,
+            diagnostic_static_bearer=token,
+        )
 
 
 if __name__ == "__main__":
