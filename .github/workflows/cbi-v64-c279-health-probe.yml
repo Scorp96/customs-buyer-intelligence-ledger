@@ -1,4 +1,4 @@
-name: CBI v6.4 C279 live MCP surface inventory
+name: CBI v6.4 C279 unsigned production R2 probe
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
           import json, urllib.request
           req = urllib.request.Request(
               "https://cbi-v61-preview.onrender.com/healthz",
-              headers={"Accept":"application/json","User-Agent":"cbi-v64-c279-surface-inventory"},
+              headers={"Accept":"application/json","User-Agent":"cbi-v64-c279-r2-unsigned"},
           )
           with urllib.request.urlopen(req, timeout=20) as response:
               payload = json.loads(response.read().decode("utf-8"))
@@ -30,36 +30,26 @@ jobs:
           assert persistence.get("recovery_fingerprint_sha256") == "3a3014f6bba6986cfc46bab676acdc087985f1fdbe6535a4317f6d0670cf0422"
           print("C279_CURRENT_CLOUD_IDENTITY=PINNED")
 
-      - name: List live MCP tool names only
+      - name: Probe unsigned R2 current pointer access without credentials
         shell: python
-        env:
-          CBI_READONLY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
         run: |
-          import json, os, urllib.request
-          token = os.environ.get("CBI_READONLY_BEARER", "")
-          if len(token) < 32:
-              raise SystemExit("C279_READONLY_BEARER_UNAVAILABLE")
-          body = json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}, separators=(",",":")).encode()
-          req = urllib.request.Request(
-              "https://cbi-v61-preview.onrender.com/mcp", data=body, method="POST",
-              headers={
-                  "Authorization":"Bearer " + token,
-                  "Content-Type":"application/json",
-                  "Accept":"application/json",
-                  "MCP-Protocol-Version":"2026-07-28",
-                  "User-Agent":"cbi-v64-c279-surface-inventory",
-              },
-          )
-          with urllib.request.urlopen(req, timeout=30) as response:
-              payload = json.loads(response.read().decode("utf-8"))
-          if payload.get("error"):
-              raise SystemExit("C279_TOOLS_LIST_RPC_ERROR")
-          names = sorted(str(row.get("name") or "") for row in ((payload.get("result") or {}).get("tools") or []) if row.get("name"))
-          print("C279_LIVE_TOOL_COUNT=" + str(len(names)))
-          for name in names:
-              print("C279_LIVE_TOOL=" + name)
-          exportish = [name for name in names if any(token in name.lower() for token in ("event","session","export","snapshot","backup","log","raw"))]
-          print("C279_EXPORTISH_TOOL_NAMES=" + json.dumps(exportish, separators=(",",":")))
+          import urllib.error, urllib.request
+          url = "https://650e0986f2379c42507d3fc5ebb597a4.r2.cloudflarestorage.com/cbi-v61-production/cbi-v61/current.json"
+          for method in ("HEAD", "GET"):
+              req = urllib.request.Request(url, method=method, headers={"User-Agent":"cbi-v64-c279-r2-unsigned"})
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as response:
+                      code = int(response.status)
+                      if method == "GET":
+                          response.read(1)
+              except urllib.error.HTTPError as exc:
+                  code = int(exc.code)
+              print(f"C279_UNSIGNED_R2_{method}_HTTP={code}")
+              if code == 200:
+                  raise SystemExit("C279_PRODUCTION_R2_UNEXPECTEDLY_PUBLIC")
+              if code not in {401,403,404,405}:
+                  raise SystemExit(f"C279_UNSIGNED_R2_UNEXPECTED_HTTP_{code}")
+          print("C279_UNSIGNED_R2_ACCESS=NOT_PUBLIC")
 
       - name: Assert production ref remains unchanged
         shell: bash
