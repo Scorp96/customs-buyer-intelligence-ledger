@@ -4,83 +4,37 @@
 
 **Goal:** Build a temporary, static-admin-only, zero-write production diagnostic endpoint that can export exactly one precommitted C279 session JSONL and a capture client that persists only AEAD ciphertext.
 
-**Architecture:** Work on a temporary diagnostic branch derived from exact production SHA `a311a2a57ee43a1f1a3b2819bf28946566b05692`. The exporter reads one fixed server-side target from the already-bound production session root, validates a stable two-read snapshot and the existing append-only hash chain, and returns it only through a fixed authenticated endpoint. A separate capture client encrypts the response with X25519 + HKDF-SHA256 + ChaCha20-Poly1305. This branch is diagnostic-only and is not merged into the final v6.4 candidate.
+**Architecture:** Work on temporary diagnostic branch `cbi-v64-release-candidate-c279-diagnostic-a311a2a5` derived from exact production SHA `a311a2a57ee43a1f1a3b2819bf28946566b05692`. The exporter reads only one fixed server-side JSONL from the already-bound production session root and validates a stable two-read snapshot plus the existing append-only hash chain. A separate capture client validates the response and encrypts it with X25519 + HKDF-SHA256 + ChaCha20-Poly1305. The branch is diagnostic-only and never becomes part of the final v6.4 release candidate.
 
-**Tech Stack:** Python 3.10/3.11, stdlib HTTP server and unittest, existing `unified_runtime.core.digest`, `cryptography==50.0.1` for capture-only AEAD, GitHub Actions. PyPI source distribution SHA256 for `cryptography-50.0.1.tar.gz`: `693c99b49bd37d0d096e4334c10232c77248c415b98d35236094cdf96d57258b`.
+**Tech Stack:** Python 3.10/3.11, stdlib `unittest`/HTTP stack, existing `unified_runtime.core.digest`, capture-only `cryptography==50.0.1`, GitHub Actions.
 
 **Spec:** `docs/superpowers/specs/2026-09-05-cbi-v64-c279-single-session-export-design.md`
 
 ## Global Constraints
 
 - Base exact production SHA: `a311a2a57ee43a1f1a3b2819bf28946566b05692`.
-- Branch name: `cbi-v64-release-candidate-c279-diagnostic-a311a2a5`.
-- The branch may contain diagnostic code and test infrastructure only; it is never merged into the final v6.4 release candidate.
-- No private C279 id/hash/route, production bearer, R2 credential, or raw production JSONL may be committed or logged.
-- No implementation step mutates Render, production branch, production environment, R2, or live Runtime.
-- Production deployment remains a separate explicit approval gate after all implementation and security evidence is green.
-- `SessionStore.read()` / `read_valid_prefix()` must not be used by the exporter because they acquire live-root lock files.
-- The diagnostic endpoint is `POST /internal/v64/c279-session-export`, takes exact body `{}`, accepts no query string, and requires the exact static `CBI_REMOTE_BEARER_TOKEN`; GitHub OAuth alone is rejected.
-- Disabled/invalid/expired configuration makes the route 404.
-- Default response cap is 2 MiB; values above 8 MiB make configuration invalid.
-- The capture dependency is not installed into the production image/runtime.
+- No implementation step changes production branch, Render service/environment/deployment, R2, CRM, or live Runtime.
+- Production deployment remains a separate explicit approval gate.
+- No private C279 id/hash/route, production bearer, R2 credential, or raw production JSONL is committed or logged.
+- Exporter must not call `SessionStore.read()` or `read_valid_prefix()` against production because those acquire lock files.
+- Endpoint: `POST /internal/v64/c279-session-export`.
+- Exact request body: `{}` with `Content-Type: application/json`; any query string is rejected.
+- Auth: exact static `CBI_REMOTE_BEARER_TOKEN` only; GitHub OAuth fallback is rejected.
+- Disabled/invalid/expired config => 404.
+- Default response cap: 2 MiB. Config values above 8 MiB are invalid.
+- Capture dependency never enters production image/runtime.
+- Permanent four-matrix release CI and dedicated crypto CI must both be green on the exact diagnostic SHA before a deployment proposal.
 
 ---
 
-### Task 1: Diagnostic branch CI harness and snapshot-validator RED
+### Task 1: Diagnostic CI harness and zero-write snapshot validator
 
 **Files:**
-- Create: `.github/workflows/cbi-release-ci.yml` by copying the already-approved permanent release CI from integrated SHA `17f4fe160c0908a602224eab95d172ba4eb753c6` unchanged.
-- Create: `tests/test_v64_c279_single_session_export.py`
-- Create after RED: `mcp/c279_single_session_export_v64.py`
+- Create test infrastructure: `.github/workflows/cbi-release-ci.yml` copied byte-for-byte from integrated SHA `17f4fe160c0908a602224eab95d172ba4eb753c6`.
+- Create RED test: `tests/test_v64_c279_single_session_export.py`.
+- Create after RED: `mcp/c279_single_session_export_v64.py`.
 
 **Interfaces:**
-- Produces `C279ExportConfig` dataclass.
-- Produces `C279ExportError(code: str, http_status: int)`.
-- Produces `load_export_config(env: Mapping[str, str], *, process_started_at: datetime) -> C279ExportConfig | None`.
-- Produces `capture_stable_session(config: C279ExportConfig, session_root: Path) -> C279SessionSnapshot`.
-- `C279SessionSnapshot` fields: `payload: bytes`, `snapshot_sha256: str`, `byte_length: int`, `tail_seq: int`, `tail_event_hash: str`.
-
-- [ ] **Step 1: Create branch from exact production SHA**
-
-Create `cbi-v64-release-candidate-c279-diagnostic-a311a2a5` from `a311a2a57ee43a1f1a3b2819bf28946566b05692`.
-
-- [ ] **Step 2: Add permanent release CI workflow as diagnostic test infrastructure**
-
-Copy `.github/workflows/cbi-release-ci.yml` byte-for-byte from integrated SHA `17f4fe160...`. This gives the diagnostic branch the same four OS/Python contexts without changing production.
-
-- [ ] **Step 3: Write failing snapshot/config tests**
-
-The first test imports the missing module and therefore must fail before implementation.
-
-Required test cases:
-
-```python
-class V64C279SingleSessionExportTests(unittest.TestCase):
-    def test_disabled_configuration_returns_none(self): ...
-    def test_enabled_configuration_requires_exact_private_fields(self): ...
-    def test_expiry_more_than_30_minutes_after_process_start_is_invalid(self): ...
-    def test_max_bytes_defaults_to_2_mib_and_rejects_over_8_mib(self): ...
-    def test_valid_exact_session_is_captured_without_live_root_mutation(self): ...
-    def test_symlink_target_is_rejected(self): ...
-    def test_non_regular_target_is_rejected(self): ...
-    def test_oversized_target_is_rejected_before_returning_payload(self): ...
-    def test_sequence_break_is_rejected(self): ...
-    def test_previous_hash_break_is_rejected(self): ...
-    def test_event_hash_break_is_rejected(self): ...
-    def test_tail_sequence_mismatch_is_rejected(self): ...
-    def test_tail_hash_mismatch_is_rejected(self): ...
-    def test_first_and_second_read_change_is_rejected(self): ...
-```
-
-Use a synthetic `SessionStore` only to create fixture bytes before taking the inventory snapshot. The exporter itself must operate directly on bytes and may not call `SessionStore.read()`.
-
-- [ ] **Step 4: Witness RED**
-
-Run focused unittest. Expected: FAIL because `mcp.c279_single_session_export_v64` does not exist. Commit RED test only and record the exact CI run/job failure.
-
-- [ ] **Step 5: Implement configuration parser and pure snapshot validator**
-
-Core configuration contract:
 
 ```python
 @dataclass(frozen=True)
@@ -89,128 +43,220 @@ class C279ExportConfig:
     expected_tail_seq: int
     expected_tail_hash: str
     expires_at: datetime
-    max_bytes: int = 2 * 1024 * 1024
+    max_bytes: int
+
+@dataclass(frozen=True)
+class C279SessionSnapshot:
+    payload: bytes
+    snapshot_sha256: str
+    byte_length: int
+    tail_seq: int
+    tail_event_hash: str
+
+class C279ExportError(RuntimeError):
+    def __init__(self, code: str, http_status: int): ...
+
+def load_export_config(env: Mapping[str, str], *, process_started_at: datetime) -> C279ExportConfig | None: ...
+def capture_stable_session(config: C279ExportConfig, session_root: Path) -> C279SessionSnapshot: ...
 ```
 
-`load_export_config()` behavior:
+The interface names above are normative; implementation bodies are written only after RED.
 
-- false/missing `CBI_V64_C279_EXPORT_ENABLED` -> `None`;
-- enabled but any required field invalid -> `None`;
-- expected hash must match `[0-9a-f]{64}`;
-- id must match existing CBI investigation regex;
-- expiry must be UTC, in the future, and `<= process_started_at + 30 minutes`;
-- max bytes defaults 2 MiB and must be `1..8 MiB`.
+- [ ] **Step 1: Create branch from exact production SHA**
 
-Snapshot algorithm:
+Create `cbi-v64-release-candidate-c279-diagnostic-a311a2a5` from `a311a2a57ee43a1f1a3b2819bf28946566b05692`.
+
+- [ ] **Step 2: Add permanent release CI test infrastructure**
+
+Copy `.github/workflows/cbi-release-ci.yml` exactly from `17f4fe160c0908a602224eab95d172ba4eb753c6`. Do not edit production's `.github/workflows/cbi-v6-ci.yml`.
+
+- [ ] **Step 3: Write failing config/snapshot tests**
+
+The test module imports the missing exporter. It must contain concrete assertions for these behaviors:
+
+```python
+self.assertIsNone(load_export_config({}, process_started_at=started))
+self.assertIsNone(load_export_config({"CBI_V64_C279_EXPORT_ENABLED": "true"}, process_started_at=started))
+```
+
+For a valid synthetic fixture created with `SessionStore`, assert:
+
+```python
+snapshot = capture_stable_session(config, sessions_root)
+self.assertEqual(snapshot.payload, before_bytes)
+self.assertEqual(snapshot.byte_length, len(before_bytes))
+self.assertEqual(snapshot.tail_seq, expected_seq)
+self.assertEqual(snapshot.tail_event_hash, expected_hash)
+self.assertEqual(_inventory(sessions_root), before_inventory)
+```
+
+Separate tests must mutate fixture bytes/metadata and assert exact `C279ExportError.code` values:
+
+- `SNAPSHOT_INVALID` for malformed UTF-8/JSON, missing header, sequence gap, previous-hash mismatch, event-hash mismatch;
+- `SNAPSHOT_COMMITMENT_MISMATCH` for expected seq/hash mismatch;
+- `SNAPSHOT_TOO_LARGE` for size cap;
+- `SNAPSHOT_NOT_STABLE` when injected first/second read results differ;
+- `SNAPSHOT_TARGET_INVALID` for symlink, path escape, non-regular target, or filename/header id mismatch.
+
+- [ ] **Step 4: Witness RED**
+
+```bash
+python -m unittest tests.test_v64_c279_single_session_export -v
+```
+
+Expected: import failure because `mcp.c279_single_session_export_v64` does not exist. Commit only the failing test and record the exact RED CI run/job ids.
+
+- [ ] **Step 5: Implement configuration parser**
+
+`load_export_config()` uses these exact server-side names:
+
+- `CBI_V64_C279_EXPORT_ENABLED`
+- `CBI_V64_C279_EXPORT_EXPIRES_AT`
+- `CBI_V64_C279_EXPORT_INVESTIGATION_ID`
+- `CBI_V64_C279_EXPORT_EXPECTED_TAIL_SEQ`
+- `CBI_V64_C279_EXPORT_EXPECTED_TAIL_HASH`
+- `CBI_V64_C279_EXPORT_MAX_BYTES`
+
+Rules:
+
+- missing/false enable => `None`;
+- enabled with invalid/missing field => `None`;
+- id regex equals existing CBI investigation id regex;
+- expected hash regex `[0-9a-f]{64}`;
+- expiry parses as timezone-aware UTC, is later than `process_started_at`, and no later than `process_started_at + timedelta(minutes=30)`;
+- max bytes default `2 * 1024 * 1024`; accepted range `1..8 * 1024 * 1024`.
+
+- [ ] **Step 6: Implement direct two-read snapshot validation**
+
+Use no Runtime/SessionStore read helper. Exact algorithm:
 
 ```python
 root = session_root.resolve(strict=True)
 candidate = session_root / f"{config.investigation_id}.jsonl"
-if candidate.is_symlink(): reject
+if candidate.is_symlink():
+    raise C279ExportError("SNAPSHOT_TARGET_INVALID", 409)
 resolved = candidate.resolve(strict=True)
-if resolved.parent != root: reject
+if resolved.parent != root:
+    raise C279ExportError("SNAPSHOT_TARGET_INVALID", 409)
 pre = os.stat(resolved, follow_symlinks=False)
-if not stat.S_ISREG(pre.st_mode): reject
-if pre.st_size > config.max_bytes: raise SNAPSHOT_TOO_LARGE
+if not stat.S_ISREG(pre.st_mode):
+    raise C279ExportError("SNAPSHOT_TARGET_INVALID", 409)
+if pre.st_size > config.max_bytes:
+    raise C279ExportError("SNAPSHOT_TOO_LARGE", 413)
 first = _bounded_read(resolved, config.max_bytes)
 mid = os.stat(resolved, follow_symlinks=False)
 second = _bounded_read(resolved, config.max_bytes)
 post = os.stat(resolved, follow_symlinks=False)
-if first != second or _identity(pre) != _identity(mid) or _identity(mid) != _identity(post):
-    raise SNAPSHOT_NOT_STABLE
+if first != second or _file_identity(pre) != _file_identity(mid) or _file_identity(mid) != _file_identity(post):
+    raise C279ExportError("SNAPSHOT_NOT_STABLE", 409)
 ```
 
-Validate strict UTF-8 JSONL using the same contract as `SessionStore._read_unlocked`:
+`_bounded_read()` opens binary read-only and reads at most `max_bytes + 1`; more than `max_bytes` raises 413.
+
+Validate strict UTF-8 and the existing CBI chain contract exactly:
 
 ```python
+text = first.decode("utf-8")
+events = []
 previous = "0" * 64
 for line_number, line in enumerate(text.splitlines(), 1):
     event = json.loads(line)
     if event.get("seq") != line_number or event.get("prev_hash") != previous:
-        reject SNAPSHOT_INVALID
+        raise C279ExportError("SNAPSHOT_INVALID", 409)
     claimed = event.get("event_hash")
     unsigned = {key: value for key, value in event.items() if key != "event_hash"}
     if claimed != digest(unsigned):
-        reject SNAPSHOT_INVALID
+        raise C279ExportError("SNAPSHOT_INVALID", 409)
     previous = claimed
-if not events or events[0].get("event_type") != "INVESTIGATION_STARTED": reject
+    events.append(event)
+if not events or events[0].get("event_type") != "INVESTIGATION_STARTED":
+    raise C279ExportError("SNAPSHOT_INVALID", 409)
 ```
 
-Also require `events[0]["payload"]["investigation_id"] == config.investigation_id`, exact expected tail seq, and exact expected tail hash.
+Then require start payload investigation id == configured id, tail seq == expected seq, and tail hash == expected hash.
 
-- [ ] **Step 6: Verify GREEN**
-
-Run focused tests, then:
+- [ ] **Step 7: Verify GREEN**
 
 ```bash
+python -m unittest tests.test_v64_c279_single_session_export -v
 python -m unittest tests.test_v61_resume_read_only tests.test_v6_properties_and_crash -v
 ```
 
-- [ ] **Step 7: Commit Task 1 GREEN**
+- [ ] **Step 8: Commit Task 1 GREEN**
 
-Commit with `feat(v64): add zero-write C279 single-session snapshot validator`.
+Commit `feat(v64): add zero-write C279 single-session snapshot validator`.
 
 ---
 
 ### Task 2: Static-admin-only HTTP transport hook
 
 **Files:**
-- Create: `tests/test_v64_c279_export_transport.py`
-- Modify after RED: `mcp/remote_transport.py`
-- Modify after RED: `mcp/chatgpt_oauth_transport.py`
+- Create RED test: `tests/test_v64_c279_export_transport.py`.
+- Modify after RED: `mcp/remote_transport.py`.
+- Modify after RED: `mcp/chatgpt_oauth_transport.py`.
 
 **Interfaces:**
-- Produce `require_static_bearer(headers: Mapping[str, str], expected_token: str) -> None` in `mcp.remote_transport`.
-- Extend `chatgpt_oauth_transport.serve(..., diagnostic_export: Callable[[], dict[str, Any]] | None = None, diagnostic_static_bearer: str = "")`.
-- Exact path constant: `/internal/v64/c279-session-export`.
 
-- [ ] **Step 1: Write failing transport tests**
+```python
+def require_static_bearer(headers: Mapping[str, str], expected_token: str) -> None: ...
+```
 
-Tests instantiate the HTTP handler/server with a synthetic callback and prove:
+Extend:
 
-- callback `None` -> POST/GET diagnostic path is 404;
-- valid callback but no bearer -> 401;
-- OAuth-looking bearer that differs from exact static token -> 401 without invoking GitHub verifier;
-- query string -> 404;
-- wrong Content-Type -> 400;
-- malformed JSON -> 400;
-- body other than `{}` -> 400;
-- exact static bearer + `{}` -> 200 callback result;
-- GET/DELETE on enabled route -> 405;
-- `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` on JSON response;
-- `/mcp`, `/healthz`, OAuth metadata remain unchanged.
+```python
+def serve(
+    dispatch,
+    *,
+    health=None,
+    host=None,
+    port=None,
+    diagnostic_export=None,
+    diagnostic_static_bearer="",
+) -> int: ...
+```
+
+- [ ] **Step 1: Write failing HTTP tests**
+
+Start a synthetic local server with callback `lambda: {"schema": "cbi.v64-c279-single-session-export.v1", "snapshot_sha256": "0" * 64, "byte_length": 2, "tail_seq": 1, "tail_event_hash": "1" * 64, "payload_encoding": "base64", "payload": "e30="}` and static token `"S" * 64`.
+
+Assertions:
+
+- callback `None`: diagnostic POST and GET => 404;
+- enabled callback, no Authorization => 401;
+- bearer `"O" * 64` => 401 and callback counter remains zero;
+- URL with `?id=x` => 404;
+- Content-Type `text/plain` => 400;
+- malformed JSON => 400;
+- body `{"x":1}` => 400;
+- exact `Authorization: Bearer ` + `"S" * 64` and body `{}` => 200 and callback counter == 1;
+- GET/DELETE enabled route => 405;
+- success headers include `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`;
+- existing `/healthz`, `/mcp`, and OAuth metadata tests remain unchanged.
 
 - [ ] **Step 2: Witness RED**
 
-Run focused transport tests and commit the failing test before transport code.
-
-- [ ] **Step 3: Implement `require_static_bearer`**
-
-Use `hmac.compare_digest`; never expose token in exception text. Existing auth behavior must remain unchanged.
-
-- [ ] **Step 4: Implement optional diagnostic route**
-
-In `ChatGPTOAuthRequestHandler`, intercept only the exact diagnostic path. Do not add it to MCP discovery or OAuth metadata. `server.diagnostic_export` and `server.diagnostic_static_bearer` are set only when a callback is supplied.
-
-Success response schema must contain only:
-
-```json
-{
-  "schema": "cbi.v64-c279-single-session-export.v1",
-  "snapshot_sha256": "...",
-  "byte_length": 123,
-  "tail_seq": 27,
-  "tail_event_hash": "...",
-  "payload_encoding": "base64",
-  "payload": "..."
-}
+```bash
+python -m unittest tests.test_v64_c279_export_transport -v
 ```
 
-All failure responses omit session bytes and private expected/actual values.
+Commit the failing test before transport code.
 
-- [ ] **Step 5: Verify GREEN and existing transport regressions**
+- [ ] **Step 3: Implement static bearer primitive**
 
-Run focused test plus existing OAuth/remote-transport tests and MCP protocol tests.
+`require_static_bearer()` parses only `Authorization: Bearer <token>` and uses `hmac.compare_digest`. Errors contain only `Bearer authentication required` or `Invalid bearer credential`.
+
+- [ ] **Step 4: Implement optional route**
+
+In `ChatGPTOAuthRequestHandler`, intercept exactly `/internal/v64/c279-session-export`. If no callback is installed, return 404 before auth. If query exists, return 404. For enabled route require exact static bearer, `application/json`, and parsed `{}`. Call callback once and emit fixed JSON response. Do not register route in MCP discovery, OAuth metadata, or health.
+
+- [ ] **Step 5: Verify GREEN**
+
+```bash
+python -m unittest tests.test_v64_c279_export_transport -v
+python -m unittest discover -s tests -p "test_*remote*transport*.py" -v
+python mcp/v6_protocol_test.py
+python mcp/v61_hardening_protocol_test.py
+```
 
 - [ ] **Step 6: Commit Task 2**
 
@@ -218,31 +264,43 @@ Commit `feat(v64): add static-admin-only diagnostic HTTP hook`.
 
 ---
 
-### Task 3: Production entrypoint binding without R2/export side effects
+### Task 3: Production entrypoint binding without R2 side effects
 
 **Files:**
-- Create: `tests/test_v64_c279_export_entrypoint_contract.py`
-- Modify after RED: `mcp/server_v61_remote.py`
+- Create RED test: `tests/test_v64_c279_export_entrypoint_contract.py`.
+- Modify after RED: `mcp/c279_single_session_export_v64.py`.
+- Modify after RED: `mcp/server_v61_remote.py`.
 
 **Interfaces:**
-- `build_export_callback(session_root: Path, env: Mapping[str, str], process_started_at: datetime) -> Callable[[], dict[str, Any]] | None` lives in `mcp/c279_single_session_export_v64.py`.
-- Production entrypoint passes the callback and `CBI_REMOTE_BEARER_TOKEN` to `chatgpt_oauth_transport.main` only when config is valid.
 
-- [ ] **Step 1: Write structural/behavioral RED tests**
+```python
+def build_export_callback(
+    session_root: Path,
+    env: Mapping[str, str],
+    *,
+    process_started_at: datetime,
+) -> Callable[[], dict[str, Any]] | None: ...
+```
 
-Prove disabled/invalid env produces no callback; valid synthetic env binds only `_RUNTIME.store.root`; callback invocation changes neither live-root inventory/hashes nor object-store generation surrogate in the synthetic fixture.
+- [ ] **Step 1: Write RED tests**
+
+Assert `build_export_callback(..., env={}, ...) is None`; valid synthetic env returns a callable; callback response contains only fixed export schema fields; full live-root inventory and hashes before/after callback are identical.
+
+Also add a structural assertion against `mcp/server_v61_remote.py` that exporter binding uses `_RUNTIME.store.root` and does not call `_PERSISTENCE.restore_into` or `sync_if_changed` from the export callback path.
 
 - [ ] **Step 2: Witness RED**
 
-Focused test fails because entrypoint callback binding is absent.
+```bash
+python -m unittest tests.test_v64_c279_export_entrypoint_contract -v
+```
 
-- [ ] **Step 3: Implement minimal entrypoint wiring**
+- [ ] **Step 3: Implement callback builder and entrypoint wiring**
 
-At process start record `_PROCESS_STARTED_AT = datetime.now(timezone.utc)`. After `_RUNTIME` is bound, build the callback using `_RUNTIME.store.root`. Do not instantiate another Runtime, call `_PERSISTENCE.restore_into`, `sync_if_changed`, or touch `_LIVE_ROOT` manifests for export.
+Record `_PROCESS_STARTED_AT = datetime.now(timezone.utc)` at process start. After `_RUNTIME` is bound, call `build_export_callback(_RUNTIME.store.root, os.environ, process_started_at=_PROCESS_STARTED_AT)`. Pass callback plus `CBI_REMOTE_BEARER_TOKEN` to ChatGPT HTTP transport. Do not instantiate another Runtime and do not invoke R2 recovery/sync for an export request.
 
 - [ ] **Step 4: Verify GREEN**
 
-Run entrypoint contract test, production-adapter protocol test, and Docker smoke through CI.
+Run focused test and `python mcp/v61_hardening_protocol_test.py`.
 
 - [ ] **Step 5: Commit Task 3**
 
@@ -250,52 +308,80 @@ Commit `feat(v64): bind C279 diagnostic export to production session root`.
 
 ---
 
-### Task 4: Capture client TDD and pinned AEAD envelope
+### Task 4: Ciphertext-only capture client and dedicated crypto CI
 
 **Files:**
-- Create: `tests/test_v64_c279_capture.py`
-- Create after RED: `scripts/capture_v64_c279_single_session.py`
-- Create: `requirements/cbi-v64-c279-capture.txt`
-- Create: `.github/workflows/cbi-v64-c279-diagnostic-ci.yml`
+- Create RED test: `tests/test_v64_c279_capture.py`.
+- Create after RED: `scripts/capture_v64_c279_single_session.py`.
+- Create: `requirements/cbi-v64-c279-capture.txt`.
+- Create: `.github/workflows/cbi-v64-c279-diagnostic-ci.yml`.
 
 **Interfaces:**
-- Produce `encrypt_snapshot(payload: bytes, *, snapshot_sha256: str, recipient_public_key_b64: str) -> dict[str, str]`.
-- Produce `capture_and_encrypt(*, base_url: str, bearer: str, recipient_public_key_b64: str) -> dict[str, object]`.
-- Ciphertext schema: `cbi.v64-c279-ciphertext.v1`.
 
-- [ ] **Step 1: Write failing capture/crypto tests**
+```python
+def encrypt_snapshot(payload: bytes, *, snapshot_sha256: str, recipient_public_key_b64: str) -> dict[str, str]: ...
+def capture_and_encrypt(*, base_url: str, bearer: str, recipient_public_key_b64: str) -> dict[str, object]: ...
+```
 
-Tests use synthetic keys and HTTP fixture. Required cases:
+Ciphertext schema: `cbi.v64-c279-ciphertext.v1`.
 
-- byte-identical encrypt/decrypt roundtrip;
-- ciphertext tamper -> `InvalidTag`;
-- associated-data snapshot hash tamper -> `InvalidTag`;
-- response byte length mismatch rejected before encryption;
-- response SHA mismatch rejected before encryption;
-- bearer never appears in exception/log capture;
-- output envelope contains no plaintext/base64 plaintext field;
-- temporary plaintext file, when CLI path is exercised, is removed before exit.
+- [ ] **Step 1: Write RED crypto/capture tests**
 
-Use `unittest.skipUnless(importlib.util.find_spec("cryptography"), "cryptography capture dependency not installed")` only so permanent four-matrix CI can run without adding the dependency to ordinary production CI. The dedicated diagnostic CI below must install it and must show these tests actually execute rather than skip.
+With synthetic X25519 recipient key and synthetic endpoint response, assert:
 
-- [ ] **Step 2: Witness RED in dedicated diagnostic CI**
+- decrypt(encrypt(payload)) == payload;
+- ciphertext byte flip raises `cryptography.exceptions.InvalidTag`;
+- snapshot hash/AAD change raises `InvalidTag`;
+- response byte-length mismatch raises before encryption;
+- response SHA mismatch raises before encryption;
+- serialized envelope has exact keys `{schema, ephemeral_public_key, salt, nonce, snapshot_sha256, ciphertext}` and does not contain plaintext/base64 plaintext;
+- captured exception/log strings never contain synthetic bearer `"B" * 64`;
+- CLI writes only ciphertext JSON and creates no persistent plaintext file.
 
-Create the diagnostic workflow before implementation. It runs Ubuntu latest / Python 3.11, installs capture requirements, asserts `cryptography.__version__ == "50.0.1"`, runs focused tests and then all `test_v64_c279_*` tests.
+The test class uses `@unittest.skipUnless(importlib.util.find_spec("cryptography"), "cryptography capture dependency not installed")` so ordinary four-matrix CI does not gain a production dependency. Dedicated crypto CI must prove the tests execute, not skip.
 
-`requirements/cbi-v64-c279-capture.txt` must pin:
+- [ ] **Step 2: Add exact capture requirement and dedicated CI before implementation**
+
+`requirements/cbi-v64-c279-capture.txt`:
 
 ```text
 cryptography==50.0.1
 ```
 
-The plan/checkpoint records PyPI source SHA256 `693c99b49bd37d0d096e4334c10232c77248c415b98d35236094cdf96d57258b`; the diagnostic CI must download the sdist metadata or package artifact and verify the selected package provenance/hash before running capture tests. If the exact artifact hash cannot be deterministically verified, the diagnostic CI fails closed rather than silently installing an unverified version.
+Dedicated Ubuntu/Python 3.11 CI downloads one wheel before installation:
 
-- [ ] **Step 3: Implement exact X25519/HKDF/ChaCha20-Poly1305 envelope**
+```bash
+python -m pip download --disable-pip-version-check --no-deps --only-binary=:all: cryptography==50.0.1 -d "$RUNNER_TEMP/c279-crypto"
+python - <<'PY'
+import hashlib
+from pathlib import Path
+root = Path(__import__('os').environ['RUNNER_TEMP']) / 'c279-crypto'
+files = list(root.glob('cryptography-50.0.1-*.whl'))
+assert len(files) == 1, files
+sha = hashlib.sha256(files[0].read_bytes()).hexdigest()
+allowed = {
+    '51afcfceb15597cf2635068e4ac9a56b2abde622edde17f37d85fd7b5306497a',
+    '51593d180cf6d179bde5c5d065bed81386b1f381656ae7d042b7ffc87a9895ad',
+    'ff838d62ec1bfce4f9ba7fa16f4a7b554cd8d0c299e6be37502161a660c84eef',
+}
+assert sha in allowed, sha
+print('CRYPTOGRAPHY_WHEEL_SHA256_VERIFIED=' + sha)
+PY
+python -m pip install "$RUNNER_TEMP"/c279-crypto/cryptography-50.0.1-*.whl
+```
 
-Use:
+Those three hashes are the published CPython 3.11+ x86-64 Linux wheels for manylinux 2.34, 2.28 and 2.17 compatibility tiers. If GitHub's runner selects another artifact, CI fails closed until the plan is reviewed and updated.
+
+- [ ] **Step 3: Witness RED in dedicated CI**
+
+Run focused `tests.test_v64_c279_capture`; it must fail because capture implementation does not exist, and the job must show the crypto test was not skipped.
+
+- [ ] **Step 4: Implement exact AEAD**
 
 ```python
 shared = ephemeral_private.exchange(recipient_public)
+salt = os.urandom(32)
+nonce = os.urandom(12)
 key = HKDF(
     algorithm=hashes.SHA256(),
     length=32,
@@ -306,72 +392,60 @@ aad = b"cbi.v64-c279-ciphertext.v1|" + snapshot_sha256.encode("ascii")
 ciphertext = ChaCha20Poly1305(key).encrypt(nonce, payload, aad)
 ```
 
-Envelope fields: `schema`, `ephemeral_public_key`, `salt`, `nonce`, `snapshot_sha256`, `ciphertext`; all binary values base64url/standard base64 consistently documented in code.
+Serialize raw ephemeral X25519 public key, salt, nonce and ciphertext as base64 strings. Private recipient key never enters capture runner or production.
 
-- [ ] **Step 4: Implement capture HTTP validation**
+- [ ] **Step 5: Implement HTTP capture validation**
 
-Use `urllib.request`; POST exact `{}` with static bearer; validate response schema, payload encoding, decoded byte length and SHA before encryption. Never print response body or bearer.
+Use `urllib.request` to POST exact `{}`. Validate export schema, `payload_encoding == "base64"`, decoded length, and SHA-256 before encryption. Never log response body, bearer, investigation id, or tail hash.
 
-- [ ] **Step 5: Verify GREEN**
+- [ ] **Step 6: Verify GREEN**
 
-Dedicated diagnostic CI must show capture tests executed and passed. Permanent release CI may skip crypto-only tests if dependency is absent but all non-crypto diagnostic tests must pass on all four matrices.
+Dedicated CI must show crypto test execution and PASS. Run permanent four-matrix release CI too; crypto-only test may skip there, but all exporter/transport/entrypoint tests must execute and pass on all four matrices.
 
-- [ ] **Step 6: Commit Task 4**
+- [ ] **Step 7: Commit Task 4**
 
 Commit `feat(v64): add ciphertext-only C279 diagnostic capture client`.
 
 ---
 
-### Task 5: Full diagnostic exact-SHA verification
+### Task 5: Exact-SHA diagnostic verification
 
-**Files:**
-- No new runtime files unless a regression requires a TDD fix.
+- [ ] **Step 1: Require permanent four-matrix CI GREEN**
 
-- [ ] **Step 1: Wait for both workflows on exact diagnostic head**
+Required contexts:
 
-Required:
+- `regression (ubuntu-latest, py3.10)`
+- `regression (ubuntu-latest, py3.11)`
+- `regression (windows-latest, py3.10)`
+- `regression (windows-latest, py3.11)`
 
-1. four permanent release contexts green;
-2. dedicated `CBI v6.4 C279 diagnostic CI` green with crypto tests executed.
+- [ ] **Step 2: Require dedicated crypto CI GREEN**
 
-- [ ] **Step 2: Inspect all jobs and logs**
+Logs must show one allowed `CRYPTOGRAPHY_WHEEL_SHA256_VERIFIED=<hash>` and capture tests executed rather than skipped.
 
-Confirm no private values, no plaintext session fixture beyond synthetic data, no secret echo, and Docker smoke remains green.
+- [ ] **Step 3: Inspect privacy and branch scope**
 
-- [ ] **Step 3: Run privacy scan and compare branch scope**
+Run `python tests/privacy_scan.py`. Compare branch against `a311a2a57ee43a1f1a3b2819bf28946566b05692`; changes must be limited to diagnostic exporter/transport/entrypoint, capture client, tests, diagnostic requirements/workflows and checkpoint docs.
 
-Changed files must be limited to diagnostic exporter, transport/entrypoint changes, capture client, focused tests, diagnostic test requirements/workflows, and review/checkpoint docs.
+- [ ] **Step 4: Fresh production invariants**
 
-- [ ] **Step 4: Verify production remained untouched**
-
-Fresh-fetch production branch SHA and Render live deployment. Both must still be exact pre-diagnostic state because no deployment has been authorized.
+Fetch production branch and Render live deploy. Production must still be `a311a2a57ee43a1f1a3b2819bf28946566b05692` because deployment is not yet authorized.
 
 ---
 
-### Task 6: Pre-production deployment review package — STOP before mutation
+### Task 6: Pre-production review package — mandatory stop
 
 **Files:**
-- Create: `docs/superpowers/checkpoints/2026-09-05-v64-c279-diagnostic-preproduction-review.md`
+- Create: `docs/superpowers/checkpoints/2026-09-05-v64-c279-diagnostic-preproduction-review.md`.
 
-- [ ] **Step 1: Record exact implementation evidence**
+- [ ] **Step 1: Record exact evidence**
 
-Include exact diagnostic SHA, RED run ids, GREEN run ids, four-matrix results, dedicated crypto CI result, changed-file list, and proof endpoint defaults to 404.
+Include diagnostic HEAD SHA, RED/green run ids, four matrix results, dedicated crypto result/hash, changed-file list, endpoint-disabled-by-default proof, zero-live-root-mutation proof, and `PRODUCTION_MUTATION_PERFORMED=false`.
 
-- [ ] **Step 2: Record exact future mutation sequence without executing it**
+- [ ] **Step 2: Record future deployment sequence without executing it**
 
-The package must state that a later separately approved deployment would require:
-
-1. fresh production SHA/health check;
-2. secure production static-bearer caller channel;
-3. fast-forward diagnostic commits from the exact production baseline;
-4. private env configuration through Render without printing values;
-5. deployment and health check;
-6. fixed endpoint capture and immediate ciphertext handoff;
-7. explicit disable;
-8. fast-forward revert commit restoring ordinary production tree;
-9. redeploy and verify endpoint absent;
-10. verify production durable state/R2 generation continuity.
+A later explicit approval must cover: fresh production SHA/health, secure static-bearer caller channel, auditable fast-forward diagnostic Git commits, private Render env configuration, deployment, one-session capture, immediate ciphertext handoff, disable, fast-forward revert restoring ordinary code tree, redeploy, endpoint absence, and production durable/R2 continuity.
 
 - [ ] **Step 3: STOP**
 
-Do not update the production branch, Render environment, Render deployment, R2, or production ruleset. Present the pre-production review package for explicit human approval.
+Do not update production branch, Render environment/deploy, R2, CRM, live Runtime, PR merge state, or repository ruleset. Present this review package for explicit production-deployment approval.
