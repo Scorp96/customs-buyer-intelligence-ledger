@@ -66,5 +66,8 @@ jobs:
       - name: Run C279 ciphertext capture contract
         run: python -m unittest tests.test_v64_c279_capture -v
 
+      - name: Run zero-mutation C279 preflight TDD contract
+        run: python -m unittest tests.test_v64_c279_zero_mutation_preflight -v
+
       - name: Run privacy scan
         run: python tests/privacy_scan.py
