@@ -1,0 +1,162 @@
+name: CBI v6.4 C279 isolated current-cloud regression
+
+on:
+  push:
+    branches:
+      - cbi-v64-c279-isolated-regression-4733a9b3
+
+permissions:
+  contents: read
+
+jobs:
+  c279:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      R2_ENDPOINT: ${{ secrets.CBI_V63_R2_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.CBI_V63_R2_BUCKET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.CBI_V63_R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.CBI_V63_R2_SECRET_ACCESS_KEY }}
+      R2_REGION: ${{ secrets.CBI_V63_R2_REGION }}
+      C279_BRIDGE_JSON: ${{ secrets.CBI_V64_C279_BRIDGE_EVIDENCE }}
+
+    steps:
+      - name: Checkout candidate-derived diagnostic branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Restore current production R2 generation read-only
+        shell: python
+        run: |
+          import json
+          import os
+          import pathlib
+          import urllib.request
+
+          from mcp.object_store_persistence import S3CompatibleClient, S3Config
+          from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
+
+          required = ["R2_ENDPOINT", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit("C279_R2_READ_CREDENTIALS_MISSING:" + ",".join(missing))
+
+          request = urllib.request.Request(
+              "https://cbi-v61-preview.onrender.com/healthz",
+              headers={"Accept": "application/json", "User-Agent": "cbi-v64-c279-isolated-regression"},
+              method="GET",
+          )
+          with urllib.request.urlopen(request, timeout=20) as response:
+              health = json.load(response)
+
+          deployment = dict(health.get("deployment_identity") or {})
+          persistence = dict(health.get("object_store_persistence") or {})
+          if health.get("status") != "ok" or health.get("durable_root_bound") is not True:
+              raise SystemExit("C279_CURRENT_CLOUD_NOT_HEALTHY")
+          if deployment.get("git_sha") != "a311a2a57ee43a1f1a3b2819bf28946566b05692":
+              raise SystemExit("C279_PRODUCTION_SHA_DRIFT")
+          if persistence.get("enabled") is not True or persistence.get("archive_format") != "object_state_v2":
+              raise SystemExit("C279_CURRENT_CLOUD_R2_V2_REQUIRED")
+          health_generation = int(persistence["generation"])
+          health_recovery_fp = str(persistence["recovery_fingerprint_sha256"])
+          prefix = str(persistence.get("prefix") or "")
+          if prefix != "cbi-v61":
+              raise SystemExit("C279_PRODUCTION_PREFIX_DRIFT")
+
+          client = S3CompatibleClient(S3Config(
+              endpoint=os.environ["R2_ENDPOINT"],
+              bucket=os.environ["R2_BUCKET"],
+              access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+              secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+              region=os.environ.get("R2_REGION") or "auto",
+          ))
+          original_request = client._request
+          def read_only_request(method, **kwargs):
+              if str(method).upper() not in {"GET", "HEAD"}:
+                  raise RuntimeError("C279_READ_ONLY_OBJECT_STORE_GUARD")
+              return original_request(method, **kwargs)
+          client._request = read_only_request
+
+          manager = RecoveryObjectStoreStateManagerV63(client, prefix=prefix)
+          pointer = manager.read_pointer(required=True)
+          if int(pointer.generation) != health_generation:
+              raise SystemExit("C279_R2_POINTER_GENERATION_DIFFERS_FROM_LIVE_HEALTH")
+          if str(getattr(pointer, "recovery_fingerprint_sha256", "")) != health_recovery_fp:
+              raise SystemExit("C279_R2_POINTER_FINGERPRINT_DIFFERS_FROM_LIVE_HEALTH")
+
+          target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "c279-production-source"
+          if target.exists():
+              raise SystemExit("C279_SOURCE_TARGET_MUST_START_ABSENT")
+          if not manager.restore_into(target):
+              raise SystemExit("C279_R2_RESTORE_RETURNED_FALSE")
+          if not (target / "sessions").is_dir():
+              raise SystemExit("C279_RESTORED_SESSIONS_MISSING")
+          if not (target / "mcp-idempotency-v61").is_dir():
+              raise SystemExit("C279_RESTORED_WAL_MISSING")
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as handle:
+              handle.write("CBI_V64_C279_SOURCE_RUNTIME_ROOT=" + str(target) + "\n")
+          print("C279_R2_READONLY_RESTORE=PASS")
+          print("C279_CURRENT_GENERATION=" + str(health_generation))
+          print("C279_SOURCE_RUNTIME_ARTIFACT_UPLOADED=false")
+
+      - name: Bind private bridge and run isolated full-runtime regression
+        shell: python
+        run: |
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import sys
+
+          raw = os.environ.get("C279_BRIDGE_JSON") or ""
+          if not raw:
+              print("C279_BRIDGE_SECRET_PRESENT=false")
+              raise SystemExit("C279_PRIVATE_BRIDGE_SECRET_REQUIRED")
+          try:
+              bridge = json.loads(raw)
+          except json.JSONDecodeError:
+              raise SystemExit("C279_PRIVATE_BRIDGE_SECRET_MUST_BE_JSON")
+          print("C279_BRIDGE_SECRET_PRESENT=true")
+
+          source_root = pathlib.Path(os.environ["CBI_V64_C279_SOURCE_RUNTIME_ROOT"]).resolve()
+          investigation_id = str(bridge.get("investigation_id") or "")
+          durable = dict(bridge.get("durable_state") or {})
+          if not investigation_id or "last_safe_seq" not in durable or not durable.get("last_safe_event_hash"):
+              raise SystemExit("C279_PRIVATE_BRIDGE_REQUIRED_FIELDS_MISSING")
+          session = source_root / "sessions" / (investigation_id + ".jsonl")
+          if not session.is_file():
+              raise SystemExit("C279_BRIDGE_SESSION_NOT_IN_CURRENT_R2_GENERATION")
+          tail = None
+          with session.open("r", encoding="utf-8-sig") as handle:
+              for line in handle:
+                  if line.strip():
+                      tail = json.loads(line)
+          if not isinstance(tail, dict):
+              raise SystemExit("C279_SOURCE_SESSION_EMPTY")
+          if int(tail.get("seq", -1)) != int(durable["last_safe_seq"]):
+              raise SystemExit("C279_SOURCE_SEQ_MISMATCH")
+          if str(tail.get("event_hash") or "") != str(durable["last_safe_event_hash"]):
+              raise SystemExit("C279_SOURCE_EVENT_HASH_MISMATCH")
+          print("C279_SOURCE_BRIDGE_TAIL_BINDING=PASS")
+
+          bridge_path = pathlib.Path(os.environ["RUNNER_TEMP"]) / "c279-private-bridge.json"
+          bridge_path.write_text(json.dumps(bridge, separators=(",", ":")), encoding="utf-8")
+          bridge_path.chmod(0o600)
+          env = dict(os.environ)
+          env["CBI_V64_C279_BRIDGE_EVIDENCE"] = str(bridge_path)
+          env["CBI_V64_C279_SOURCE_RUNTIME_ROOT"] = str(source_root)
+          completed = subprocess.run(
+              [sys.executable, "-m", "unittest", "-q", "tests.test_v64_c279_full_runtime.V64C279FullRuntimeRegression.test_c279_canonical_route_can_prepare_outreach_full_runtime"],
+              env=env,
+              check=False,
+              text=True,
+              capture_output=True,
+          )
+          if completed.returncode != 0:
+              print("C279_TARGETED_REGRESSION=FAIL")
+              # Do not echo stdout/stderr: they may contain private runtime details.
+              print("C279_STDOUT_SHA256_REDACTED=true")
+              raise SystemExit(completed.returncode)
+          print("C279_TARGETED_REGRESSION=PASS")
+          print("C279_LIVE_SOURCE_MUTATED=false")
+          print("C279_RUNTIME_ARTIFACT_UPLOADED=false")
