@@ -1,0 +1,113 @@
+name: CBI v6.4 production MCP read-only probe
+
+on:
+  push:
+    branches:
+      - cbi-v64-c279-isolated-regression-4733a9b3
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ACCEPTANCE_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+    steps:
+      - name: Probe production MCP with existing acceptance bearer
+        shell: python
+        run: |
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          token = os.environ.get("ACCEPTANCE_BEARER") or ""
+          if not token:
+              raise SystemExit("ACCEPTANCE_BEARER_PRESENT=false")
+          print("ACCEPTANCE_BEARER_PRESENT=true")
+
+          base = "https://cbi-v61-preview.onrender.com"
+          with urllib.request.urlopen(
+              urllib.request.Request(
+                  base + "/healthz",
+                  headers={"Accept": "application/json", "User-Agent": "cbi-v64-production-mcp-readonly-probe"},
+                  method="GET",
+              ),
+              timeout=30,
+          ) as response:
+              health = json.load(response)
+          identity = dict(health.get("deployment_identity") or {})
+          if health.get("status") != "ok":
+              raise SystemExit("PRODUCTION_HEALTH_NOT_OK")
+          if identity.get("git_sha") != "a311a2a57ee43a1f1a3b2819bf28946566b05692":
+              raise SystemExit("PRODUCTION_SHA_DRIFT")
+          print("PRODUCTION_HEALTH_PIN=PASS")
+
+          next_id = 1
+          def rpc(method, params):
+              global next_id
+              request_id = next_id
+              next_id += 1
+              body = json.dumps({
+                  "jsonrpc": "2.0",
+                  "id": request_id,
+                  "method": method,
+                  "params": params,
+              }, separators=(",", ":")).encode("utf-8")
+              request = urllib.request.Request(
+                  base + "/mcp",
+                  data=body,
+                  method="POST",
+                  headers={
+                      "Authorization": "Bearer " + token,
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                      "MCP-Protocol-Version": "2026-07-28",
+                      "User-Agent": "cbi-v64-production-mcp-readonly-probe",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      payload = json.load(response)
+              except urllib.error.HTTPError as exc:
+                  print("PRODUCTION_MCP_HTTP_STATUS=" + str(exc.code))
+                  raise SystemExit("PRODUCTION_MCP_AUTH_OR_PROTOCOL_REJECTED")
+              if payload.get("jsonrpc") != "2.0" or payload.get("id") != request_id:
+                  raise SystemExit("PRODUCTION_MCP_JSONRPC_INVALID")
+              if isinstance(payload.get("error"), dict):
+                  code = payload["error"].get("code")
+                  print("PRODUCTION_MCP_JSONRPC_ERROR_CODE=" + str(code))
+                  raise SystemExit("PRODUCTION_MCP_JSONRPC_REJECTED")
+              result = payload.get("result")
+              if not isinstance(result, dict):
+                  raise SystemExit("PRODUCTION_MCP_RESULT_INVALID")
+              return result
+
+          rpc("initialize", {
+              "protocolVersion": "2025-06-18",
+              "capabilities": {},
+              "clientInfo": {"name": "cbi-v64-production-mcp-readonly-probe", "version": "1"},
+          })
+          listed = rpc("tools/list", {})
+          tools = listed.get("tools")
+          if not isinstance(tools, list):
+              raise SystemExit("PRODUCTION_MCP_TOOLS_LIST_MISSING")
+          names = sorted({
+              str(item.get("name") or "").strip()
+              for item in tools
+              if isinstance(item, dict) and str(item.get("name") or "").strip()
+          })
+          interesting = [
+              name for name in names
+              if any(marker in name.lower() for marker in (
+                  "export", "snapshot", "backup", "runtime", "state", "investigation",
+                  "journal", "portfolio", "history", "evidence", "recovery",
+              ))
+          ]
+          print("PRODUCTION_MCP_AUTH=PASS")
+          print("PRODUCTION_MCP_TOOL_COUNT=" + str(len(names)))
+          print("PRODUCTION_MCP_INTERESTING_TOOLS=" + json.dumps(interesting, separators=(",", ":")))
+          print("MUTATING_TOOL_CALLED=false")
+          print("SECRET_VALUE_PRINTED=false")
