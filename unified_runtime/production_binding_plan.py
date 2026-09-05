@@ -15,15 +15,72 @@ from .recovery_overlay_acceptance_v63 import validate_v63_recovery_overlay_accep
 _resolve_active_mcp_entrypoint = resolve_active_mcp_entrypoint
 _EXPECTED_PREPATCH_GAPS = {"V63_MUTATION_INVENTORY_INCOMPLETE"}
 
+# Explicit v6.3-owned payload boundary; never infer ownership from directory contents.
+V63_RUNTIME_PAYLOAD_NAMES = (
+    "adapter_patch_compiler_v63.py",
+    "adapter_patch_recipe_v63.py",
+    "adapter_recovery_mapping_v63.py",
+    "adapter_source_probe_v63.py",
+    "backend_correlation_acceptance_v63.py",
+    "branch_signal_policy.py",
+    "buyer_archetypes.py",
+    "candidate_anchor.py",
+    "candidate_research_gate.py",
+    "canonical_resolution_gate.py",
+    "capability_profile.py",
+    "contact_exhaustion.py",
+    "contact_source_execution.py",
+    "contract_v63.py",
+    "crm_projection.py",
+    "demand_evidence.py",
+    "demand_expansion.py",
+    "demand_market.py",
+    "demand_pipeline.py",
+    "exact_recovery_acceptance_v63.py",
+    "existing_production_store_backend_v63.py",
+    "expansion_planner.py",
+    "legacy_peer_projection.py",
+    "live_contract_validator_v63.py",
+    "live_exact_recovery_runner_v63.py",
+    "live_recovery_overlay_runner_v63.py",
+    "local_context_resolution.py",
+    "local_outreach_policy.py",
+    "market_scope.py",
+    "mcp_entrypoint_v63.py",
+    "mcp_schema_v63.py",
+    "mro_integration_patch.py",
+    "opportunity_domain.py",
+    "portfolio_metrics.py",
+    "product_profiles.py",
+    "production_binding_plan.py",
+    "production_checkout_probe.py",
+    "production_correlation_source_probe_v63.py",
+    "production_gate_v63.py",
+    "production_integration_runner.py",
+    "production_source_snapshot_v63.py",
+    "recovery_acceptance_v63.py",
+    "recovery_overlay_acceptance_v63.py",
+    "recovery_overlay_patch_compiler_v63.py",
+    "recovery_overlay_probe_v63.py",
+    "recovery_overlay_report_builder_v63.py",
+    "recovery_semantics_v63.py",
+    "recursive_expansion.py",
+    "reference_backend_correlation_runner_v63.py",
+    "release_evidence_v63.py",
+    "research_scheduler.py",
+    "route_reuse.py",
+    "runtime_backend_binding_plan_v63.py",
+    "runtime_durable_backend_v63.py",
+    "runtime_event_primitive_probe_v63.py",
+    "sales_readiness.py",
+    "search_localization.py",
+    "source_execution.py",
+    "wal_contract_v63.py",
+)
+
 
 def _runtime_payload_files() -> list[str]:
-    root = Path(__file__).resolve().parent
-    files = []
-    for path in sorted(root.glob("*.py")):
-        if path.name == "__init__.py":
-            continue
-        files.append(f"unified_runtime/{path.name}")
-    return files
+    return [f"unified_runtime/{name}" for name in V63_RUNTIME_PAYLOAD_NAMES]
 
 
 def build_v63_production_binding_plan(
