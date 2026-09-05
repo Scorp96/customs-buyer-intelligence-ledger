@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -13,6 +14,17 @@ WORKFLOW = ROOT / ".github" / "workflows" / "cbi-v63-render-r2-pvc-acceptance.ym
 SCRIPT = ROOT / "scripts" / "run_v63_render_r2_pvc_acceptance.py"
 STATUS_ARTIFACT = "V63_RENDER_R2_PVC_ACCEPTANCE_STATUS.json"
 ZERO_SHA = "0" * 40
+EXTERNAL_CONFIGURATION_KEYS = (
+    "CBI_V63_RENDER_DEPLOY_HOOK_URL",
+    "CBI_V63_RENDER_RESTART_HOOK_URL",
+    "CBI_V63_ACCEPTANCE_BASE_URL",
+    "CBI_V63_ACCEPTANCE_BEARER_TOKEN",
+    "CBI_V63_R2_ENDPOINT",
+    "CBI_V63_R2_BUCKET",
+    "CBI_V63_R2_ACCESS_KEY_ID",
+    "CBI_V63_R2_SECRET_ACCESS_KEY",
+    "CBI_V63_R2_PREFIX",
+)
 
 
 class V63RenderR2WorkflowContractTests(unittest.TestCase):
@@ -37,23 +49,17 @@ class V63RenderR2WorkflowContractTests(unittest.TestCase):
     def test_workflow_requires_isolated_external_coordinates_without_committed_credentials(self) -> None:
         self.assertTrue(WORKFLOW.is_file(), "Task 9 workflow is missing")
         text = WORKFLOW.read_text(encoding="utf-8")
-        for name in (
-            "CBI_V63_RENDER_DEPLOY_HOOK_URL",
-            "CBI_V63_RENDER_RESTART_HOOK_URL",
-            "CBI_V63_ACCEPTANCE_BASE_URL",
-            "CBI_V63_ACCEPTANCE_BEARER_TOKEN",
-            "CBI_V63_R2_ENDPOINT",
-            "CBI_V63_R2_BUCKET",
-            "CBI_V63_R2_ACCESS_KEY_ID",
-            "CBI_V63_R2_SECRET_ACCESS_KEY",
-            "CBI_V63_R2_PREFIX",
-        ):
+        for name in EXTERNAL_CONFIGURATION_KEYS:
             self.assertIn(name, text)
         self.assertIn("secrets.", text)
         self.assertNotIn("cbi-v6-cloud-runtime-20260901.onrender.com", text)
 
     def test_cli_missing_external_configuration_is_blocked_external_not_pass(self) -> None:
         self.assertTrue(SCRIPT.is_file(), "Task 9 CLI is missing")
+        environment = dict(os.environ)
+        for name in EXTERNAL_CONFIGURATION_KEYS:
+            environment.pop(name, None)
+        environment["PATH"] = str(Path(sys.executable).parent)
         with tempfile.TemporaryDirectory(prefix="cbi-v63-render-r2-blocked-") as tmp_name:
             completed = subprocess.run(
                 [
@@ -67,7 +73,7 @@ class V63RenderR2WorkflowContractTests(unittest.TestCase):
                 cwd=ROOT,
                 text=True,
                 capture_output=True,
-                env={"PATH": str(Path(sys.executable).parent)},
+                env=environment,
                 timeout=20,
                 check=False,
             )
