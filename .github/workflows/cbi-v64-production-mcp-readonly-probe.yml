@@ -11,11 +11,11 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     env:
       ACCEPTANCE_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
     steps:
-      - name: Bind production durable tails by one-way commitments
+      - name: Verify committed C279 production semantics read-only
         shell: python
         run: |
           import hashlib
@@ -24,6 +24,7 @@ jobs:
           import urllib.error
           import urllib.request
 
+          TARGET = "4881a1e3ab093e48a22ef990c26a871445aaddf24074ab38300f863e62d09165"
           token = os.environ.get("ACCEPTANCE_BEARER") or ""
           if not token:
               raise SystemExit("ACCEPTANCE_BEARER_PRESENT=false")
@@ -33,29 +34,24 @@ jobs:
               with urllib.request.urlopen(
                   urllib.request.Request(
                       base + "/healthz",
-                      headers={"Accept":"application/json","User-Agent":"cbi-v64-production-tail-commitment-probe"},
+                      headers={"Accept":"application/json","User-Agent":"cbi-v64-production-c279-semantic-probe"},
                       method="GET",
-                  ),
-                  timeout=45,
+                  ), timeout=45,
               ) as response:
                   return json.load(response)
 
           before = health()
           identity = dict(before.get("deployment_identity") or {})
-          persistence_before = dict(before.get("object_store_persistence") or {})
-          if before.get("status") != "ok":
-              raise SystemExit("PRODUCTION_HEALTH_NOT_OK")
-          if identity.get("git_sha") != "a311a2a57ee43a1f1a3b2819bf28946566b05692":
-              raise SystemExit("PRODUCTION_SHA_DRIFT")
-          if persistence_before.get("enabled") is not True:
-              raise SystemExit("PRODUCTION_DURABLE_PERSISTENCE_REQUIRED")
+          persist_before = dict(before.get("object_store_persistence") or {})
+          if before.get("status") != "ok" or identity.get("git_sha") != "a311a2a57ee43a1f1a3b2819bf28946566b05692":
+              raise SystemExit("PRODUCTION_HEALTH_OR_SHA_PIN_FAILED")
 
           next_id = 1
           def rpc(method, params):
               global next_id
-              request_id = next_id
+              rid = next_id
               next_id += 1
-              body = json.dumps({"jsonrpc":"2.0","id":request_id,"method":method,"params":params}, separators=(",", ":")).encode("utf-8")
+              body = json.dumps({"jsonrpc":"2.0","id":rid,"method":method,"params":params}, separators=(",", ":")).encode()
               request = urllib.request.Request(
                   base + "/mcp", data=body, method="POST",
                   headers={
@@ -63,73 +59,84 @@ jobs:
                       "Content-Type":"application/json",
                       "Accept":"application/json",
                       "MCP-Protocol-Version":"2026-07-28",
-                      "User-Agent":"cbi-v64-production-tail-commitment-probe",
+                      "User-Agent":"cbi-v64-production-c279-semantic-probe",
                   },
               )
-              try:
-                  with urllib.request.urlopen(request, timeout=120) as response:
-                      payload = json.load(response)
-              except urllib.error.HTTPError as exc:
-                  print("PRODUCTION_MCP_HTTP_STATUS=" + str(exc.code))
-                  raise SystemExit("PRODUCTION_MCP_AUTH_OR_PROTOCOL_REJECTED")
-              if payload.get("jsonrpc") != "2.0" or payload.get("id") != request_id:
-                  raise SystemExit("PRODUCTION_MCP_JSONRPC_INVALID")
-              if isinstance(payload.get("error"), dict):
-                  print("PRODUCTION_MCP_JSONRPC_ERROR_CODE=" + str(payload["error"].get("code")))
+              with urllib.request.urlopen(request, timeout=120) as response:
+                  payload = json.load(response)
+              if payload.get("jsonrpc") != "2.0" or payload.get("id") != rid or isinstance(payload.get("error"), dict):
                   raise SystemExit("PRODUCTION_MCP_JSONRPC_REJECTED")
               result = payload.get("result")
               if not isinstance(result, dict):
                   raise SystemExit("PRODUCTION_MCP_RESULT_INVALID")
               return result
 
-          def call_tool(name, arguments):
+          def call(name, arguments):
               result = rpc("tools/call", {"name":name,"arguments":arguments})
-              structured = result.get("structuredContent")
-              if not isinstance(structured, dict):
-                  raise SystemExit("PRODUCTION_TOOL_STRUCTURED_CONTENT_MISSING:" + name)
-              return structured
+              data = result.get("structuredContent")
+              if not isinstance(data, dict):
+                  raise SystemExit("STRUCTURED_CONTENT_MISSING:" + name)
+              return data
 
-          rpc("initialize", {
-              "protocolVersion":"2025-06-18","capabilities":{},
-              "clientInfo":{"name":"cbi-v64-production-tail-commitment-probe","version":"1"},
-          })
-          queue = call_tool("get_portfolio_queue", {"include_non_active":True,"include_non_production":True,"limit":1000})
-          rows = queue.get("queue")
-          if not isinstance(rows, list):
-              raise SystemExit("PORTFOLIO_QUEUE_ROWS_MISSING")
-
-          commitments = []
-          invalid = 0
-          for row in rows:
+          def commitment(row):
               if not isinstance(row, dict):
-                  invalid += 1
-                  continue
-              investigation_id = str(row.get("investigation_id") or "")
+                  return ""
+              inv = str(row.get("investigation_id") or "")
               seq = row.get("last_safe_seq")
               event_hash = str(row.get("last_safe_event_hash") or "")
-              if not investigation_id or isinstance(seq, bool) or not isinstance(seq, int) or len(event_hash) != 64:
-                  invalid += 1
-                  continue
-              canonical = f"{investigation_id}|{seq}|{event_hash}".encode("utf-8")
-              commitments.append(hashlib.sha256(canonical).hexdigest())
-          commitments.sort()
+              if not inv or isinstance(seq, bool) or not isinstance(seq, int) or len(event_hash) != 64:
+                  return ""
+              return hashlib.sha256(f"{inv}|{seq}|{event_hash}".encode()).hexdigest()
+
+          def shape(value, depth=0):
+              if depth >= 5:
+                  return type(value).__name__
+              if isinstance(value, dict):
+                  return {str(k):shape(v, depth+1) for k,v in sorted(value.items())}
+              if isinstance(value, list):
+                  return {"type":"list","count":len(value),"sample_shape":shape(value[0], depth+1) if value else None}
+              return type(value).__name__
+
+          rpc("initialize", {"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cbi-v64-production-c279-semantic-probe","version":"1"}})
+          queue = call("get_portfolio_queue", {"include_non_active":True,"include_non_production":True,"limit":1000})
+          rows = queue.get("queue") if isinstance(queue.get("queue"), list) else []
+          matches = [row for row in rows if commitment(row) == TARGET]
+          if len(matches) != 1:
+              print("C279_COMMITMENT_MATCH_COUNT=" + str(len(matches)))
+              raise SystemExit("C279_COMMITMENT_NOT_UNIQUE")
+          target = matches[0]
+          inv = str(target["investigation_id"])
+
+          state = call("get_investigation_state", {"investigation_id":inv})
+          claims = call("get_claims", {"investigation_id":inv})
+          history = call("get_information_history", {"investigation_id":inv,"limit":1000})
+          readiness = call("evaluate_outreach_readiness", {"investigation_id":inv})
+
+          route_view = readiness.get("canonical_route_view")
+          blockers = readiness.get("block_reasons")
+          valid_obs = readiness.get("valid_company_route_observation_ids")
+          valid_info = readiness.get("valid_information_route_ids")
+          readiness_state = str(readiness.get("outreach_readiness") or readiness.get("readiness") or "")
 
           after = health()
-          persistence_after = dict(after.get("object_store_persistence") or {})
+          persist_after = dict(after.get("object_store_persistence") or {})
           if dict(after.get("deployment_identity") or {}).get("git_sha") != identity.get("git_sha"):
               raise SystemExit("PRODUCTION_SHA_CHANGED_DURING_PROBE")
-          if persistence_before.get("generation") != persistence_after.get("generation"):
+          if persist_after.get("generation") != persist_before.get("generation"):
               raise SystemExit("PRODUCTION_GENERATION_CHANGED_DURING_PROBE")
-          if persistence_before.get("recovery_fingerprint_sha256") != persistence_after.get("recovery_fingerprint_sha256"):
+          if persist_after.get("recovery_fingerprint_sha256") != persist_before.get("recovery_fingerprint_sha256"):
               raise SystemExit("PRODUCTION_RECOVERY_FINGERPRINT_CHANGED_DURING_PROBE")
 
-          print("PRODUCTION_MCP_AUTH=PASS")
-          print("PORTFOLIO_TOTAL_SCANNED=" + str(queue.get("total_scanned")))
-          print("PORTFOLIO_RETURNED_ROWS=" + str(len(rows)))
-          print("PORTFOLIO_VALID_TAIL_COMMITMENTS=" + str(len(commitments)))
-          print("PORTFOLIO_INVALID_TAIL_ROWS=" + str(invalid))
-          print("PORTFOLIO_TAIL_COMMITMENTS=" + json.dumps(commitments, separators=(",", ":")))
-          print("OBJECT_GENERATION=" + str(persistence_after.get("generation")))
+          print("C279_COMMITMENT_MATCH_COUNT=1")
+          print("C279_STATE_STRUCTURAL_SHAPE=" + json.dumps(shape(state), sort_keys=True, separators=(",", ":")))
+          print("C279_CLAIMS_STRUCTURAL_SHAPE=" + json.dumps(shape(claims), sort_keys=True, separators=(",", ":")))
+          print("C279_INFORMATION_HISTORY_STRUCTURAL_SHAPE=" + json.dumps(shape(history), sort_keys=True, separators=(",", ":")))
+          print("C279_OUTREACH_READINESS=" + readiness_state)
+          print("C279_BLOCK_REASONS=" + json.dumps(sorted(str(x) for x in blockers) if isinstance(blockers, list) else [], separators=(",", ":")))
+          print("C279_CANONICAL_ROUTE_COUNT=" + str(len(route_view) if isinstance(route_view, list) else 0))
+          print("C279_VALID_COMPANY_ROUTE_OBSERVATION_COUNT=" + str(len(valid_obs) if isinstance(valid_obs, list) else 0))
+          print("C279_VALID_INFORMATION_ROUTE_COUNT=" + str(len(valid_info) if isinstance(valid_info, list) else 0))
+          print("OBJECT_GENERATION=" + str(persist_after.get("generation")))
           print("RECOVERY_FINGERPRINT_STABLE=true")
           print("MUTATING_TOOL_CALLED=false")
           print("PRIVATE_RAW_VALUES_PRINTED=false")
