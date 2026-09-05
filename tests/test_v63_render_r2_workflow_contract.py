@@ -24,6 +24,7 @@ EXTERNAL_CONFIGURATION_KEYS = (
     "CBI_V63_R2_ACCESS_KEY_ID",
     "CBI_V63_R2_SECRET_ACCESS_KEY",
     "CBI_V63_R2_PREFIX",
+    "CBI_V63_R2_REGION",
 )
 
 
@@ -60,6 +61,7 @@ class V63RenderR2WorkflowContractTests(unittest.TestCase):
         for name in EXTERNAL_CONFIGURATION_KEYS:
             environment.pop(name, None)
         environment["PATH"] = str(Path(sys.executable).parent)
+        environment["PYTHONHASHSEED"] = "0"
         with tempfile.TemporaryDirectory(prefix="cbi-v63-render-r2-blocked-") as tmp_name:
             completed = subprocess.run(
                 [
