@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
@@ -109,7 +109,7 @@ def _decrypt_envelope(private_key: X25519PrivateKey, envelope_bytes: bytes) -> b
     ephemeral_public = base64.b64decode(envelope["ephemeral_public_key_b64"], validate=True)
     nonce = base64.b64decode(envelope["nonce_b64"], validate=True)
     ciphertext = base64.b64decode(envelope["ciphertext_b64"], validate=True)
-    peer = type(private_key.public_key()).from_public_bytes(ephemeral_public)
+    peer = X25519PublicKey.from_public_bytes(ephemeral_public)
     shared = private_key.exchange(peer)
     key = HKDF(
         algorithm=hashes.SHA256(),
