@@ -66,6 +66,14 @@ class FakeClient:
         }[name]
 
 
+class TimeoutPortfolioClient(FakeClient):
+    def call_tool(self, name, arguments):
+        self.calls.append((str(name), dict(arguments)))
+        if name == "get_portfolio_queue":
+            raise TimeoutError("simulated remote timeout")
+        return super().call_tool(name, arguments)
+
+
 class C279ZeroMutationPreflightTests(unittest.TestCase):
     def test_happy_path_uses_only_read_only_tools_and_returns_sanitized_receipt(self) -> None:
         client = FakeClient()
@@ -93,6 +101,13 @@ class C279ZeroMutationPreflightTests(unittest.TestCase):
         self.assertNotIn("claims", result)
         self.assertNotIn("route", str(result).casefold())
         self.assertNotIn("contact", str(result).casefold())
+
+    def test_remote_timeout_is_fail_closed_and_stage_specific(self) -> None:
+        client = TimeoutPortfolioClient()
+        with self.assertRaisesRegex(preflight.PreflightError, "REMOTE_TIMEOUT:get_portfolio_queue") as raised:
+            preflight.run_preflight(client)
+        self.assertEqual(raised.exception.code, "REMOTE_TIMEOUT")
+        self.assertEqual(raised.exception.stage, "get_portfolio_queue")
 
     def test_zero_or_multiple_c279_targets_fail_closed(self) -> None:
         for rows in (
