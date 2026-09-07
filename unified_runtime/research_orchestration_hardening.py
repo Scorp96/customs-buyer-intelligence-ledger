@@ -162,9 +162,22 @@ class V61ResearchOrchestrationHardeningMixin:
     ) -> dict[str, Any] | None:
         channel = str(raw.get("channel") or raw.get("kind") or "").strip().upper()
         value = str(raw.get("value") or "").strip()
+        if not str(account_id or "").strip():
+            return None
         if not evidence_ids:
             return None
         if channel not in SUPPORTED_ROUTE_CHANNELS or not value:
+            return None
+        raw_scope = raw.get("route_scope")
+        if raw_scope is not None and raw_scope != "BUYER_DIRECT":
+            return None
+        if source_kind == "COMPILED_OBSERVATION" and information_id:
+            return None
+        if source_kind in {
+            "INFORMATION_RECORD",
+            "INFORMATION_HISTORY",
+            "INFORMATION_HISTORY_DERIVED",
+        } and observation_id:
             return None
         if raw.get("verified") is not True:
             return None
@@ -190,6 +203,45 @@ class V61ResearchOrchestrationHardeningMixin:
         if information_id:
             route["information_id"] = information_id
         return route
+
+    @staticmethod
+    def _route_owner_aliases_are_safe(
+        route: dict[str, Any],
+        account_id: str,
+    ) -> bool:
+        """Accept one owner representation, or matching explicit aliases only."""
+        account = str(account_id or "").strip()
+        if not account:
+            return False
+
+        has_explicit_owner_field = (
+            "owned_by_account" in route or "owner_entity_id" in route
+        )
+        if has_explicit_owner_field:
+            if route.get("owned_by_account") is not True:
+                return False
+            if str(route.get("owner_entity_id") or "").strip() != account:
+                return False
+            if "owner_id" in route and str(route.get("owner_id") or "").strip() != account:
+                return False
+            return True
+
+        return str(route.get("owner_id") or "").strip() == account
+
+    @staticmethod
+    def _route_lane_is_unambiguous(route: dict[str, Any]) -> bool:
+        source = str(route.get("route_source") or route.get("source") or "").strip().upper()
+        observation_id = str(route.get("observation_id") or "").strip()
+        information_id = str(route.get("information_id") or "").strip()
+        if source == "COMPILED_OBSERVATION":
+            return bool(observation_id) and not information_id
+        if source in {
+            "INFORMATION_RECORD",
+            "INFORMATION_HISTORY",
+            "INFORMATION_HISTORY_DERIVED",
+        }:
+            return bool(information_id) and not observation_id
+        return False
 
     @staticmethod
     def _compiled_route_rejection_reasons(
@@ -318,23 +370,122 @@ class V61ResearchOrchestrationHardeningMixin:
                 information_id=str(record.get("information_id") or information_id),
             )
             if route:
+                person_name = str(
+                    value.get("person_name")
+                    or value.get("name")
+                    or record.get("subject_name")
+                    or ""
+                ).strip()
+                if record.get("subject_type") == "PERSON" and person_name:
+                    # Preserve the named identity on the explicit Information
+                    # row. Dedupe then cannot retain a weaker unnamed twin.
+                    route["named_person"] = person_name
+                    route["route_source"] = "INFORMATION_HISTORY_DERIVED"
                 routes.append(route)
         return routes
 
+    def _normalize_lower_named_route(
+        self,
+        route: dict[str, Any],
+        *,
+        account_id: str,
+        lower_named_observation_ids: set[str],
+    ) -> dict[str, Any] | None:
+        """Reproject a lower-gated named route with explicit outbound ownership.
+
+        The lower v6.1 Canonical Route View proves freshness and evidence
+        eligibility but historically represents compiled named routes with the
+        legacy ``owner_id`` shape.  ``prepare_outreach`` deliberately requires
+        explicit ownership, so only a row whose lower identifier, source lane,
+        account association, evidence, and named person can all be checked is
+        reprojected.  This is a view-only normalization: it never mutates the
+        observation or Information history.
+        """
+        named_person = str(route.get("named_person") or "").strip()
+        if not named_person:
+            return None
+        account = str(account_id or "").strip()
+        if not account or not self._route_owner_aliases_are_safe(route, account):
+            return None
+        if route.get("verified") is not True or route.get("current") is not True:
+            return None
+        if route.get("masked") is True or route.get("guessed") is True:
+            return None
+        if route.get("route_scope") != "BUYER_DIRECT":
+            return None
+        evidence_ids = [
+            str(item).strip()
+            for item in (route.get("evidence_ids") or [])
+            if str(item).strip()
+        ]
+        if not evidence_ids:
+            return None
+        observation_id = str(route.get("observation_id") or "").strip()
+        source = str(route.get("route_source") or route.get("source") or "").strip().upper()
+        if not (
+            source == "COMPILED_OBSERVATION"
+            and observation_id in lower_named_observation_ids
+            and not str(route.get("information_id") or "").strip()
+            and self._route_lane_is_unambiguous(route)
+        ):
+            return None
+        normalized = self._route_payload(
+            route,
+            account_id=account,
+            source_kind="COMPILED_OBSERVATION",
+            evidence_ids=evidence_ids,
+            observation_id=observation_id or None,
+        )
+        if normalized is None:
+            return None
+        normalized["named_person"] = named_person
+        normalized["route_source"] = "COMPILED_OBSERVATION"
+        normalized["masked"] = False
+        normalized["guessed"] = False
+        if str(normalized.get("kind") or "").upper() in {"WHATSAPP", "ZALO"}:
+            normalized["channel_proof"] = True
+        return normalized
+
     @staticmethod
     def _dedupe_routes(routes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Dedupe equivalent route aliases without collapsing named routes.
+
+        Lower projections may expose ``channel``/``owner_id`` while the
+        explicit projection exposes ``kind``/``owner_entity_id``.  Those are
+        aliases for the same route identity.  The named person is part of that
+        identity so a company route and a named route sharing a value remain
+        separate.  If an alias pair collides, retain the explicit ownership
+        shape because it is the only shape accepted by outbound preparation.
+        """
         output: list[dict[str, Any]] = []
-        seen: set[tuple[str, str, str]] = set()
+        positions: dict[tuple[str, str, str, str], int] = {}
+
         for route in routes:
-            key = (
-                str(route.get("kind") or ""),
-                str(route.get("value") or "").strip().lower(),
-                str(route.get("owner_entity_id") or ""),
-            )
-            if key in seen:
+            if not isinstance(route, dict):
                 continue
-            seen.add(key)
-            output.append(route)
+            key = (
+                str(route.get("kind") or route.get("channel") or "").strip().upper(),
+                str(route.get("owner_entity_id") or route.get("owner_id") or "").strip(),
+                str(route.get("value") or "").strip().casefold(),
+                str(route.get("named_person") or "").strip().casefold(),
+            )
+            position = positions.get(key)
+            if position is None:
+                positions[key] = len(output)
+                output.append(route)
+                continue
+
+            current = output[position]
+            current_explicit = (
+                current.get("owned_by_account") is True
+                and bool(str(current.get("owner_entity_id") or "").strip())
+            )
+            candidate_explicit = (
+                route.get("owned_by_account") is True
+                and bool(str(route.get("owner_entity_id") or "").strip())
+            )
+            if candidate_explicit and not current_explicit:
+                output[position] = route
         return output
 
     def evaluate_outreach_readiness(
@@ -358,6 +509,11 @@ class V61ResearchOrchestrationHardeningMixin:
             for item in (result.get("valid_company_route_observation_ids") or [])
             if str(item).strip()
         }
+        lower_named_ids = {
+            str(item)
+            for item in (result.get("valid_named_route_observation_ids") or [])
+            if str(item).strip()
+        }
         lower_information_ids = {
             str(item)
             for item in (result.get("valid_information_route_ids") or [])
@@ -379,15 +535,36 @@ class V61ResearchOrchestrationHardeningMixin:
                 explicitly_account_owned = (
                     route.get("verified") is True
                     and route.get("current") is True
+                    and route.get("route_scope") == "BUYER_DIRECT"
                     and route.get("owned_by_account") is True
-                    and route.get("owner_entity_id") == account_id
+                    and bool(str(route.get("owner_entity_id") or "").strip())
+                    and self._route_owner_aliases_are_safe(route, account_id)
+                    and self._route_lane_is_unambiguous(route)
                 )
                 lower_validated = (
                     information_id in lower_information_ids
                     or observation_id in lower_company_ids
+                    or observation_id in lower_named_ids
                 )
-                if explicitly_account_owned or lower_validated:
+                if explicitly_account_owned:
+                    # Never downgrade a newer explicit canonical row merely
+                    # because it does not carry the legacy owner_id alias.
                     routes.append(dict(route))
+                elif lower_validated:
+                    normalized_named = self._normalize_lower_named_route(
+                        route,
+                        account_id=account_id,
+                        lower_named_observation_ids=lower_named_ids,
+                    )
+                    if normalized_named is not None:
+                        routes.append(normalized_named)
+                    elif (
+                        not str(route.get("named_person") or "").strip()
+                        and route.get("route_scope") == "BUYER_DIRECT"
+                        and self._route_owner_aliases_are_safe(route, account_id)
+                        and self._route_lane_is_unambiguous(route)
+                    ):
+                        routes.append(dict(route))
         routes = self._dedupe_routes(routes)
 
         compiled_ids = {
