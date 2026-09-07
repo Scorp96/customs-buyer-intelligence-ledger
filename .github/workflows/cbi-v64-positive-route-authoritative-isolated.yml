@@ -1,0 +1,262 @@
+name: CBI v6.4 positive-route authoritative isolated probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_deployment_sha:
+        description: Exact temporary diagnostic deployment SHA
+        required: true
+        type: string
+      investigation_id:
+        description: Selected named-route investigation id from a sanitized discovery receipt
+        required: true
+        type: string
+      tail_seq:
+        description: Selected exact tail sequence from that same receipt
+        required: true
+        type: string
+      tail_hash:
+        description: Selected exact tail hash from that same receipt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-positive-route-authoritative-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_RUNTIME_BASE_SHA: 17f4fe160c0908a602224eab95d172ba4eb753c6
+  TESTED_INTEGRATED_RUNTIME_SHA: ${{ github.sha }}
+  EXPECTED_INVESTIGATION_ID: ${{ inputs.investigation_id }}
+  EXPECTED_TAIL_SEQ: ${{ inputs.tail_seq }}
+  EXPECTED_TAIL_HASH: ${{ inputs.tail_hash }}
+  PRODUCTION_BASE_URL: https://cbi-v61-preview.onrender.com
+
+jobs:
+  positive-route-isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact verifier SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Prove exact integrated-runtime lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_RUNTIME_BASE_SHA"
+
+      - name: Install capture crypto and verify local contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-input cryptography==50.0.1
+          python -m unittest tests.test_v64_c279_capture tests.test_v64_c279_full_runtime -v
+
+      - name: Pin exact temporary diagnostic deployment identity
+        shell: bash
+        env:
+          SOURCE_DEPLOYMENT_SHA: ${{ inputs.source_deployment_sha }}
+          CBI_V64_DISCOVERY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, re, urllib.request
+          from pathlib import Path
+          from scripts.discover_v64_positive_route_candidate import _mcp, sanitize_health
+          expected = os.environ["SOURCE_DEPLOYMENT_SHA"].strip().lower()
+          assert re.fullmatch(r"[0-9a-f]{40}", expected)
+          assert re.fullmatch(r"INV-[0-9TZ-]+-[0-9a-f]{12}", os.environ["EXPECTED_INVESTIGATION_ID"])
+          assert int(os.environ["EXPECTED_TAIL_SEQ"]) >= 1
+          assert re.fullmatch(r"[0-9a-f]{64}", os.environ["EXPECTED_TAIL_HASH"])
+          with urllib.request.urlopen(os.environ["PRODUCTION_BASE_URL"] + "/healthz", timeout=10) as response:
+              assert response.status == 200
+              health = json.load(response)
+          identity = health.get("deployment_identity") or {}
+          assert health.get("status") == "ok"
+          assert identity.get("git_sha") == expected
+          assert identity.get("git_sha_source") == "RENDER_GIT_COMMIT"
+          assert identity.get("object_store_mode") == "r2"
+          runtime_health = _mcp(os.environ["PRODUCTION_BASE_URL"], os.environ["CBI_V64_DISCOVERY_BEARER"], 1, "get_runtime_health", {})
+          safe = sanitize_health(health, runtime_health)
+          assert safe["runtime_ready"] is True
+          assert safe["wal_prepared_count"] == 0 and safe["wal_invalid_count"] == 0 and safe["wal_reconciliation_required"] is False
+          root = Path(os.environ["RUNNER_TEMP"]) / "positive-route-authoritative"
+          root.mkdir(parents=True, exist_ok=True)
+          (root / "production-before.json").write_text(json.dumps(safe, sort_keys=True), encoding="utf-8")
+          print("POSITIVE_ROUTE_SOURCE_DEPLOYMENT_IDENTITY=PINNED")
+          PY
+
+      - name: Generate ephemeral recipient key and capture exact-pinned ciphertext only
+        shell: bash
+        env:
+          CBI_V64_C279_CAPTURE_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          CBI_V64_C279_CAPTURE_INTENT: ${{ secrets.CBI_V64_C279_OPERATOR_INTENT }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/positive-route-authoritative"
+          mkdir -p "$root/artifact"
+          python - <<'PY'
+          import base64, os
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+          root = Path(os.environ["RUNNER_TEMP"]) / "positive-route-authoritative"
+          private = X25519PrivateKey.generate()
+          (root / "recipient-private.bin").write_bytes(private.private_bytes(
+              encoding=serialization.Encoding.Raw, format=serialization.PrivateFormat.Raw,
+              encryption_algorithm=serialization.NoEncryption()))
+          (root / "recipient-private.bin").chmod(0o600)
+          public = private.public_key().public_bytes(
+              encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)
+          (root / "recipient-public.txt").write_text(base64.b64encode(public).decode("ascii"), encoding="ascii")
+          PY
+          python scripts/capture_v64_c279_single_session.py \
+            --base-url "$PRODUCTION_BASE_URL" \
+            --recipient-public-key-b64 "$(cat "$root/recipient-public.txt")" \
+            --expected-tail-seq "$EXPECTED_TAIL_SEQ" \
+            --expected-tail-hash "$EXPECTED_TAIL_HASH" \
+            --output "$root/artifact/positive-route-session-ciphertext.json"
+          echo "POSITIVE_ROUTE_CIPHERTEXT_CAPTURE=PASS"
+
+      - name: Decrypt only inside runner and construct an isolated source root
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64, hashlib, json, os
+          from pathlib import Path
+          from cryptography.hazmat.primitives import hashes
+          from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+          from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+          from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+          root = Path(os.environ["RUNNER_TEMP"]) / "positive-route-authoritative"
+          envelope = json.loads((root / "artifact/positive-route-session-ciphertext.json").read_text(encoding="utf-8"))
+          assert set(envelope) == {"schema", "ephemeral_public_key", "salt", "nonce", "snapshot_sha256", "ciphertext"}
+          assert envelope["schema"] == "cbi.v64-c279-ciphertext.v1"
+          private = X25519PrivateKey.from_private_bytes((root / "recipient-private.bin").read_bytes())
+          peer = X25519PublicKey.from_public_bytes(base64.b64decode(envelope["ephemeral_public_key"], validate=True))
+          key = HKDF(algorithm=hashes.SHA256(), length=32, salt=base64.b64decode(envelope["salt"], validate=True), info=b"cbi-v64-c279-export-v1").derive(private.exchange(peer))
+          sha = str(envelope["snapshot_sha256"])
+          payload = ChaCha20Poly1305(key).decrypt(base64.b64decode(envelope["nonce"], validate=True), base64.b64decode(envelope["ciphertext"], validate=True), b"cbi.v64-c279-ciphertext.v1|" + sha.encode("ascii"))
+          assert hashlib.sha256(payload).hexdigest() == sha
+          rows = [json.loads(line) for line in payload.decode("utf-8").splitlines() if line.strip()]
+          assert rows and rows[0].get("payload", {}).get("investigation_id") == os.environ["EXPECTED_INVESTIGATION_ID"]
+          assert int(rows[-1].get("seq")) == int(os.environ["EXPECTED_TAIL_SEQ"])
+          assert str(rows[-1].get("event_hash")) == os.environ["EXPECTED_TAIL_HASH"]
+          source = root / "source-runtime" / "sessions"
+          source.mkdir(parents=True)
+          session = source / (os.environ["EXPECTED_INVESTIGATION_ID"] + ".jsonl")
+          session.write_bytes(payload)
+          (root / "source-inventory-before.json").write_text(json.dumps({"relative_path": "sessions/" + session.name, "byte_length": len(payload), "sha256": sha}, sort_keys=True), encoding="utf-8")
+          (root / "bridge.json").write_text(json.dumps({"schema": "cbi.v64-positive-route-authoritative-bridge.v1", "investigation_id": os.environ["EXPECTED_INVESTIGATION_ID"], "durable_state": {"last_safe_seq": int(os.environ["EXPECTED_TAIL_SEQ"]), "last_safe_event_hash": os.environ["EXPECTED_TAIL_HASH"]}, "acceptance_case": {"schema": "cbi.v64-authoritative-acceptance-case.v1", "case_kind": "POSITIVE_ROUTE", "sends_message": False}}, sort_keys=True), encoding="utf-8")
+          print("POSITIVE_ROUTE_PLAINTEXT_EPHEMERAL_SOURCE_ROOT=READY")
+          PY
+
+      - name: Run draft-only positive acceptance on isolated copy
+        id: full_runtime
+        env:
+          CBI_V64_POSITIVE_BRIDGE_EVIDENCE: ${{ runner.temp }}/positive-route-authoritative/bridge.json
+          CBI_V64_POSITIVE_SOURCE_RUNTIME_ROOT: ${{ runner.temp }}/positive-route-authoritative/source-runtime
+          CBI_V64_POSITIVE_ROUTE_DIAGNOSTICS: ${{ runner.temp }}/positive-route-authoritative/diagnostics.json
+        run: python -m unittest tests.test_v64_c279_full_runtime.V64C279FullRuntimeRegression.test_positive_route_authoritative_case_full_runtime -v
+
+      - name: Prove source unchanged and write a fixed-allowlist receipt
+        if: always()
+        shell: bash
+        env:
+          FULL_RUNTIME_OUTCOME: ${{ steps.full_runtime.outcome }}
+          CBI_V64_DISCOVERY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          import urllib.request
+          from scripts.discover_v64_positive_route_candidate import _mcp, sanitize_health
+          root = Path(os.environ["RUNNER_TEMP"]) / "positive-route-authoritative"
+          before = json.loads((root / "source-inventory-before.json").read_text(encoding="utf-8"))
+          payload = (root / "source-runtime" / before["relative_path"]).read_bytes()
+          assert len(payload) == before["byte_length"] and hashlib.sha256(payload).hexdigest() == before["sha256"]
+          diagnostics = json.loads((root / "diagnostics.json").read_text(encoding="utf-8"))
+          allowed = {"route_projection_diagnostics", "readiness", "block_reason_codes", "canonical_route_count", "canonical_route_source_types", "canonical_route_observation_ids", "canonical_route_information_ids", "canonical_route_evidence_ids", "positive_route_precondition", "isolated_closure_gate", "acceptance_case"}
+          assert set(diagnostics) == allowed
+          assert diagnostics["route_projection_diagnostics"]["contains_route_values"] is False
+          acceptance = diagnostics["acceptance_case"]
+          assert set(acceptance) == {"schema", "case_kind", "status", "reason_codes", "sends_message"}
+          assert acceptance["case_kind"] == "POSITIVE_ROUTE" and acceptance["sends_message"] is False
+          before_production = json.loads((root / "production-before.json").read_text(encoding="utf-8"))
+          with urllib.request.urlopen(os.environ["PRODUCTION_BASE_URL"] + "/healthz", timeout=10) as response:
+              assert response.status == 200
+              health = json.load(response)
+          after_production = sanitize_health(health, _mcp(os.environ["PRODUCTION_BASE_URL"], os.environ["CBI_V64_DISCOVERY_BEARER"], 2, "get_runtime_health", {}))
+          assert after_production == before_production
+          receipt = {"schema": "cbi.v64-positive-route-authoritative-isolated.v1", "verified": acceptance["status"] == "ACCEPTANCE_CASE_VERIFIED" and os.environ.get("FULL_RUNTIME_OUTCOME") == "success", "integrated_runtime_sha": os.environ["TESTED_INTEGRATED_RUNTIME_SHA"], "source_snapshot_sha256": before["sha256"], "last_safe_seq": int(os.environ["EXPECTED_TAIL_SEQ"]), "last_safe_event_hash": os.environ["EXPECTED_TAIL_HASH"], "full_runtime_outcome": os.environ.get("FULL_RUNTIME_OUTCOME"), "source_runtime_mutation_detected": False, "plaintext_artifact_retained": False, "sends_message": False, "production_before": before_production, "production_after": after_production, "diagnostics": diagnostics}
+          (root / "artifact/positive-route-authoritative-receipt.json").write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          print("POSITIVE_ROUTE_SOURCE_UNCHANGED=PASS")
+          PY
+
+      - name: Destroy plaintext and private key before artifact upload
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/positive-route-authoritative"
+          rm -rf "$root/source-runtime"
+          rm -f "$root/bridge.json" "$root/source-inventory-before.json" "$root/recipient-private.bin" "$root/recipient-public.txt" "$root/diagnostics.json" "$root/production-before.json"
+          if find "$root" -type f ! -path '*/artifact/*' -print -quit | grep -q .; then exit 1; fi
+
+      - name: Validate ciphertext plus sanitized receipt only
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          artifact = Path(os.environ["RUNNER_TEMP"]) / "positive-route-authoritative/artifact"
+          assert {p.name for p in artifact.iterdir()} == {"positive-route-session-ciphertext.json", "positive-route-authoritative-receipt.json"}
+          envelope = json.loads((artifact / "positive-route-session-ciphertext.json").read_text(encoding="utf-8"))
+          assert set(envelope) == {"schema", "ephemeral_public_key", "salt", "nonce", "snapshot_sha256", "ciphertext"}
+          receipt = json.loads((artifact / "positive-route-authoritative-receipt.json").read_text(encoding="utf-8"))
+          assert receipt["plaintext_artifact_retained"] is False and receipt["source_runtime_mutation_detected"] is False and receipt["sends_message"] is False
+          assert receipt["diagnostics"]["route_projection_diagnostics"]["contains_route_values"] is False
+          assert receipt["production_before"] == receipt["production_after"]
+          assert set(receipt["production_before"]) == {"status", "git_sha", "object_state_generation", "restore_generation", "recovery_fingerprint_sha256", "runtime_ready", "wal_prepared_count", "wal_invalid_count", "wal_reconciliation_required"}
+          print("POSITIVE_ROUTE_ARTIFACT_PRIVACY=PASS")
+          PY
+
+      - name: Upload ciphertext and sanitized receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-positive-route-authoritative-${{ github.sha }}
+          path: ${{ runner.temp }}/positive-route-authoritative/artifact
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail closed unless isolated positive acceptance actually passed
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          receipt = json.loads((Path(os.environ["RUNNER_TEMP"]) / "positive-route-authoritative/artifact/positive-route-authoritative-receipt.json").read_text(encoding="utf-8"))
+          if receipt["verified"] is not True:
+              print("POSITIVE_ROUTE_AUTHORITATIVE_ACCEPTANCE=BLOCKED_EXTERNAL")
+              raise SystemExit(1)
+          print("POSITIVE_ROUTE_AUTHORITATIVE_ACCEPTANCE=VERIFIED")
+          PY

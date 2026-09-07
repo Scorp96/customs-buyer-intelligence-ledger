@@ -1,0 +1,68 @@
+name: CBI v6.4 positive route read-only discovery
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cbi-v64-c279-authoritative-isolated-two-case-17f4fe16
+
+permissions:
+  contents: read
+
+env:
+  PRODUCTION_BASE_URL: https://cbi-v61-preview.onrender.com
+  EXPECTED_PRODUCTION_SHA: a311a2a57ee43a1f1a3b2819bf28946566b05692
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - name: Verify discovery sanitizer contract
+        run: python -m unittest tests.test_v64_positive_route_discovery -v
+      - name: Discover without mutation or route-value output
+        env:
+          CBI_V64_DISCOVERY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cbi-v64-positive-discovery/artifact"
+          python scripts/discover_v64_positive_route_candidate.py --base-url "$PRODUCTION_BASE_URL" --output "$RUNNER_TEMP/cbi-v64-positive-discovery/artifact/receipt.json" || test "$?" -eq 2
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "cbi-v64-positive-discovery/artifact/receipt.json"
+          receipt = json.loads(path.read_text(encoding="utf-8"))
+          assert set(receipt) == {"schema", "result", "candidate", "failure_stage", "reason_codes", "production_before", "production_after"}
+          assert receipt["schema"] == "cbi.v64-positive-route-discovery.v1"
+          for health in (receipt["production_before"], receipt["production_after"]):
+              assert set(health) == {"status", "git_sha", "object_state_generation", "restore_generation", "recovery_fingerprint_sha256", "runtime_ready", "wal_prepared_count", "wal_invalid_count", "wal_reconciliation_required"}
+              assert health["status"] == "ok" and health["git_sha"] == os.environ["EXPECTED_PRODUCTION_SHA"] and health["runtime_ready"] is True
+              assert health["wal_prepared_count"] == 0 and health["wal_invalid_count"] == 0 and health["wal_reconciliation_required"] is False
+          assert receipt["production_before"] == receipt["production_after"]
+          assert receipt["result"] in {"ELIGIBLE_POSITIVE_CASE_SELECTED", "NO_ELIGIBLE_POSITIVE_CASE", "BLOCKED_EXTERNAL"}
+          print("POSITIVE_ROUTE_DISCOVERY=" + receipt["result"])
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: cbi-v64-positive-route-discovery-${{ github.sha }}
+          path: ${{ runner.temp }}/cbi-v64-positive-discovery/artifact/receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Fail closed when no positive case is eligible
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          receipt = json.loads((Path(os.environ["RUNNER_TEMP"]) / "cbi-v64-positive-discovery/artifact/receipt.json").read_text(encoding="utf-8"))
+          if receipt["result"] != "ELIGIBLE_POSITIVE_CASE_SELECTED":
+              print("POSITIVE_ROUTE_DISCOVERY=" + receipt["result"])
+              raise SystemExit(1)
+          print("POSITIVE_ROUTE_DISCOVERY=ELIGIBLE_POSITIVE_CASE_SELECTED")
+          PY
