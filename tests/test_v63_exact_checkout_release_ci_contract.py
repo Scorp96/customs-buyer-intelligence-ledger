@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "cbi-v63-live-acceptance-ci.yml"
-PRODUCTION_BASELINE = "ba3bffdae13cef186b20b50335c3207fb3390ec6"
+PRODUCTION_BASELINE = "a311a2a57ee43a1f1a3b2819bf28946566b05692"
 UPLOAD_ARTIFACT_SHA = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 
 
