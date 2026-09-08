@@ -7,17 +7,14 @@ from tests.test_v63_render_r2_pvc_acceptance import (
 )
 from unified_runtime.backend_correlation_acceptance_v63 import REQUIRED_V63_BACKEND_CORRELATION_SCENARIOS
 from unified_runtime.contract_v63 import build_v63_contract
+from unified_runtime.mcp_schema_v63 import V63_MUTATION_TOOL_NAMES, V63_READ_ONLY_TOOL_NAMES
 from unified_runtime.recovery_acceptance_v63 import run_v63_reference_recovery_acceptance
 from unified_runtime.recovery_overlay_acceptance_v63 import REQUIRED_V63_RECOVERY_OVERLAY_SCENARIOS
 from unified_runtime.release_evidence_v63 import evaluate_v63_release_evidence_bundle
 from unified_runtime.render_r2_pvc_acceptance_v63 import run_v63_render_r2_pvc_acceptance
 
 
-V63_MUTATIONS = [
-    "append_candidate_discovery",
-    "create_product_opportunity",
-    "promote_opportunity_anchor",
-]
+V63_MUTATIONS = list(V63_MUTATION_TOOL_NAMES)
 
 
 class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
@@ -131,6 +128,16 @@ class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
             ],
         }
 
+    def _mcp_surface_report(self, sha="a" * 64):
+        return {
+            "schema": "cbi.v63-mcp-surface-evidence.v1",
+            "verified": True,
+            "production_source_snapshot_sha256": sha,
+            "active_entrypoint_observed": True,
+            "tools_list_observed": True,
+            "tool_names": [*V63_READ_ONLY_TOOL_NAMES, *V63_MUTATION_TOOL_NAMES],
+        }
+
     def _render_r2_pvc_receipt(self, *, real_render=True):
         client = _FakeAcceptanceClient()
         controller = _FakeReplacementController(client)
@@ -163,6 +170,7 @@ class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
             "exact_recovery_acceptance_report": self._exact_live_report(),
             "backend_correlation_acceptance_report": self._backend_report(),
             "recovery_overlay_acceptance_report": self._recovery_overlay_report(),
+            "mcp_surface_evidence_report": self._mcp_surface_report(),
             "render_r2_pvc_acceptance_report": self._render_r2_pvc_receipt(),
         }
 
@@ -172,6 +180,7 @@ class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
         self.assertTrue(result["component_validations"]["exact_recovery"]["verified"])
         self.assertTrue(result["component_validations"]["backend_correlation"]["verified"])
         self.assertTrue(result["component_validations"]["recovery_overlay"]["verified"])
+        self.assertTrue(result["component_validations"]["mcp_surface"]["verified"])
         self.assertTrue(result["component_validations"]["render_r2_pvc_acceptance"]["verified"])
         self.assertEqual(result["production_gate"]["status"], "PRODUCTION_READY")
 
