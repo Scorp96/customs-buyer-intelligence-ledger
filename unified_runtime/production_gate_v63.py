@@ -4,13 +4,11 @@ from typing import Any
 
 from .adapter_recovery_mapping_v63 import V63_PRODUCTION_RECOVERY_MAPPINGS
 from .live_contract_validator_v63 import validate_live_phase_b_preconditions
+from .mcp_schema_v63 import V63_MUTATION_TOOL_NAMES, V63_READ_ONLY_TOOL_NAMES
 
 
-_REQUIRED_MUTATIONS = {
-    "append_candidate_discovery",
-    "create_product_opportunity",
-    "promote_opportunity_anchor",
-}
+_REQUIRED_MUTATIONS = set(V63_MUTATION_TOOL_NAMES)
+_REQUIRED_ACTIVE_MCP_TOOLS = set(V63_READ_ONLY_TOOL_NAMES) | set(V63_MUTATION_TOOL_NAMES)
 
 
 def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
@@ -30,6 +28,11 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(v63, dict):
         blockers.append("V63_DEMAND_EXPANSION_NOT_LIVE")
         v63 = {}
+
+    active_mcp_tools = {str(v) for v in (payload.get("active_mcp_tool_names") or [])}
+    missing_active_mcp_tools = sorted(_REQUIRED_ACTIVE_MCP_TOOLS - active_mcp_tools)
+    if missing_active_mcp_tools:
+        blockers.append("V63_ACTIVE_MCP_SURFACE_INCOMPLETE")
 
     if int(wal.get("prepared_count") or 0) != 0:
         blockers.append("MUTATION_WAL_PREPARED_INTENTS")
@@ -118,6 +121,8 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
         "status": "PRODUCTION_READY" if not blockers else "NOT_PRODUCTION_READY",
         "blockers": blockers,
         "required_v63_mutations": sorted(_REQUIRED_MUTATIONS),
+        "required_active_mcp_tools": sorted(_REQUIRED_ACTIVE_MCP_TOOLS),
+        "missing_active_mcp_tools": missing_active_mcp_tools,
         "checked_render_r2_pvc_acceptance": bool(payload.get("render_r2_pvc_acceptance_verified")),
         "checked_exact_v63_recovery_acceptance": bool(payload.get("exact_v63_recovery_acceptance_verified")),
         "checked_live_v63_backend_correlation_acceptance": bool(payload.get("live_v63_backend_correlation_acceptance_verified")),
