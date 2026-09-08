@@ -11,7 +11,7 @@ UPLOAD_ARTIFACT_SHA = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 
 
 class V63ExactCheckoutReleaseCiContractTests(unittest.TestCase):
-    def test_feature_only_release_gate_runs_full_regression_protocols_cli_and_uploads_only_four_receipts(self):
+    def test_feature_only_release_gate_runs_full_regression_protocols_and_source_bound_receipts(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("cbi-v6-3-demand-expansion", text)
@@ -28,6 +28,7 @@ class V63ExactCheckoutReleaseCiContractTests(unittest.TestCase):
         self.assertIn("git diff --check", text)
 
         self.assertIn("scripts/run_v63_exact_checkout_live_acceptance.py", text)
+        self.assertIn("scripts/run_v63_mcp_surface_evidence.py", text)
         self.assertIn("--expected-git-sha \"$GITHUB_SHA\"", text)
         self.assertIn("--output-dir \"$RUNNER_TEMP/v63-exact-checkout-artifacts\"", text)
 
@@ -39,6 +40,8 @@ class V63ExactCheckoutReleaseCiContractTests(unittest.TestCase):
         self.assertIn("V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json", text)
         self.assertIn("V63_EXACT_CHECKOUT_RECOVERY_OVERLAY.json", text)
         self.assertIn("V63_EXACT_CHECKOUT_ACCEPTANCE.json", text)
+        self.assertIn("V63_ACTIVE_MCP_SURFACE_EVIDENCE.json", text)
+        self.assertIn("ACTIVE_MCP_SURFACE_SOURCE_SNAPSHOT_MISMATCH", text)
         self.assertIn("recovery_overlay_validation", text)
 
         self.assertIn("cbi-v6-cloud-runtime-20260901", text)
