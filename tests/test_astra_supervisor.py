@@ -225,6 +225,35 @@ class LocalExecutorTests(unittest.TestCase):
             "allowlisted unittest execution must not create undeclared __pycache__ directories",
         )
 
+    def test_apply_compileall_uses_ephemeral_bytecode_cache(self):
+        package = self.root / "pkg"
+        package.mkdir()
+        (package / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+        self._git("add", "pkg/module.py")
+        self._git("commit", "-m", "add compileall target")
+        manifest = self._manifest(
+            [
+                {
+                    "kind": "run",
+                    "argv": [sys.executable, "-m", "compileall", "-q", "pkg"],
+                    "cwd": ".",
+                }
+            ]
+        )
+        result = LocalExecutor().execute(manifest, apply=True)
+        self.assertTrue(result.success)
+        self.assertTrue(result.applied)
+        self.assertEqual(
+            list(self.root.rglob("*.pyc")),
+            [],
+            "compileall validation must not leave undeclared bytecode inside the repository",
+        )
+        self.assertEqual(
+            [path for path in self.root.rglob("__pycache__") if path.is_dir()],
+            [],
+            "compileall validation must not leave undeclared cache directories inside the repository",
+        )
+
     def test_rejects_python_c(self):
         manifest = self._manifest(
             [{"kind": "run", "argv": [sys.executable, "-c", "print('unsafe')"], "cwd": "."}]
