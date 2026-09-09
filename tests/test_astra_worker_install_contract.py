@@ -93,17 +93,38 @@ class InstallContractTests(unittest.TestCase):
         self.assertRegex(text, r"(?i)S-1-5-32-544")
         self.assertNotRegex(lowered, r"\beveryone\b|authenticated users|builtin\\users")
 
+    def test_installer_repairs_existing_state_acl_before_first_state_file_write(self) -> None:
+        text = read_required(INSTALLER).lower()
+        harden_call = "& $pythonexe $workerlauncher harden-install-acl"
+        first_harden_at = text.find(harden_call)
+        config_write_at = text.find("writealltext($configtarget")
+        xml_write_at = text.find("writealltext($winswxml")
+        self.assertTrue(
+            -1 not in {first_harden_at, config_write_at, xml_write_at},
+            "installer must expose a fixed local ACL recovery call before state-file writes",
+        )
+        self.assertLess(first_harden_at, config_write_at)
+        self.assertLess(first_harden_at, xml_write_at)
+
     def test_installer_calls_fixed_local_acl_hardener_before_secret_gate(self) -> None:
         text = read_required(INSTALLER).lower()
+        harden_call = "& $pythonexe $workerlauncher harden-install-acl"
         config_at = text.find("sc.exe config")
-        harden_at = text.find("harden-install-acl")
+        harden_positions: list[int] = []
+        cursor = 0
+        while True:
+            position = text.find(harden_call, cursor)
+            if position < 0:
+                break
+            harden_positions.append(position)
+            cursor = position + len(harden_call)
         secret_gate_at = text.find("protected secrets are not present")
         self.assertTrue(
-            -1 not in {config_at, harden_at, secret_gate_at},
-            "installer must call the fixed local ACL hardener before secret provisioning",
+            config_at >= 0 and secret_gate_at >= 0 and len(harden_positions) >= 2,
+            "installer must run bootstrap and final fixed local ACL hardening",
         )
-        self.assertLess(config_at, harden_at)
-        self.assertLess(harden_at, secret_gate_at)
+        self.assertLess(config_at, harden_positions[-1])
+        self.assertLess(harden_positions[-1], secret_gate_at)
 
     def test_runtime_xml_contains_no_secret_value_token_or_password(self) -> None:
         text = read_required(SERVICE_XML)
