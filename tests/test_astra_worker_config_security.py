@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
 from astra_worker.config import ConfigError, RepositoryBinding, WorkerConfig
+from astra_worker.windows_security import (
+    SecretBundle,
+    WindowsSecurityError,
+    protect_machine_secret,
+    read_secret_bundle,
+    unprotect_machine_secret,
+    validate_worker_state_location,
+    write_secret_bundle,
+)
 
 
 def valid_config_mapping() -> dict:
@@ -121,6 +131,63 @@ class WorkerConfigTests(unittest.TestCase):
         )
         with self.assertRaises(ConfigError):
             self._load_raw(raw)
+
+
+class SecretBundleContractTests(unittest.TestCase):
+    def test_task_and_receipt_hmac_keys_must_be_independent(self) -> None:
+        with self.assertRaises(WindowsSecurityError):
+            SecretBundle(
+                task_hmac_key=b"x" * 32,
+                receipt_hmac_key=b"x" * 32,
+                github_token="github-token",
+            )
+
+    def test_plaintext_or_wrong_magic_secret_file_is_rejected_before_decrypt(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "secrets.bin"
+            path.write_text('{"github_token":"plain"}', encoding="utf-8")
+            with self.assertRaises(WindowsSecurityError):
+                read_secret_bundle(path)
+
+
+@unittest.skipIf(os.name == "nt", "non-Windows fail-closed contract")
+class NonWindowsSecretTests(unittest.TestCase):
+    def test_dpapi_functions_fail_closed_off_windows(self) -> None:
+        with self.assertRaises(WindowsSecurityError):
+            protect_machine_secret(b"secret")
+        with self.assertRaises(WindowsSecurityError):
+            unprotect_machine_secret(b"ciphertext")
+
+    def test_state_location_validation_fails_closed_off_windows(self) -> None:
+        with self.assertRaises(WindowsSecurityError):
+            validate_worker_state_location(Path("/tmp/ASTRAWorker"), "S-1-5-21-1")
+
+
+@unittest.skipUnless(os.name == "nt", "Windows DPAPI test")
+class WindowsSecretTests(unittest.TestCase):
+    def test_dpapi_machine_scope_round_trip(self) -> None:
+        clear = b"task-key\0receipt-key\0github-token"
+        protected = protect_machine_secret(clear)
+        self.assertNotEqual(protected, clear)
+        self.assertEqual(unprotect_machine_secret(protected), clear)
+
+    def test_secret_bundle_file_is_dpapi_protected_and_round_trips(self) -> None:
+        bundle = SecretBundle(
+            task_hmac_key=b"t" * 32,
+            receipt_hmac_key=b"r" * 32,
+            github_token="github-token-secret",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "secrets.bin"
+            write_secret_bundle(path, bundle)
+            stored = path.read_bytes()
+            self.assertNotIn(bundle.github_token.encode("utf-8"), stored)
+            self.assertEqual(read_secret_bundle(path), bundle)
+
+    def test_state_path_outside_programdata_worker_root_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaises(WindowsSecurityError):
+                validate_worker_state_location(Path(temp_dir), "S-1-5-21-1")
 
 
 if __name__ == "__main__":
