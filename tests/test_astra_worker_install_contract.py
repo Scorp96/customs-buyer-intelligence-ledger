@@ -74,6 +74,14 @@ class InstallContractTests(unittest.TestCase):
         # sc.exe produces ERROR_INVALID_COMMAND_LINE (1639) on real Windows hosts.
         self.assertNotIn("password=", lowered)
 
+    def test_installer_normalizes_config_to_utf8_without_bom(self) -> None:
+        text = read_required(INSTALLER)
+        lowered = text.lower()
+        self.assertIn("$configtext", lowered)
+        self.assertIn("writealltext($configtarget", lowered)
+        self.assertIn("utf8encoding($false)", lowered)
+        self.assertNotIn("copy-item -literalpath $resolvedconfig -destination $configtarget", lowered)
+
     def test_state_acl_is_non_inheriting_and_grants_only_trusted_identities(self) -> None:
         text = read_required(INSTALLER)
         lowered = text.lower()
