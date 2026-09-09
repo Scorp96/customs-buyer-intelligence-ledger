@@ -87,6 +87,12 @@ $RenderedXml = $RenderedXml.Replace("@@REPOSITORY_ROOT@@", $Escape.Invoke($Repos
 $RenderedXml = $RenderedXml.Replace("@@STATE_ROOT@@", $Escape.Invoke($StateRoot))
 $RenderedXml = $RenderedXml.Replace("@@LOG_ROOT@@", $Escape.Invoke($LogRoot))
 
+# WinSW requires its sidecar XML to exist before the first service registration.
+# The service-SID placeholder is harmless at registration time because the service
+# is never started until after SID resolution, final XML rendering, ACL proof, and
+# validate-install all succeed.
+[IO.File]::WriteAllText($WinSWXml, $RenderedXml, (New-Object Text.UTF8Encoding($false)))
+
 $ExistingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($null -eq $ExistingService) {
     Push-Location $StateRoot
