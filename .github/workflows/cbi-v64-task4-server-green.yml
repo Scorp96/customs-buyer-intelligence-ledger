@@ -1,0 +1,69 @@
+name: CBI v6.4 one-shot production backup wiring GREEN
+
+on:
+  push:
+    branches:
+      - cbi-v64-backup-wal-hardening-20260909
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install timezone data
+        run: python -m pip install --disable-pip-version-check --no-input tzdata==2026.3
+      - name: Configure git
+        run: |
+          git config user.name 'cbi-v64-task4'
+          git config user.email 'actions@users.noreply.github.com'
+      - name: Patch production backup entrypoint
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('mcp/server_v61_backup_recovery.py')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''from mcp import server_v61_sync_recovery as _base  # noqa: E402\nfrom unified_runtime.backup_recovery_hardened import ProductionBackupRecoveryManager  # noqa: E402\nfrom unified_runtime.resilience import digest  # noqa: E402\n'''
+          new = '''from mcp import server_v61_sync_recovery as _base  # noqa: E402\nfrom mcp.backup_replica_binding_v64 import backup_replica_from_env  # noqa: E402\nfrom unified_runtime.backup_recovery_hardened import ProductionBackupRecoveryManager  # noqa: E402\nfrom unified_runtime.resilience import digest  # noqa: E402\n'''
+          if old not in text:
+              raise SystemExit('import anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''_v61 = _base._v61\n_RUNTIME = _base._RUNTIME\n_BACKUP = ProductionBackupRecoveryManager.from_runtime(_RUNTIME)\n_TOOL_HANDLERS = _v61._server.TOOL_HANDLERS\n'''
+          new = '''_v61 = _base._v61\n_RUNTIME = _base._RUNTIME\n_EXTERNAL_BACKUP = backup_replica_from_env()\n_BACKUP = ProductionBackupRecoveryManager.from_runtime(\n    _RUNTIME,\n    external_replica=_EXTERNAL_BACKUP,\n)\n_TOOL_HANDLERS = _v61._server.TOOL_HANDLERS\n'''
+          if old not in text:
+              raise SystemExit('root manager anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = '''    if source_root == Path(_RUNTIME.store.root).resolve():\n        return _BACKUP\n    return ProductionBackupRecoveryManager.for_session_root(source_root)\n'''
+          new = '''    if source_root == Path(_RUNTIME.store.root).resolve():\n        return _BACKUP\n    return ProductionBackupRecoveryManager.for_session_root(\n        source_root,\n        external_replica=_EXTERNAL_BACKUP,\n    )\n'''
+          if old not in text:
+              raise SystemExit('migration manager anchor not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Verify production wiring GREEN before push
+        run: |
+          python -m unittest \
+            tests.test_v64_backup_replica_server_wiring \
+            tests.test_v64_backup_retention_runtime \
+            tests.test_v64_backup_object_store \
+            tests.test_v61_backup_recovery \
+            tests.test_v64_stream_b_semantic_forward_port -v
+          python -m compileall -q mcp unified_runtime
+      - name: Commit wiring and remove one-shot runner
+        run: |
+          git add mcp/server_v61_backup_recovery.py
+          git commit -m 'feat(v64): wire durable backups into production entrypoint'
+          git rm .github/workflows/cbi-v64-task4-server-green.yml
+          git commit -m 'chore(v64): remove task4 server GREEN runner'
+      - name: Push verified result
+        run: git push origin HEAD:cbi-v64-backup-wal-hardening-20260909
