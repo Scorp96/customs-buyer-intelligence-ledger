@@ -19,6 +19,7 @@ from .windows_security import (
     SecretBundle,
     WindowsSecurityError,
     default_worker_state_root,
+    harden_worker_acl,
     read_secret_bundle,
     require_elevated_administrator,
     resolve_service_sid,
@@ -149,6 +150,11 @@ def make_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--service-sid", required=True)
 
     subparsers.add_parser(
+        "harden-install-acl",
+        help="administrator-only exact ACL hardening for the fixed ProgramData installation",
+    )
+
+    subparsers.add_parser(
         "validate-install",
         help="validate the fixed ProgramData installation before service start",
     )
@@ -175,6 +181,13 @@ def _result_json(result: object) -> str:
         separators=(",", ":"),
         ensure_ascii=False,
     )
+
+
+def _harden_install_acl() -> None:
+    require_elevated_administrator()
+    root = default_worker_state_root()
+    service_sid = resolve_service_sid()
+    harden_worker_acl(root, service_sid)
 
 
 def _validate_install() -> None:
@@ -236,6 +249,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "verify-acl":
             verify_worker_acl(args.path, args.service_sid)
             sys.stdout.write("ASTRA_ACL_OK\n")
+            return 0
+        if args.command == "harden-install-acl":
+            _harden_install_acl()
+            sys.stdout.write("ASTRA_ACL_HARDENED\n")
             return 0
         if args.command == "validate-install":
             _validate_install()
