@@ -26,8 +26,43 @@ def _worktree_root(worktree: Path) -> Path:
     return root
 
 
+def _validate_unique_mutation_paths(task: TaskEnvelope) -> None:
+    seen: dict[str, str] = {}
+    for operation in task.operations:
+        if not isinstance(operation, (WriteTextCapability, DeleteFileCapability)):
+            continue
+        identity = operation.path.replace("\\", "/").casefold()
+        previous = seen.get(identity)
+        if previous is not None:
+            raise CompilerError(
+                f"multiple mutation capabilities resolve to one Windows path: {previous!r} and {operation.path!r}"
+            )
+        seen[identity] = operation.path
+
+
 def _resolve_mutation_path(root: Path, relative_path: str) -> Path:
-    target = (root / Path(*relative_path.replace("\\", "/").split("/"))).resolve(strict=False)
+    parts = relative_path.replace("\\", "/").split("/")
+    lexical = root.joinpath(*parts)
+
+    current = root
+    for part in parts:
+        current = current / part
+        try:
+            if current.is_symlink():
+                raise CompilerError(f"mutation path traverses a symlink: {relative_path}")
+        except OSError as exc:
+            raise CompilerError("mutation path symlink state could not be proven") from exc
+
+    try:
+        target = lexical.resolve(strict=False)
+    except OSError as exc:
+        raise CompilerError("mutation path could not be resolved") from exc
+
+    lexical_identity = os.path.normcase(os.path.normpath(str(lexical)))
+    resolved_identity = os.path.normcase(os.path.normpath(str(target)))
+    if lexical_identity != resolved_identity:
+        raise CompilerError(f"mutation path resolves through a filesystem alias: {relative_path}")
+
     try:
         common = os.path.commonpath([str(root), str(target)])
     except ValueError as exc:
@@ -51,6 +86,7 @@ def _sha256_file(path: Path) -> str:
 def verify_pre_state(task: TaskEnvelope, worktree: Path) -> None:
     if not isinstance(task, TaskEnvelope):
         raise CompilerError("typed task envelope is required")
+    _validate_unique_mutation_paths(task)
     root = _worktree_root(worktree)
 
     for operation in task.operations:
@@ -79,6 +115,7 @@ def verify_pre_state(task: TaskEnvelope, worktree: Path) -> None:
 def intended_final_hashes(task: TaskEnvelope) -> dict[str, str | None]:
     if not isinstance(task, TaskEnvelope):
         raise CompilerError("typed task envelope is required")
+    _validate_unique_mutation_paths(task)
     result: dict[str, str | None] = {}
     for operation in task.operations:
         if isinstance(operation, WriteTextCapability):
