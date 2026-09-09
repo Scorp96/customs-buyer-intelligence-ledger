@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import unittest
 
+from astra_worker.evidence import PatchChunk
 from astra_worker.protocol import (
     canonical_json_v1,
     encode_signed_envelope,
@@ -177,6 +178,40 @@ class TaskQueueTests(unittest.TestCase):
             queue.claim(ready)
         self.assertEqual(api.replaced, [])
         self.assertEqual(api.posted, [])
+
+    def test_patch_chunks_and_receipt_use_strict_transport_framing(self) -> None:
+        api = FakeQueueApi([], {})
+        queue = TaskQueue(api=api, task_key=TASK_KEY)
+        patch = b"abc"
+        patch_sha = hashlib.sha256(patch).hexdigest()
+        chunk = PatchChunk(
+            index=1,
+            total=1,
+            text="abc",
+            sha256=hashlib.sha256(patch).hexdigest(),
+            patch_sha256=patch_sha,
+        )
+        queue.post_patch_chunks(7, "task-queue-001", (chunk,))
+        receipt_body = "ASTRA_RECEIPT_V1 {\"payload\":{},\"signature\":\"" + "0" * 64 + "\"}"
+        queue.post_receipt(7, receipt_body)
+
+        self.assertEqual(len(api.posted), 2)
+        chunk_prefix = "ASTRA_PATCH_CHUNK_V1 "
+        self.assertTrue(api.posted[0][1].startswith(chunk_prefix))
+        payload = parse_strict_json(api.posted[0][1][len(chunk_prefix) :])
+        self.assertEqual(
+            payload,
+            {
+                "schema_version": "astra.patch-chunk.v1",
+                "task_id": "task-queue-001",
+                "index": 1,
+                "total": 1,
+                "text": "abc",
+                "sha256": chunk.sha256,
+                "patch_sha256": patch_sha,
+            },
+        )
+        self.assertEqual(api.posted[1], (7, receipt_body))
 
 
 if __name__ == "__main__":
