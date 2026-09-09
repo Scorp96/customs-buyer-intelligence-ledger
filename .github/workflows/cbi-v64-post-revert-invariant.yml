@@ -1,0 +1,101 @@
+name: CBI v6.4 post-revert production invariant
+
+on:
+  push:
+    branches:
+      - cbi-v64-post-revert-invariant-20260909
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_VERIFIER_BASE_SHA: 768b53eb8ed0166943acaac3ab804ee20b98e148
+  EXPECTED_PRODUCTION_SHA: 58c3120c534d83f7e119701504c38be58ca9e475
+  PRODUCTION_BASE_URL: https://cbi-v61-preview.onrender.com
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact verifier SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Prove workflow-only delta over clean verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_VERIFIER_BASE_SHA"
+          python - <<'PY'
+          import os, subprocess
+          changed = set(subprocess.check_output([
+              "git", "diff", "--name-only", os.environ["EXPECTED_VERIFIER_BASE_SHA"], os.environ["GITHUB_SHA"]
+          ], text=True).splitlines())
+          allowed = {".github/workflows/cbi-v64-post-revert-invariant.yml"}
+          assert changed == allowed, (changed, allowed)
+          print("POST_REVERT_VERIFIER_DELTA=PASS")
+          PY
+
+      - name: Verify discovery sanitizer contract
+        run: python -m unittest tests.test_v64_positive_route_discovery -v
+
+      - name: Read production state twice without mutation
+        env:
+          CBI_V64_DISCOVERY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cbi-v64-post-revert/artifact"
+          set +e
+          python scripts/discover_v64_positive_route_candidate.py \
+            --base-url "$PRODUCTION_BASE_URL" \
+            --output "$RUNNER_TEMP/cbi-v64-post-revert/artifact/receipt.json"
+          rc=$?
+          set -e
+          test "$rc" -eq 0 -o "$rc" -eq 2
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "cbi-v64-post-revert/artifact/receipt.json"
+          receipt = json.loads(path.read_text(encoding="utf-8"))
+          assert receipt["schema"] == "cbi.v64-positive-route-discovery.v1"
+          before = receipt["production_before"]
+          after = receipt["production_after"]
+          expected_keys = {
+              "status", "git_sha", "object_state_generation", "restore_generation",
+              "recovery_fingerprint_sha256", "runtime_ready", "wal_prepared_count",
+              "wal_invalid_count", "wal_reconciliation_required"
+          }
+          for health in (before, after):
+              assert set(health) == expected_keys, set(health)
+              assert health["status"] == "ok"
+              assert health["git_sha"] == os.environ["EXPECTED_PRODUCTION_SHA"], health["git_sha"]
+              assert health["runtime_ready"] is True
+              assert health["wal_prepared_count"] == 0
+              assert health["wal_invalid_count"] == 0
+              assert health["wal_reconciliation_required"] is False
+          assert before == after, (before, after)
+          print("POST_REVERT_PRODUCTION_INVARIANTS=PASS")
+          print("OBJECT_STATE_GENERATION=" + str(before["object_state_generation"]))
+          print("RESTORE_GENERATION=" + str(before["restore_generation"]))
+          print("RECOVERY_FINGERPRINT_SHA256=" + str(before["recovery_fingerprint_sha256"]))
+          print("DISCOVERY_RESULT=" + str(receipt["result"]))
+          print("DISCOVERY_REASON_CODES=" + ",".join(receipt.get("reason_codes") or []))
+          PY
+
+      - name: Upload sanitized invariant receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-post-revert-invariant-${{ github.sha }}
+          path: ${{ runner.temp }}/cbi-v64-post-revert/artifact/receipt.json
+          if-no-files-found: error
+          retention-days: 7
