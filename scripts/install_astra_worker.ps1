@@ -59,7 +59,12 @@ $Directories = @(
 foreach ($Directory in $Directories) {
     New-Item -ItemType Directory -Path $Directory -Force | Out-Null
 }
-Copy-Item -LiteralPath $ResolvedConfig -Destination $ConfigTarget -Force
+
+# PowerShell 5.1 `Set-Content -Encoding UTF8` writes a UTF-8 BOM. The worker's
+# strict JSON protocol deliberately rejects BOM-prefixed JSON, so normalize the
+# trusted local config to UTF-8 without BOM before installation.
+$ConfigText = Get-Content -LiteralPath $ResolvedConfig -Raw -Encoding UTF8
+[IO.File]::WriteAllText($ConfigTarget, $ConfigText, (New-Object Text.UTF8Encoding($false)))
 
 if (Test-Path -LiteralPath $WinSWExe -PathType Leaf) {
     $ExistingHash = (Get-FileHash -LiteralPath $WinSWExe -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -110,7 +115,9 @@ if ($null -eq $ExistingService) {
 
 & sc.exe sidtype $ServiceName unrestricted | Out-Null
 Assert-NativeSuccess "service SID configuration"
-& sc.exe config $ServiceName obj= $ServiceAccount password= "" | Out-Null
+# Virtual service accounts are passwordless. ChangeServiceConfig requires a NULL
+# password pointer for `NT SERVICE\<name>` accounts, so do not pass password= "".
+& sc.exe config $ServiceName obj= $ServiceAccount | Out-Null
 Assert-NativeSuccess "virtual service account configuration"
 
 $ServiceGrant = "*$ServiceSid`:(OI)(CI)F"
