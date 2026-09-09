@@ -133,16 +133,23 @@ The v1 Local Executor is intentionally narrow:
 - exact expected branch;
 - clean working tree for apply;
 - no apply on `main`, `master`, or `production`;
-- repository-root-confined file writes/deletes and command path targets;
+- repository-root-confined file writes/deletes, command working directories and command path targets;
 - nested `.git` paths are inaccessible;
 - no shell;
-- exact Python executable matching with commands limited to constrained `-m unittest` and `-m compileall` forms;
-- Git commands limited to read-only inspection and unsafe output/external-diff/pathspec escape surfaces rejected;
-- no package installation, `git push`, PowerShell, cmd, bash, arbitrary `python -c`, or network-command authority.
+- user-selected executable paths cannot bypass the allowlist by using an allowed basename; only the exact current Python interpreter path is accepted where required by the supported Python invocation contract;
+- inherited `PYTHON*` control variables are removed from command execution and `PYTHONNOUSERSITE=1` is forced;
+- Python is limited to constrained `-m unittest` and `-m compileall` forms; file/path targets stay under repository root, and dotted unittest targets must resolve to an actual module/package inside the declared repository rather than an installed or `PYTHONPATH`-injected module;
+- inherited `GIT_*` control variables are removed before internal or manifest Git execution, then only bounded noninteractive Git controls are reintroduced;
+- internal branch/clean-tree inspection forces `core.fsmonitor=false` so repository configuration cannot start an fsmonitor helper during the safety gate;
+- allowed `git diff`, `git log`, and `git show` execution forces `--no-ext-diff` and `--no-textconv`;
+- Git commands are limited to read-only inspection and reject unsafe output/file-fed pathspec, external-diff and no-index surfaces;
+- signature verification/rendering surfaces that can launch a configured GPG helper are rejected, including `--show-signature` and `%G*` pretty-format placeholders;
+- no package installation, `git push`, PowerShell, cmd, bash, arbitrary `python -c`, or network-command authority;
+- all manifest operations are validated before the first mutation, and command failure stops later operations with a structured result.
 
-The command boundary is **not an OS sandbox**. An allowlisted test or repository module is trusted repository code and may itself perform side effects when executed. Use Local Executor only on repositories/branches whose code is trusted for local execution.
+The command boundary is **not an OS sandbox**. An allowlisted repository test/module and its imported dependencies are trusted code and may themselves perform side effects. Phase 1 also assumes the local OS account, executable search path, installed Python/Git binaries, and repository dependency environment are trusted. A compromised local `PATH`, replaced interpreter/Git binary, hostile dependency, or intentionally malicious repository test is outside this phase's protection boundary.
 
-If a task needs broader authority, do not weaken these checks ad hoc. Design and review a separate executor capability.
+Use Local Executor only on repositories/branches whose executable code and dependency environment are trusted for local execution. If a task needs broader authority, do not weaken these checks ad hoc. Design and review a separate executor capability.
 
 ### Future unattended local control plane
 
@@ -152,6 +159,7 @@ If the user later approves an unattended local control plane, treat it as a sepa
 
 - pin allowed repository roots in trusted local configuration; remote manifests must not choose an arbitrary `repository_root`;
 - use authentication/authorization independent of ChatGPT browser/session tokens;
+- establish a trusted executable and dependency environment rather than inheriting a remotely influenceable `PATH`, interpreter or repository execution context;
 - preserve exact branch and clean-tree gates, auditable results and fail-closed behavior;
 - deny unrestricted shell, package installation, arbitrary Python, network commands, credentials and Git push authority.
 
@@ -165,8 +173,8 @@ Before declaring a substantial engineering task complete, verify all of the foll
 - the chosen route still passes the anti-path-dependence check;
 - important alternatives were considered;
 - no temporary workaround is being mislabeled production-grade;
-- tests actually exercise the intended behavior;
-- CI/test evidence is current for the commit being reviewed;
+- tests actually exercise the intended behavior, including any security regression that motivated a fix;
+- CI/test evidence is current for the exact commit being reviewed;
 - no unrelated production-sensitive files changed;
 - remaining risks and unverified items are explicit;
 - success and stop conditions are measurable.
