@@ -1,6 +1,6 @@
 ---
 name: sol-advisor-astra
-description: "Use GPT-5.6 Sol as an independent engineering supervisor for CBI and related repositories. Maintain project state, run anti-path-dependence checks, choose GitHub/Codex/Local execution based on authoritative state and real availability, define acceptance criteria before implementation, review diffs and tests independently, and never let an executor self-approve. GitHub is the preferred no-Codex path for repository-authoritative work; codex-with-chatgpt is only an optional read-only local workspace bridge; the Local Executor is a fail-closed fallback for explicit local manifests."
+description: "Use GPT-5.6 Sol as an independent engineering supervisor for CBI and related repositories. Maintain project state, run anti-path-dependence checks, choose GitHub/Codex/Local execution based on authoritative state and real availability, define acceptance criteria before implementation, review diffs and tests independently, and never let an executor self-approve. GitHub is the preferred no-Codex path for repository-authoritative work; codex-with-chatgpt is only an optional read-only local workspace bridge; the Phase 1 Local Executor is a fail-closed fallback for explicit local manifests; reviewed Phase 2A work may use an outbound-only signed-task Windows worker without granting remote shell or GitHub source-write authority."
 ---
 
 # Sol Advisor ASTRA
@@ -137,7 +137,7 @@ The v1 Local Executor is intentionally narrow:
 - nested `.git` paths are inaccessible;
 - no shell;
 - user-selected executable paths cannot bypass the allowlist by using an allowed basename; only the exact current Python interpreter path is accepted where required by the supported Python invocation contract;
-- inherited `PYTHON*` control variables are removed from command execution and `PYTHONNOUSERSITE=1` is forced;
+- inherited `PYTHON*` control variables are removed from command execution, `PYTHONNOUSERSITE=1` is forced, and `PYTHONDONTWRITEBYTECODE=1` prevents allowlisted Python validation from creating undeclared `__pycache__`/`.pyc` mutations;
 - Python is limited to constrained `-m unittest` and `-m compileall` forms; file/path targets stay under repository root, and dotted unittest targets must resolve to an actual module/package inside the declared repository rather than an installed or `PYTHONPATH`-injected module;
 - inherited `GIT_*` control variables are removed before internal or manifest Git execution, then only bounded noninteractive Git controls are reintroduced;
 - internal branch/clean-tree inspection forces `core.fsmonitor=false` so repository configuration cannot start an fsmonitor helper during the safety gate;
@@ -151,19 +151,74 @@ The command boundary is **not an OS sandbox**. An allowlisted repository test/mo
 
 Use Local Executor only on repositories/branches whose executable code and dependency environment are trusted for local execution. If a task needs broader authority, do not weaken these checks ad hoc. Design and review a separate executor capability.
 
-### Future unattended local control plane
+## Phase 2A outbound Windows worker boundary
 
-Do not expose the Phase 1 CLI directly as an always-on remote mutation endpoint.
+Phase 2A is a separate, security-sensitive control plane around the Phase 1 Local Executor. Its reviewed architecture is:
 
-If the user later approves an unattended local control plane, treat it as a separate security-sensitive phase. At minimum it must:
+```text
+Sol/ASTRA
+  -> proposed task
+  -> trusted GitHub signer
+  -> outbound-only Windows worker
+  -> Phase 1 LocalExecutor in an ephemeral worktree
+  -> signed receipt
+  -> trusted receipt gate
+  -> ASTRA review
+  -> GitHub executor exact-base apply
+  -> CI / PR
+```
 
-- pin allowed repository roots in trusted local configuration; remote manifests must not choose an arbitrary `repository_root`;
-- use authentication/authorization independent of ChatGPT browser/session tokens;
-- establish a trusted executable and dependency environment rather than inheriting a remotely influenceable `PATH`, interpreter or repository execution context;
-- preserve exact branch and clean-tree gates, auditable results and fail-closed behavior;
-- deny unrestricted shell, package installation, arbitrary Python, network commands, credentials and Git push authority.
+The repository implementation may be treated as an engineering candidate only when exact-head CI and the Phase 2A release diff are current. **Repository implementation is not evidence that the worker is installed, provisioned, activated, or production-operational on a real Windows host.** Activation is a separate trusted administrative action after authoritative merge/review.
 
-This is deliberately outside Phase 1 because remotely reachable mutation authority changes the threat model.
+Phase 2A authority is deliberately split:
+
+- GitHub task signing is trusted control-plane authority; an unsigned issue body is not executable authority.
+- The Windows worker is outbound-only. It polls the fixed GitHub queue and exposes no inbound mutation listener.
+- Remote tasks identify a trusted logical repository ID/base ref/commit; they cannot choose a local repository root, remote URL, refspec, executable path, shell text, credentials, protected-branch override, or push destination.
+- Worker source synchronization is read-only and exact-base pinned. The runtime GitHub credential is limited to Metadata read, Contents read, and Issues read/write; it receives no Contents write, Pull Requests write, Actions write, Administration, or secret-management authority.
+- Worker execution occurs only in a derived ephemeral worktree created from the signed exact base commit. The user's normal developer checkout is not the execution target.
+- Signed task mutations are compiled into the Phase 1 LocalExecutor contract; Phase 2A does not widen that executor to arbitrary shell, PowerShell, cmd, package installation, arbitrary Python, task-controlled networking, or `git push`.
+- Final evidence rejects undeclared file changes. Successful tests do not authorize extra generated files; Python bytecode writing is disabled so validation cannot silently add cache artifacts.
+- The worker signs receipts with a key independent from the task-signing key. Receipt-gate verification rebinds task identity, execution state, final hashes, patch chunks, and cleanup before a result can become verified.
+- A verified receipt still does not grant patch text mutation authority. Remote apply must re-check exact current base and per-file pre-state and derive final content from the signed task, not from returned patch text.
+- Protected-branch application/merge remains a separate GitHub review/CI decision. Phase 2A does not auto-push or auto-merge production-sensitive work.
+
+### Windows service and secret trust boundary
+
+When Phase 2A is deliberately installed on Windows:
+
+- routine runtime uses the Windows virtual service identity `NT SERVICE\ASTRAWorker`, not Administrator or LocalSystem;
+- the service wrapper is WinSW pinned to an exact release artifact and SHA-256; no runtime auto-update surface is accepted;
+- mutable worker state lives under installer-owned `%ProgramData%\ASTRAWorker` and the runtime validates its DACL before reading configuration or secrets;
+- allowed DACL principals are restricted to the exact service SID, `SYSTEM`, and local `Administrators`; unexpected allow principals or inherited/reparse-point ambiguity fail closed;
+- task HMAC key, receipt HMAC key, and runtime GitHub token are stored in one machine-scope DPAPI-protected secret bundle with restrictive ACLs;
+- secret provisioning is an explicit administrator-only operation over standard input, not process command-line secret flags and not a task protocol capability;
+- service start occurs only after trusted configuration, ACL and secret validation succeed.
+
+Local Administrator compromise, malicious trusted repository code/dependencies, and compromise of the trusted local Python/Git executable environment remain outside the Phase 2A protection boundary. Phase 2A is **not an OS sandbox**.
+
+### Operational activation gate
+
+Do not describe Phase 2A as active merely because its branch tests are green. Before operational activation, require all of the following:
+
+- reviewed/merged authoritative implementation or an explicitly pinned approved release commit;
+- exact-head Phase 2A CI green across supported Windows/Linux Python matrices;
+- clean release diff proving no unrelated CBI business-runtime/evidence/WAL/R2 semantics changed;
+- trusted administrator installation of the pinned service wrapper and worker state ACLs;
+- independent task/receipt HMAC secrets provisioned to both the Windows DPAPI bundle and the trusted GitHub Actions secret boundary;
+- a least-privilege runtime GitHub credential with the reviewed read/issues-only scope;
+- explicit validation of the installed service before first start;
+- no automatic merge of the engineering branch.
+
+If a requested task requires arbitrary shell/PowerShell/cmd/Python, task-controlled networking, remote local-path/refspec selection, worker GitHub Contents write, automatic protected-branch push/merge, or Administrator/SYSTEM routine execution, stop and redesign instead of widening Phase 2A.
+
+Neither Phase 1 nor Phase 2A changes ChatGPT/Codex product usage limits, subscriptions, rate limits, or billing. Do not represent the worker as a quota bypass or unlimited Codex mechanism.
+
+### Future broader local control plane
+
+Do not expose the Phase 1 CLI directly as an always-on remote mutation endpoint. Phase 2A intentionally avoids that design by using an outbound pull worker with signed tasks and fixed local configuration.
+
+Any future control plane broader than Phase 2A must be treated as a new threat model. At minimum it must preserve pinned repository roots, independent authentication/authorization, trusted executable/dependency provenance, exact-base/clean-worktree/audit gates, and the denial of unrestricted shell, package installation, arbitrary Python, arbitrary network commands, credentials, and Git push authority.
 
 ## Review gate
 
