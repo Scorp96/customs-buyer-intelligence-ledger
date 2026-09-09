@@ -119,6 +119,17 @@ class TaskQueueTests(unittest.TestCase):
         with self.assertRaises(QueueError):
             queue.find_ready(WORKER_ID)
 
+    def test_duplicate_identical_valid_signed_tasks_fail_closed(self) -> None:
+        payload = task_payload()
+        signed = signed_task_comment(payload)
+        api = FakeQueueApi(
+            [issue(8, labels=["astra-task/ready"])],
+            {8: [signed, dict(signed)]},
+        )
+        queue = TaskQueue(api=api, task_key=TASK_KEY)
+        with self.assertRaises(QueueError):
+            queue.find_ready(WORKER_ID)
+
     def test_wrong_worker_or_conflicting_lifecycle_is_not_executable(self) -> None:
         wrong_worker = task_payload(worker_id="other-worker")
         api = FakeQueueApi(
