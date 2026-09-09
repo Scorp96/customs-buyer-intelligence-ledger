@@ -6,24 +6,33 @@ on:
       - "astra-phase2-*"
     paths:
       - "astra_worker/**"
-      - "scripts/astra_worker*.py"
-      - "scripts/astra_task_gate.py"
-      - "scripts/astra_receipt_gate.py"
+      - "astra_supervisor/**"
+      - "scripts/astra_*worker*.py"
+      - "scripts/astra_*gate.py"
+      - "scripts/install_astra_worker.ps1"
+      - "deploy/astra-worker/**"
       - "tests/test_astra_worker*.py"
-      - ".github/workflows/astra-worker-ci.yml"
+      - "tests/test_astra_supervisor*.py"
+      - ".github/workflows/astra-*.yml"
+      - "skills/sol-advisor-astra/**"
       - "docs/superpowers/specs/2026-09-09-astra-phase2-*.md"
       - "docs/superpowers/plans/2026-09-09-astra-phase2-*.md"
   pull_request:
     branches:
-      - main
       - cbi-v6-3-demand-expansion
     paths:
       - "astra_worker/**"
-      - "scripts/astra_worker*.py"
-      - "scripts/astra_task_gate.py"
-      - "scripts/astra_receipt_gate.py"
+      - "astra_supervisor/**"
+      - "scripts/astra_*worker*.py"
+      - "scripts/astra_*gate.py"
+      - "scripts/install_astra_worker.ps1"
+      - "deploy/astra-worker/**"
       - "tests/test_astra_worker*.py"
-      - ".github/workflows/astra-worker-ci.yml"
+      - "tests/test_astra_supervisor*.py"
+      - ".github/workflows/astra-*.yml"
+      - "skills/sol-advisor-astra/**"
+      - "docs/superpowers/specs/2026-09-09-astra-phase2-*.md"
+      - "docs/superpowers/plans/2026-09-09-astra-phase2-*.md"
 
 permissions:
   contents: read
@@ -56,14 +65,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Compile Phase 1 ASTRA sources
-        run: python -m compileall -q astra_supervisor scripts/astra_local_executor.py
-
-      - name: Run Phase 1 ASTRA regression
-        run: python -m unittest tests.test_astra_supervisor tests.test_astra_supervisor_executable_boundary -v
+      - name: Compile ASTRA Phase 1 and Phase 2A sources
+        run: python -m compileall -q astra_worker astra_supervisor scripts/astra_worker.py scripts/astra_task_gate.py scripts/astra_receipt_gate.py
 
       - name: Run Phase 2A worker tests
         run: python -m unittest discover -s tests -p "test_astra_worker*.py" -v
+
+      - name: Run Phase 1 ASTRA regression
+        run: python -m unittest tests.test_astra_supervisor tests.test_astra_supervisor_executable_boundary -v
 
       - name: Install CBI regression dependencies
         if: runner.os == 'Linux' && matrix.python-version == '3.11'
