@@ -20,3 +20,5 @@ jobs:
         run: python -m unittest tests.test_v64_request_scoped_verified_snapshot -v
       - name: Stable state-query performance protocol
         run: python -m unittest tests.test_v64_state_query_performance_protocol -v
+      - name: Immutable backup object-store contract
+        run: python -m unittest tests.test_v64_backup_object_store -v
