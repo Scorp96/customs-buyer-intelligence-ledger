@@ -107,6 +107,14 @@ class ManifestValidationTests(unittest.TestCase):
         with self.assertRaises(ManifestValidationError):
             ExecutionManifest.from_dict(payload)
 
+    def test_rejects_nested_git_metadata_write(self):
+        payload = self._base()
+        payload["operations"] = [
+            {"kind": "write_text", "path": "nested/.git/config", "content": "x"}
+        ]
+        with self.assertRaises(ManifestValidationError):
+            ExecutionManifest.from_dict(payload)
+
     def test_rejects_unknown_operation(self):
         payload = self._base()
         payload["operations"] = [{"kind": "launch_missiles"}]
@@ -214,6 +222,29 @@ class LocalExecutorTests(unittest.TestCase):
         with self.assertRaises(LocalExecutionError):
             LocalExecutor().execute(manifest, apply=False)
 
+    def test_rejects_python_lookalike_executable(self):
+        manifest = self._manifest(
+            [{"kind": "run", "argv": ["python-malicious", "-m", "unittest", "test_generated.py"], "cwd": "."}]
+        )
+        with self.assertRaises(LocalExecutionError):
+            LocalExecutor().execute(manifest, apply=False)
+
+    def test_rejects_unittest_absolute_target(self):
+        absolute = str(Path(self.tempdir.name) / "outside_test.py")
+        manifest = self._manifest(
+            [{"kind": "run", "argv": [sys.executable, "-m", "unittest", absolute], "cwd": "."}]
+        )
+        with self.assertRaises(LocalExecutionError):
+            LocalExecutor().execute(manifest, apply=False)
+
+    def test_rejects_compileall_absolute_target(self):
+        absolute = str(Path(self.tempdir.name) / "outside")
+        manifest = self._manifest(
+            [{"kind": "run", "argv": [sys.executable, "-m", "compileall", absolute], "cwd": "."}]
+        )
+        with self.assertRaises(LocalExecutionError):
+            LocalExecutor().execute(manifest, apply=False)
+
     def test_rejects_shell_executable(self):
         manifest = self._manifest(
             [{"kind": "run", "argv": ["bash", "-c", "echo unsafe"], "cwd": "."}]
@@ -224,6 +255,20 @@ class LocalExecutorTests(unittest.TestCase):
     def test_rejects_git_push(self):
         manifest = self._manifest(
             [{"kind": "run", "argv": ["git", "push"], "cwd": "."}]
+        )
+        with self.assertRaises(LocalExecutionError):
+            LocalExecutor().execute(manifest, apply=False)
+
+    def test_rejects_git_output_option(self):
+        manifest = self._manifest(
+            [{"kind": "run", "argv": ["git", "diff", "--output=../outside.patch"], "cwd": "."}]
+        )
+        with self.assertRaises(LocalExecutionError):
+            LocalExecutor().execute(manifest, apply=False)
+
+    def test_rejects_git_external_diff_option(self):
+        manifest = self._manifest(
+            [{"kind": "run", "argv": ["git", "diff", "--ext-diff"], "cwd": "."}]
         )
         with self.assertRaises(LocalExecutionError):
             LocalExecutor().execute(manifest, apply=False)
