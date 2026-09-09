@@ -16,6 +16,8 @@ _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _COMMENTS_PER_PAGE = 100
 _MAX_COMMENT_PAGES = 10
+_ISSUES_PER_PAGE = 100
+_MAX_ISSUE_PAGES = 10
 
 
 class GitHubIssueClient:
@@ -88,6 +90,25 @@ class GitHubIssueClient:
         if not isinstance(result, dict):
             raise GitHubApiError("GitHub issue response is not an object")
         return result
+
+    def list_open_issues_by_label(self, label: str) -> list[dict[str, Any]]:
+        if not isinstance(label, str) or not label or "\x00" in label:
+            raise GitHubApiError("issue label must be non-empty")
+        encoded = quote(label, safe="")
+        issues: list[dict[str, Any]] = []
+        for page in range(1, _MAX_ISSUE_PAGES + 1):
+            result = self._request(
+                "GET",
+                f"/repos/{self.repository}/issues?state=open&labels={encoded}"
+                f"&per_page={_ISSUES_PER_PAGE}&page={page}",
+            )
+            if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
+                raise GitHubApiError("GitHub issue listing response is invalid")
+            # GitHub's Issues endpoint also returns pull requests. The worker queue is issue-only.
+            issues.extend(item for item in result if "pull_request" not in item)
+            if len(result) < _ISSUES_PER_PAGE:
+                return issues
+        raise GitHubApiError("GitHub issue listing exceeded pagination safety limit")
 
     def list_issue_comments(self, issue_number: int) -> list[dict[str, Any]]:
         if isinstance(issue_number, bool) or not isinstance(issue_number, int) or issue_number <= 0:
