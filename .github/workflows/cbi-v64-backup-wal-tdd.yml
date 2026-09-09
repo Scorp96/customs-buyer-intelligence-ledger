@@ -24,3 +24,5 @@ jobs:
         run: python -m unittest tests.test_v64_backup_object_store -v
       - name: Backup retention runtime contract
         run: python -m unittest tests.test_v64_backup_retention_runtime -v
+      - name: Production backup replica wiring
+        run: python -m unittest tests.test_v64_backup_replica_server_wiring -v
