@@ -223,6 +223,52 @@ class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertFalse(marker.exists())
 
+    @unittest.skipIf(os.name == "nt", "POSIX Git clean-filter helper regression")
+    def test_git_clean_filter_cannot_execute_during_clean_tree_gate(self):
+        (self.root / ".gitattributes").write_text("*.flt filter=astra_clean\n", encoding="utf-8")
+        (self.root / "sample.flt").write_text("baseline\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(self.root), "add", ".gitattributes", "sample.flt"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.root), "commit", "-m", "clean-filter baseline"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        marker = Path(self.tempdir.name) / "clean-filter.marker"
+        script = Path(self.tempdir.name) / "clean-filter.sh"
+        script.write_text(
+            "#!/bin/sh\n"
+            f": > {shlex.quote(str(marker))}\n"
+            "cat\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        subprocess.run(
+            ["git", "-C", str(self.root), "config", "filter.astra_clean.clean", str(script)],
+            check=True,
+        )
+        (self.root / "sample.flt").write_text("changed\n", encoding="utf-8")
+        marker.unlink(missing_ok=True)
+
+        manifest = ExecutionManifest.from_dict(
+            {
+                "task_id": "git-clean-filter-boundary",
+                "repository_root": str(self.root),
+                "expected_branch": "astra-test",
+                "operations": [],
+            }
+        )
+        with self.assertRaises(LocalExecutionError):
+            LocalExecutor().execute(manifest, apply=True)
+
+        self.assertFalse(marker.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
