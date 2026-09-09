@@ -2,94 +2,71 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a tested ASTRA supervisor contract plus a fail-closed Local Executor fallback so CBI engineering can continue when Codex allowance is unavailable.
+**Goal:** Keep GPT-5.6 Sol / ASTRA as an independent engineering supervisor while removing Codex allowance as a single point of failure for repository-authoritative CBI development.
 
-**Architecture:** Keep CBI runtime untouched. Add an independent `astra_supervisor` Python package for executor selection and local-manifest execution, a `$sol-advisor-astra` skill for supervisor behavior, and a focused CI workflow. `codex-with-chatgpt` remains an optional external read-only bridge and is not vendored.
+**Architecture:** Introduce a small, CBI-independent `astra_supervisor` package. ASTRA selects an executor by authoritative-state location: GitHub first for repository-authoritative changes, Codex or a fail-closed Local Executor for local-workspace changes, and no executor for review-only tasks. The Local Executor accepts a narrow manifest, defaults to dry-run, validates every operation before mutation, refuses protected branches, and exposes only bounded file operations plus allowlisted verification commands. `codex-with-chatgpt` remains an optional external read-only workspace bridge and is not vendored.
 
-**Tech Stack:** Python 3.10+, stdlib `dataclasses`, `enum`, `json`, `pathlib`, `subprocess`, `unittest`, GitHub Actions.
+**Tech Stack:** Python 3.10+, unittest, GitHub Actions, existing repository Git workflow.
 
 **Spec:** `docs/superpowers/specs/2026-09-09-astra-supervisor-multi-executor-design.md`
 
 ## Global Constraints
 
-- Do not modify CBI evidence, WAL, R2, canonical identity, closure, CRM, or send-gating semantics.
-- Do not write directly to `main`, `master`, or `production` through the Local Executor.
-- Default Local Executor behavior is dry-run.
-- Never invoke a shell for manifest commands.
-- No session-token scraping, unofficial ChatGPT web API, or vendored third-party bridge source.
-- GitHub is a first-class no-Codex executor for repository-authoritative work.
+- Do not modify CBI evidence, WAL, R2, canonical identity, Closure, CRM or outreach semantics.
+- Do not write directly to `main`, `master`, or `production` from Local Executor.
+- Local Executor apply mode requires the exact expected branch and a clean Git working tree.
+- Dry-run is the Local Executor default.
+- Do not expose arbitrary shell, PowerShell, CMD, package install, network commands, `git push`, or `python -c` through the Local Executor.
+- All manifest paths and command path targets must remain under the declared repository root; nested `.git` metadata is inaccessible.
+- Repository-authoritative work should prefer GitHub execution rather than pretending Codex is mandatory.
+- `codex-with-chatgpt` is read-only workspace visibility only; it is not an execution authority and not a quota bypass.
+- No automatic merge into the active CBI development branch or production branch.
 
 ---
 
-### Task 1: Executor-selection contract
+### Task 1: Executor selection contract
 
 **Files:**
-- Create: `astra_supervisor/__init__.py`
 - Create: `astra_supervisor/contracts.py`
 - Create: `astra_supervisor/policy.py`
+- Create: `astra_supervisor/__init__.py`
 - Test: `tests/test_astra_supervisor.py`
 
 **Interfaces:**
-- Produces: `TaskKind`, `ExecutorName`, `ExecutorAvailability`, `NoExecutorAvailable`, `select_executor()`.
+- Consumes: `TaskKind`, `ExecutorAvailability`.
+- Produces: `select_executor(task_kind, availability) -> ExecutorName`.
 
-- [ ] **Step 1: Write failing selection tests**
+- [x] Write failing executor-policy tests covering repository-authoritative preference `GitHub -> Codex -> Local`, local-workspace preference `Codex -> Local`, review-only `NONE`, and fail-closed behavior.
+- [x] Observe initial RED because `astra_supervisor` did not exist.
+- [x] Implement minimal enums/dataclass/policy without CBI runtime dependency.
+- [x] Verify executor-selection tests GREEN.
 
-```python
-self.assertEqual(
-    select_executor(TaskKind.REPOSITORY_EDIT, ExecutorAvailability(github=True)),
-    ExecutorName.GITHUB,
-)
-self.assertEqual(
-    select_executor(TaskKind.LOCAL_WORKSPACE, ExecutorAvailability(codex=False, local=True, github=True)),
-    ExecutorName.LOCAL,
-)
-self.assertEqual(
-    select_executor(TaskKind.REVIEW_ONLY, ExecutorAvailability()),
-    ExecutorName.NONE,
-)
-```
-
-- [ ] **Step 2: Run targeted test and confirm RED**
-
-Run: `python -m unittest tests.test_astra_supervisor -v`
-Expected: import failure because `astra_supervisor` does not yet exist.
-
-- [ ] **Step 3: Implement minimal enums/dataclass/policy**
-
-`REPOSITORY_EDIT` preference order is GitHub, Codex, Local. `LOCAL_WORKSPACE` preference order is Codex, Local. `REVIEW_ONLY` returns NONE. Raise `NoExecutorAvailable` when no eligible executor exists.
-
-- [ ] **Step 4: Run targeted tests and confirm GREEN**
-
-Run: `python -m unittest tests.test_astra_supervisor -v`
-Expected: selection tests pass.
-
-### Task 2: Manifest model and fail-closed validation
+### Task 2: Manifest validation
 
 **Files:**
 - Create: `astra_supervisor/manifest.py`
 - Modify: `tests/test_astra_supervisor.py`
 
 **Interfaces:**
-- Produces: `Operation`, `ExecutionManifest`, `ManifestValidationError`.
+- Produces: `ExecutionManifest.from_dict(...)`, `Operation.from_dict(...)`, `ManifestValidationError`.
 
-- [ ] **Step 1: Add failing tests** for path traversal, absolute path, `.git` mutation, empty task id, unsupported operation kind, and malformed argv.
-- [ ] **Step 2: Run and confirm RED** because manifest classes do not exist.
-- [ ] **Step 3: Implement parsing/validation** with `ExecutionManifest.from_dict()` and preflight validation of all operations.
-- [ ] **Step 4: Run and confirm GREEN**.
+- [x] Test rejection of empty task IDs, absolute paths, traversal, `.git` writes including nested `.git`, unknown operations, and string-form commands.
+- [x] Implement narrow manifest parsing with exactly `write_text`, `delete_file`, and `run`.
+- [x] Verify targeted validation tests GREEN.
 
-### Task 3: Local Executor dry-run and branch gates
+### Task 3: Fail-closed Local Executor dry-run and branch gates
 
 **Files:**
 - Create: `astra_supervisor/local_executor.py`
 - Modify: `tests/test_astra_supervisor.py`
 
 **Interfaces:**
-- Produces: `LocalExecutor`, `ExecutionResult`, `ExecutionStepResult`, `LocalExecutionError`.
+- Consumes: validated `ExecutionManifest`.
+- Produces: `LocalExecutor.execute(manifest, apply=False) -> ExecutionResult`.
 
-- [ ] **Step 1: Add failing tests** using a temporary Git repository. Assert dry-run does not create files, protected branch apply is rejected, expected-branch mismatch is rejected, and dirty-tree apply is rejected.
-- [ ] **Step 2: Run and confirm RED**.
-- [ ] **Step 3: Implement repository preflight** using argv-only Git subprocess calls.
-- [ ] **Step 4: Run and confirm GREEN**.
+- [x] Test dry-run, protected branch, expected-branch mismatch, and dirty-tree apply rejection.
+- [x] Implement Git worktree, exact branch, protected-branch and clean-tree preflight.
+- [x] Verify branch/tree gates GREEN.
 
 ### Task 4: Safe file operations and command policy
 
@@ -98,15 +75,15 @@ Expected: selection tests pass.
 - Modify: `tests/test_astra_supervisor.py`
 
 **Interfaces:**
-- `write_text` and `delete_file` operate only under the repository root.
-- `run` permits only Python `-m unittest`, Python `-m compileall`, and read-only Git inspection subcommands in v1.
+- File mutations: repository-confined UTF-8 atomic writes and explicit deletes.
+- Commands: `shell=False`, timeout, captured output, allowlisted semantics only.
 
-- [ ] **Step 1: Add failing tests** for allowed write+unittest execution and rejection of `python -c`, shell executables, `git push`, and escaped cwd.
-- [ ] **Step 2: Run and confirm RED**.
-- [ ] **Step 3: Implement command validation and sequential execution** with `shell=False`, timeout, captured output, and stop-on-failure.
-- [ ] **Step 4: Run and confirm GREEN on Windows and Linux**.
+- [x] Happy path: write a module and execute `python -m unittest`.
+- [x] Security RED exposed six containment gaps: nested `.git`, Python-lookalike executable, out-of-root unittest target, out-of-root compileall target, `git diff --output`, and `git diff --ext-diff`.
+- [x] Harden Python/Git argument validation, nested `.git` protection and repository path containment.
+- [x] Verify the 27-test focused ASTRA suite on Ubuntu/Windows × Python 3.10/3.11.
 
-### Task 5: CLI and supervisor skill
+### Task 5: CLI and ASTRA skill contract
 
 **Files:**
 - Create: `astra_supervisor/cli.py`
@@ -116,25 +93,35 @@ Expected: selection tests pass.
 - Modify: `tests/test_astra_supervisor.py`
 
 **Interfaces:**
-- CLI: `python scripts/astra_local_executor.py --manifest PATH [--apply] [--result PATH]`
-- Skill: instructs Sol/ASTRA to select GitHub/Codex/Local based on authoritative state and availability, independently review evidence, and preserve CBI runtime boundaries.
+- CLI: `python scripts/astra_local_executor.py --manifest <file> [--apply] [--result <file>]`.
+- Skill: supervisor state, anti-path-dependence, executor selection, CBI boundaries and verification requirements.
 
-- [ ] **Step 1: Add failing CLI serialization test**.
-- [ ] **Step 2: Run and confirm RED**.
-- [ ] **Step 3: Implement CLI and skill assets**.
-- [ ] **Step 4: Run targeted tests and confirm GREEN**.
+- [x] Add CLI dry-run structured-result contract test.
+- [x] Implement CLI, structured JSON result, ASTRA skill and safe example manifest.
+- [x] Verify focused suite GREEN.
 
-### Task 6: Focused CI and integration verification
+### Task 6: CI and integration verification
 
 **Files:**
-- Create: `.github/workflows/astra-supervisor-ci.yml`
+- Create/Modify: `.github/workflows/astra-supervisor-ci.yml`
 
 **Interfaces:**
-- Runs on the isolated ASTRA branch and pull requests touching ASTRA files.
-- Matrix: Ubuntu + Windows, Python 3.10 + 3.11.
+- Focused gate: compile + ASTRA tests on Ubuntu/Windows × Python 3.10/3.11.
+- Integration gate: full CBI unittest discovery on Ubuntu/Python 3.11.
 
-- [ ] **Step 1: Commit tests + workflow before production code and observe RED**.
-- [ ] **Step 2: Implement Tasks 1-5**.
-- [ ] **Step 3: Observe GREEN on all matrix jobs**.
-- [ ] **Step 4: Review diff against the design spec and confirm no CBI runtime files changed**.
-- [ ] **Step 5: Open a draft PR against `cbi-v6-3-demand-expansion`; do not merge automatically**.
+- [x] Add focused matrix workflow.
+- [x] Add full CBI regression gate without modifying CBI runtime files.
+- [x] Verify head `6365325e444c5ad1fa3f474297c1fd30ab856a46`: focused 27/27 tests pass on all four matrix jobs; full CBI regression runs 966 tests and returns `OK (skipped=4)`.
+- [x] Compare to base `f59731cb412e194052d16e81c8137c507964350d`: seven commits ahead, zero behind; changed files limited to ASTRA supervisor/tests/skill/docs/script/workflow, with no CBI runtime/evidence/WAL/R2 changes.
+- [x] Keep draft PR #23 targeting `cbi-v6-3-demand-expansion`; do not auto-merge.
+
+## Verification record
+
+- Initial TDD RED: `07b3d22becbc69916fec1d82fc398c117d080154` — missing `astra_supervisor` import as expected.
+- Security RED: `4ab75ff45db02da72117be29e384957398c62efe` — six containment failures intentionally exposed before fixing them.
+- Security fixes: `b8580ab15850d1e4c233045a6b08bf5df7232678` and `b3d5220ac663e5cbb649d6ce08b884f8a2270fab`.
+- Integration gate: `6365325e444c5ad1fa3f474297c1fd30ab856a46` — focused matrix GREEN and full 966-test CBI regression GREEN (`skipped=4`).
+
+## Remaining boundary
+
+This phase removes Codex as the single point of failure for **repository-authoritative GitHub work** and supplies a fail-closed Local Executor implementation. It does **not** create a writable ChatGPT-to-PC bridge. `codex-with-chatgpt` remains read-only, so fully autonomous mutation of uncommitted local-only state still requires an explicitly invoked local process. Any always-on local control plane or self-hosted executor is a separate security-sensitive architectural phase and is not part of this plan.
