@@ -133,14 +133,29 @@ The v1 Local Executor is intentionally narrow:
 - exact expected branch;
 - clean working tree for apply;
 - no apply on `main`, `master`, or `production`;
-- repository-root-confined file writes/deletes;
-- no `.git` mutation;
+- repository-root-confined file writes/deletes and command path targets;
+- nested `.git` paths are inaccessible;
 - no shell;
-- Python commands limited to `-m unittest` and `-m compileall`;
-- Git commands limited to read-only inspection;
-- no package installation, `git push`, PowerShell, cmd, bash, or arbitrary `python -c`.
+- exact Python executable matching with commands limited to constrained `-m unittest` and `-m compileall` forms;
+- Git commands limited to read-only inspection and unsafe output/external-diff/pathspec escape surfaces rejected;
+- no package installation, `git push`, PowerShell, cmd, bash, arbitrary `python -c`, or network-command authority.
+
+The command boundary is **not an OS sandbox**. An allowlisted test or repository module is trusted repository code and may itself perform side effects when executed. Use Local Executor only on repositories/branches whose code is trusted for local execution.
 
 If a task needs broader authority, do not weaken these checks ad hoc. Design and review a separate executor capability.
+
+### Future unattended local control plane
+
+Do not expose the Phase 1 CLI directly as an always-on remote mutation endpoint.
+
+If the user later approves an unattended local control plane, treat it as a separate security-sensitive phase. At minimum it must:
+
+- pin allowed repository roots in trusted local configuration; remote manifests must not choose an arbitrary `repository_root`;
+- use authentication/authorization independent of ChatGPT browser/session tokens;
+- preserve exact branch and clean-tree gates, auditable results and fail-closed behavior;
+- deny unrestricted shell, package installation, arbitrary Python, network commands, credentials and Git push authority.
+
+This is deliberately outside Phase 1 because remotely reachable mutation authority changes the threat model.
 
 ## Review gate
 
