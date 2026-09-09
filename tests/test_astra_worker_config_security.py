@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from astra_worker.config import ConfigError, RepositoryBinding, WorkerConfig
 from astra_worker.windows_security import (
@@ -148,6 +150,33 @@ class SecretBundleContractTests(unittest.TestCase):
             path.write_text('{"github_token":"plain"}', encoding="utf-8")
             with self.assertRaises(WindowsSecurityError):
                 read_secret_bundle(path)
+
+
+class WindowsNativeOutputBoundaryTests(unittest.TestCase):
+    def test_service_sid_query_parses_ascii_sid_without_text_decoding_localized_output(self) -> None:
+        import astra_worker.windows_security as windows_security
+
+        sid = "S-1-5-80-123-456-789-1011-1213"
+        localized_bytes = b"\x81\x8d localized-prefix " + sid.encode("ascii") + b" \xff\xfe"
+
+        def fake_run(*args, **kwargs):
+            self.assertFalse(kwargs.get("text", False))
+            return subprocess.CompletedProcess(args[0], 0, stdout=localized_bytes, stderr=b"")
+
+        with mock.patch.object(windows_security, "_require_windows", return_value=None), mock.patch.object(
+            windows_security.subprocess, "run", side_effect=fake_run
+        ):
+            self.assertEqual(windows_security.resolve_service_sid(), sid)
+
+    def test_icacls_hardening_captures_bytes_not_locale_decoded_text(self) -> None:
+        import astra_worker.windows_security as windows_security
+
+        def fake_run(*args, **kwargs):
+            self.assertFalse(kwargs.get("text", False))
+            return subprocess.CompletedProcess(args[0], 0, stdout=b"\x81\x8d\xff\xfe", stderr=b"")
+
+        with mock.patch.object(windows_security.subprocess, "run", side_effect=fake_run):
+            windows_security._run_icacls(Path("C:/ASTRAWorker"), "/inheritance:r")
 
 
 @unittest.skipIf(os.name == "nt", "non-Windows fail-closed contract")
