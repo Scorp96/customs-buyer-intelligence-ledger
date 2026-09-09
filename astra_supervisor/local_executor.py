@@ -155,10 +155,7 @@ class LocalExecutor:
             if operation.kind == "run":
                 cwd = resolved
                 assert isinstance(cwd, Path)
-                environment = os.environ.copy()
-                environment["GIT_PAGER"] = "cat"
-                environment["PAGER"] = "cat"
-                environment["GIT_TERMINAL_PROMPT"] = "0"
+                environment = self._sanitized_environment()
                 try:
                     completed = subprocess.run(
                         list(operation.argv),
@@ -222,11 +219,21 @@ class LocalExecutor:
         if not (root / ".git").exists():
             raise LocalExecutionError(f"repository root is not a Git worktree: {root}")
 
-    def _git(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-        environment = os.environ.copy()
+    @staticmethod
+    def _sanitized_environment() -> dict[str, str]:
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.upper().startswith("GIT_")
+        }
         environment["GIT_PAGER"] = "cat"
         environment["PAGER"] = "cat"
         environment["GIT_TERMINAL_PROMPT"] = "0"
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
+        return environment
+
+    def _git(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        environment = self._sanitized_environment()
         try:
             return subprocess.run(
                 ["git", "-C", str(root), *args],
