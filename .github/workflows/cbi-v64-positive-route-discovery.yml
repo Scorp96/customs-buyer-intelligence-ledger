@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - cbi-v64-c279-authoritative-isolated-two-case-17f4fe16
+      - cbi-v64-c279-current-prod-gate-20260909
 
 permissions:
   contents: read
