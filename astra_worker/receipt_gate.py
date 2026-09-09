@@ -219,8 +219,9 @@ class ReceiptGate:
         changed_paths = evidence.get("changed_paths")
         if not isinstance(changed_paths, list) or any(not isinstance(item, str) for item in changed_paths):
             raise ReceiptGateError("receipt changed_paths are invalid")
-        if len(set(changed_paths)) != len(changed_paths):
-            raise ReceiptGateError("receipt changed_paths contain duplicates")
+        changed_identity = [path.casefold() for path in changed_paths]
+        if len(set(changed_identity)) != len(changed_identity):
+            raise ReceiptGateError("receipt changed_paths contain duplicates or case collisions")
         intended_identity = {path.casefold() for path in intended}
         if any(path.casefold() not in intended_identity for path in changed_paths):
             raise ReceiptGateError("receipt changed_paths exceed signed mutation authority")
