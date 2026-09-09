@@ -93,6 +93,18 @@ class InstallContractTests(unittest.TestCase):
         self.assertRegex(text, r"(?i)S-1-5-32-544")
         self.assertNotRegex(lowered, r"\beveryone\b|authenticated users|builtin\\users")
 
+    def test_installer_calls_fixed_local_acl_hardener_before_secret_gate(self) -> None:
+        text = read_required(INSTALLER).lower()
+        config_at = text.find("sc.exe config")
+        harden_at = text.find("harden-install-acl")
+        secret_gate_at = text.find("protected secrets are not present")
+        self.assertTrue(
+            -1 not in {config_at, harden_at, secret_gate_at},
+            "installer must call the fixed local ACL hardener before secret provisioning",
+        )
+        self.assertLess(config_at, harden_at)
+        self.assertLess(harden_at, secret_gate_at)
+
     def test_runtime_xml_contains_no_secret_value_token_or_password(self) -> None:
         text = read_required(SERVICE_XML)
         lowered = text.lower()
@@ -115,9 +127,19 @@ class InstallContractTests(unittest.TestCase):
         self.assertIn("provision-secrets", text)
         self.assertLess(text.find("validate-install"), text.find("& $winswexe start"))
 
-    def test_cli_exposes_read_only_acl_and_install_validation_plus_admin_provisioning(self) -> None:
+    def test_cli_exposes_read_only_acl_install_hardening_validation_and_admin_provisioning(self) -> None:
         choices = subcommands(make_parser())
-        self.assertTrue({"run", "once", "verify-acl", "validate-install", "provision-secrets"} <= choices)
+        self.assertTrue(
+            {
+                "run",
+                "once",
+                "verify-acl",
+                "harden-install-acl",
+                "validate-install",
+                "provision-secrets",
+            }
+            <= choices
+        )
 
     def test_secret_values_have_no_command_line_flags(self) -> None:
         source = Path("astra_worker/cli.py").read_text(encoding="utf-8").lower()
