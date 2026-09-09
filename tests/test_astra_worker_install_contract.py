@@ -69,6 +69,10 @@ class InstallContractTests(unittest.TestCase):
         self.assertLess(config_at, validate_at)
         self.assertLess(validate_at, start_at)
         self.assertNotRegex(lowered, r"obj=\s*[\"']?(localsystem|system)\b")
+        # Windows virtual service accounts are passwordless and ChangeServiceConfig
+        # requires a NULL password pointer for them. Passing `password= ""` through
+        # sc.exe produces ERROR_INVALID_COMMAND_LINE (1639) on real Windows hosts.
+        self.assertNotIn("password=", lowered)
 
     def test_state_acl_is_non_inheriting_and_grants_only_trusted_identities(self) -> None:
         text = read_required(INSTALLER)
