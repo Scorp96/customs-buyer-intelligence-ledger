@@ -16,15 +16,24 @@ from .github_api import GitHubApiError, GitHubIssueClient
 from .ledger import LedgerError, TaskLedger
 from .queue import QueueError, TaskQueue
 from .windows_security import (
+    SecretBundle,
     WindowsSecurityError,
+    default_worker_state_root,
     read_secret_bundle,
+    require_elevated_administrator,
+    resolve_service_sid,
     validate_worker_state_location,
+    verify_worker_acl,
+    write_secret_bundle,
 )
 from .worker import Worker, WorkerError
 
 
 class WorkerCliError(RuntimeError):
     """Raised when trusted local worker startup cannot be assembled safely."""
+
+
+_MAX_PROVISION_INPUT_BYTES = 16 * 1024
 
 
 @dataclass(frozen=True)
@@ -74,8 +83,8 @@ def build_runtime(state_root: Path, service_sid: str) -> WorkerRuntime:
 
     paths = RuntimePaths.from_root(state_root)
 
-    # Fail closed before reading config or decrypting secrets.  Task 12 supplies the
-    # trusted installer-owned verify-acl CLI surface that this validator invokes.
+    # Fail closed before reading config or decrypting secrets. The ACL verifier runs
+    # in a separate sanitized Python process and checks the complete worker state tree.
     validate_worker_state_location(paths.state_root, service_sid)
 
     config = WorkerConfig.load(paths.config)
@@ -131,6 +140,29 @@ def make_parser() -> argparse.ArgumentParser:
 
     once_parser = subparsers.add_parser("once", help="run exactly one polling cycle")
     _add_runtime_arguments(once_parser)
+
+    verify_parser = subparsers.add_parser(
+        "verify-acl",
+        help="read-only verifier for the installed worker state ACL",
+    )
+    verify_parser.add_argument("--path", required=True, type=Path)
+    verify_parser.add_argument("--service-sid", required=True)
+
+    subparsers.add_parser(
+        "validate-install",
+        help="validate the fixed ProgramData installation before service start",
+    )
+
+    provision_parser = subparsers.add_parser(
+        "provision-secrets",
+        help="trusted one-time DPAPI secret provisioning from standard input",
+    )
+    provision_parser.add_argument(
+        "--stdin",
+        action="store_true",
+        required=True,
+        help="read exactly one secret JSON object from standard input",
+    )
     return parser
 
 
@@ -145,11 +177,76 @@ def _result_json(result: object) -> str:
     )
 
 
+def _validate_install() -> None:
+    root = default_worker_state_root()
+    service_sid = resolve_service_sid()
+    verify_worker_acl(root, service_sid)
+    paths = RuntimePaths.from_root(root)
+
+    required_directories = (
+        root / "log",
+        root / "repos",
+        root / "worktrees",
+        root / "empty-hooks",
+    )
+    for directory in required_directories:
+        if not directory.is_dir():
+            raise WorkerCliError(f"required worker directory is missing: {directory.name}")
+
+    for required_file in (
+        paths.config,
+        paths.secrets,
+        root / "ASTRAWorker.exe",
+        root / "ASTRAWorker.xml",
+    ):
+        if not required_file.is_file():
+            raise WorkerCliError(f"required worker file is missing: {required_file.name}")
+
+    WorkerConfig.load(paths.config)
+    read_secret_bundle(paths.secrets)
+
+
+def _provision_secrets_from_stdin() -> None:
+    require_elevated_administrator()
+    root = default_worker_state_root()
+    service_sid = resolve_service_sid()
+    verify_worker_acl(root, service_sid)
+    paths = RuntimePaths.from_root(root)
+
+    raw = bytearray(sys.stdin.buffer.read(_MAX_PROVISION_INPUT_BYTES + 1))
+    try:
+        if not raw:
+            raise WorkerCliError("secret provisioning input is empty")
+        if len(raw) > _MAX_PROVISION_INPUT_BYTES:
+            raise WorkerCliError("secret provisioning input exceeds the fixed limit")
+        bundle = SecretBundle.from_clear_bytes(bytes(raw))
+        write_secret_bundle(paths.secrets, bundle)
+        # The newly-created file must inherit the same exact trusted ACL before success.
+        verify_worker_acl(root, service_sid)
+    finally:
+        for index in range(len(raw)):
+            raw[index] = 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = make_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     try:
+        if args.command == "verify-acl":
+            verify_worker_acl(args.path, args.service_sid)
+            sys.stdout.write("ASTRA_ACL_OK\n")
+            return 0
+        if args.command == "validate-install":
+            _validate_install()
+            sys.stdout.write("ASTRA_INSTALL_OK\n")
+            return 0
+        if args.command == "provision-secrets":
+            if not args.stdin:
+                raise WorkerCliError("secret provisioning requires --stdin")
+            _provision_secrets_from_stdin()
+            return 0
+
         with build_runtime(args.state_root, args.service_sid) as runtime:
             if args.command == "once":
                 result = runtime.worker.run_once()
@@ -170,8 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         WorkerCliError,
         OSError,
     ) as exc:
-        # Startup/runtime errors may contain local diagnostics, but credential-bearing
-        # exception bodies are never emitted by the narrow GitHub client.
+        # No secret input is echoed. Credential-bearing GitHub client errors are redacted.
         sys.stderr.write(f"ASTRA worker failed closed: {type(exc).__name__}: {exc}\n")
         return 2
 
