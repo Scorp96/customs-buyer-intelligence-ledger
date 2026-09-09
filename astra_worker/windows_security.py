@@ -24,6 +24,18 @@ _CRYPTPROTECT_UI_FORBIDDEN = 0x1
 _CRYPTPROTECT_LOCAL_MACHINE = 0x4
 _ALLOWED_SECRET_KEYS = {"task_hmac_key_b64", "receipt_hmac_key_b64", "github_token"}
 _SID_RE = re.compile(r"^S-\d+(?:-\d+)+$")
+_SERVICE_SID_RE = re.compile(r"S-1-5-80(?:-\d+)+")
+_SYSTEM_SID = "S-1-5-18"
+_ADMINISTRATORS_SID = "S-1-5-32-544"
+_SE_FILE_OBJECT = 1
+_DACL_SECURITY_INFORMATION = 0x00000004
+_SE_DACL_PROTECTED = 0x1000
+_ACL_SIZE_INFORMATION_CLASS = 2
+_ACCESS_ALLOWED_ACE_TYPE = 0x00
+_ACCESS_DENIED_ACE_TYPE = 0x01
+_FILE_ALL_ACCESS = 0x001F01FF
+_GENERIC_ALL = 0x10000000
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
 
 
 @dataclass(frozen=True)
@@ -86,6 +98,22 @@ class _DATA_BLOB(ctypes.Structure):
     ]
 
 
+class _ACL_SIZE_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("AceCount", wintypes.DWORD),
+        ("AclBytesInUse", wintypes.DWORD),
+        ("AclBytesFree", wintypes.DWORD),
+    ]
+
+
+class _ACE_HEADER(ctypes.Structure):
+    _fields_ = [
+        ("AceType", ctypes.c_ubyte),
+        ("AceFlags", ctypes.c_ubyte),
+        ("AceSize", ctypes.c_ushort),
+    ]
+
+
 def _require_windows() -> None:
     if os.name != "nt":
         raise WindowsSecurityError("Windows DPAPI is available only on Windows")
@@ -129,6 +157,54 @@ def _windows_libraries() -> tuple[Any, Any]:
     kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
     kernel32.LocalFree.restype = wintypes.HLOCAL
     return crypt32, kernel32
+
+
+def _security_libraries() -> tuple[Any, Any]:
+    _require_windows()
+    try:
+        advapi32 = ctypes.WinDLL("Advapi32.dll", use_last_error=True)
+        kernel32 = ctypes.WinDLL("Kernel32.dll", use_last_error=True)
+    except (AttributeError, OSError) as exc:
+        raise WindowsSecurityError("Windows security libraries are unavailable") from exc
+
+    advapi32.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    advapi32.GetSecurityDescriptorControl.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.WORD),
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi32.GetSecurityDescriptorControl.restype = wintypes.BOOL
+    advapi32.GetAclInformation.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+    ]
+    advapi32.GetAclInformation.restype = wintypes.BOOL
+    advapi32.GetAce.argtypes = [
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    advapi32.GetAce.restype = wintypes.BOOL
+    advapi32.ConvertSidToStringSidW.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(wintypes.LPWSTR),
+    ]
+    advapi32.ConvertSidToStringSidW.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+    kernel32.LocalFree.restype = wintypes.HLOCAL
+    return advapi32, kernel32
 
 
 def _copy_and_free(blob: _DATA_BLOB, kernel32: Any) -> bytes:
@@ -228,13 +304,205 @@ def _programdata_worker_root() -> Path:
     return (Path(program_data) / "ASTRAWorker").resolve()
 
 
-def validate_worker_state_location(path: Path, service_sid: str) -> None:
-    """Validate location now and fail closed until the installer-owned ACL verifier approves it.
+def default_worker_state_root() -> Path:
+    """Return the only default persistent worker state root."""
 
-    The ACL verifier entry point is intentionally a separate trusted-installation surface.  Before
-    that CLI mode exists, a correctly located path still fails closed rather than being treated as
-    ACL-safe by inference.
-    """
+    return _programdata_worker_root()
+
+
+def resolve_service_sid(service_name: str = "ASTRAWorker") -> str:
+    """Resolve the Windows virtual service SID using a fixed sc.exe query."""
+
+    _require_windows()
+    if not isinstance(service_name, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", service_name):
+        raise WindowsSecurityError("service name is invalid")
+    try:
+        completed = subprocess.run(
+            ["sc.exe", "showsid", service_name],
+            shell=False,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WindowsSecurityError("service SID query is unavailable") from exc
+    if completed.returncode != 0:
+        raise WindowsSecurityError("service SID query failed")
+    matches = _SERVICE_SID_RE.findall(completed.stdout)
+    unique = list(dict.fromkeys(matches))
+    if len(unique) != 1 or _SID_RE.fullmatch(unique[0]) is None:
+        raise WindowsSecurityError("service SID query returned an ambiguous result")
+    return unique[0]
+
+
+def require_elevated_administrator() -> None:
+    """Fail closed unless the current one-time provisioning process is elevated."""
+
+    _require_windows()
+    try:
+        is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except (AttributeError, OSError) as exc:
+        raise WindowsSecurityError("administrator token could not be determined") from exc
+    if not is_admin:
+        raise WindowsSecurityError("secret provisioning requires an elevated administrator")
+
+
+def _sid_string(advapi32: Any, kernel32: Any, sid_address: int) -> str:
+    if not sid_address:
+        raise WindowsSecurityError("ACL ACE contains an empty SID")
+    text = wintypes.LPWSTR()
+    if not advapi32.ConvertSidToStringSidW(ctypes.c_void_p(sid_address), ctypes.byref(text)):
+        code = ctypes.get_last_error()
+        raise WindowsSecurityError(f"ConvertSidToStringSidW failed with Windows error {code}")
+    try:
+        value = text.value
+        if not value or _SID_RE.fullmatch(value) is None:
+            raise WindowsSecurityError("ACL ACE contains an invalid SID")
+        return value
+    finally:
+        if text:
+            kernel32.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+
+
+def _acl_for_path(path: Path) -> tuple[dict[str, int], set[str], bool]:
+    advapi32, kernel32 = _security_libraries()
+    dacl = ctypes.c_void_p()
+    descriptor = ctypes.c_void_p()
+    result = advapi32.GetNamedSecurityInfoW(
+        str(path),
+        _SE_FILE_OBJECT,
+        _DACL_SECURITY_INFORMATION,
+        None,
+        None,
+        ctypes.byref(dacl),
+        None,
+        ctypes.byref(descriptor),
+    )
+    if result != 0:
+        raise WindowsSecurityError(f"GetNamedSecurityInfoW failed with Windows error {result}")
+    if not descriptor:
+        raise WindowsSecurityError("Windows returned no security descriptor")
+    try:
+        if not dacl:
+            raise WindowsSecurityError("worker state has a NULL DACL")
+
+        control = wintypes.WORD()
+        revision = wintypes.DWORD()
+        if not advapi32.GetSecurityDescriptorControl(
+            descriptor, ctypes.byref(control), ctypes.byref(revision)
+        ):
+            code = ctypes.get_last_error()
+            raise WindowsSecurityError(
+                f"GetSecurityDescriptorControl failed with Windows error {code}"
+            )
+
+        info = _ACL_SIZE_INFORMATION()
+        if not advapi32.GetAclInformation(
+            dacl,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+            _ACL_SIZE_INFORMATION_CLASS,
+        ):
+            code = ctypes.get_last_error()
+            raise WindowsSecurityError(f"GetAclInformation failed with Windows error {code}")
+
+        grants: dict[str, int] = {}
+        denies: set[str] = set()
+        for index in range(info.AceCount):
+            ace = ctypes.c_void_p()
+            if not advapi32.GetAce(dacl, index, ctypes.byref(ace)) or not ace.value:
+                code = ctypes.get_last_error()
+                raise WindowsSecurityError(f"GetAce failed with Windows error {code}")
+            header = _ACE_HEADER.from_address(ace.value)
+            if header.AceSize < ctypes.sizeof(_ACE_HEADER) + ctypes.sizeof(wintypes.DWORD) + 4:
+                raise WindowsSecurityError("ACL ACE is too small")
+            if header.AceType not in {_ACCESS_ALLOWED_ACE_TYPE, _ACCESS_DENIED_ACE_TYPE}:
+                raise WindowsSecurityError("worker ACL contains an unsupported ACE type")
+            mask_address = ace.value + ctypes.sizeof(_ACE_HEADER)
+            mask = wintypes.DWORD.from_address(mask_address).value
+            sid_address = mask_address + ctypes.sizeof(wintypes.DWORD)
+            sid = _sid_string(advapi32, kernel32, sid_address)
+            if header.AceType == _ACCESS_ALLOWED_ACE_TYPE:
+                grants[sid] = grants.get(sid, 0) | int(mask)
+            else:
+                denies.add(sid)
+        return grants, denies, bool(control.value & _SE_DACL_PROTECTED)
+    finally:
+        kernel32.LocalFree(descriptor)
+
+
+def _has_full_control(mask: int) -> bool:
+    return bool(mask & _GENERIC_ALL) or (mask & _FILE_ALL_ACCESS) == _FILE_ALL_ACCESS
+
+
+def _is_reparse_point(path: Path) -> bool:
+    try:
+        attributes = int(getattr(os.lstat(path), "st_file_attributes", 0))
+    except OSError as exc:
+        raise WindowsSecurityError("worker state path could not be inspected") from exc
+    return bool(attributes & _FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _state_paths(root: Path) -> list[Path]:
+    paths = [root]
+    try:
+        for directory, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+            parent = Path(directory)
+            for name in list(dirnames):
+                child = parent / name
+                if _is_reparse_point(child):
+                    raise WindowsSecurityError("worker state contains a reparse-point directory")
+                paths.append(child)
+            for name in filenames:
+                child = parent / name
+                if _is_reparse_point(child):
+                    raise WindowsSecurityError("worker state contains a reparse-point file")
+                paths.append(child)
+    except OSError as exc:
+        raise WindowsSecurityError("worker state tree could not be enumerated") from exc
+    return paths
+
+
+def verify_worker_acl(
+    path: Path,
+    service_sid: str,
+    *,
+    enforce_programdata: bool = True,
+) -> None:
+    """Prove that the worker state tree grants access only to three trusted identities."""
+
+    _require_windows()
+    if not isinstance(service_sid, str) or _SID_RE.fullmatch(service_sid) is None:
+        raise WindowsSecurityError("service_sid is not a valid SID string")
+    root = Path(path).resolve()
+    if not root.is_dir():
+        raise WindowsSecurityError("worker state root is not a directory")
+    if _is_reparse_point(root):
+        raise WindowsSecurityError("worker state root cannot be a reparse point")
+
+    if enforce_programdata:
+        expected = _programdata_worker_root()
+        if os.path.normcase(str(root)) != os.path.normcase(str(expected)):
+            raise WindowsSecurityError("worker ACL verification is restricted to ProgramData/ASTRAWorker")
+
+    allowed = {service_sid, _SYSTEM_SID, _ADMINISTRATORS_SID}
+    for index, current in enumerate(_state_paths(root)):
+        grants, denies, protected = _acl_for_path(current)
+        if index == 0 and not protected:
+            raise WindowsSecurityError("worker state root still inherits parent ACL entries")
+        if set(grants) != allowed:
+            raise WindowsSecurityError("worker state grants access to an unexpected identity")
+        if denies & allowed:
+            raise WindowsSecurityError("worker state denies a required trusted identity")
+        for sid in allowed:
+            if not _has_full_control(grants[sid]):
+                raise WindowsSecurityError("worker state trusted identity lacks Full Control")
+
+
+def validate_worker_state_location(path: Path, service_sid: str) -> None:
+    """Validate fixed location and prove ACL safety through an isolated verifier process."""
 
     _require_windows()
     if not isinstance(service_sid, str) or _SID_RE.fullmatch(service_sid) is None:
