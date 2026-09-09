@@ -1004,6 +1004,22 @@ class V61ResearchOrchestrationHardeningMixin:
         self,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
+        investigation_id = (
+            str(arguments.get("investigation_id") or "").strip()
+            if isinstance(arguments, dict)
+            else ""
+        )
+        store = getattr(self, "store", None)
+        snapshot_scope = getattr(store, "verified_read_snapshot", None)
+        if investigation_id and callable(snapshot_scope):
+            with snapshot_scope(investigation_id):
+                return self._get_account_state_derived_view(arguments)
+        return self._get_account_state_derived_view(arguments)
+
+    def _get_account_state_derived_view(
+        self,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
         result = dict(super().get_account_state(arguments))
         investigation_id = self._investigation_id(arguments)
         outreach = self.evaluate_outreach_readiness(arguments)
