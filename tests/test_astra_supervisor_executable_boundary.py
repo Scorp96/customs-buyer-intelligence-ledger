@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -81,6 +82,29 @@ class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
             with self.subTest(argv=argv):
                 with self.assertRaises((ManifestValidationError, LocalExecutionError)):
                     LocalExecutor().execute(self._manifest(argv), apply=False)
+
+    def test_pythonpath_cannot_redirect_dotted_unittest_target_outside_repository(self):
+        outside = Path(self.tempdir.name) / "outside-pythonpath"
+        outside.mkdir()
+        marker = Path(self.tempdir.name) / "pythonpath-import.marker"
+        (outside / "external_test_module.py").write_text(
+            "from pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('executed\\n', encoding='utf-8')\n"
+            "import unittest\n\n"
+            "class ExternalTests(unittest.TestCase):\n"
+            "    def test_external(self):\n"
+            "        self.assertTrue(True)\n",
+            encoding="utf-8",
+        )
+
+        manifest = self._manifest(
+            [sys.executable, "-m", "unittest", "external_test_module"]
+        )
+        with patch.dict(os.environ, {"PYTHONPATH": str(outside)}, clear=False):
+            with self.assertRaises(LocalExecutionError):
+                LocalExecutor().execute(manifest, apply=True)
+
+        self.assertFalse(marker.exists())
 
     def test_git_environment_cannot_redirect_branch_and_clean_tree_gates(self):
         subprocess.run(
