@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 from typing import Any
 
+from .evidence import PatchChunk
 from .models import TaskEnvelope
 from .protocol import (
     ProtocolError,
@@ -20,6 +21,7 @@ class QueueError(RuntimeError):
 _READY = "astra-task/ready"
 _CLAIMED = "astra-task/claimed"
 _CLAIM_PREFIX = "ASTRA_CLAIM_V1 "
+_PATCH_PREFIX = "ASTRA_PATCH_CHUNK_V1 "
 _BOT_LOGIN = "github-actions[bot]"
 
 
@@ -63,6 +65,12 @@ def _comment_author(comment: dict[str, Any]) -> str:
 def _comment_body(comment: dict[str, Any]) -> str:
     body = comment.get("body")
     return body if isinstance(body, str) else ""
+
+
+def _positive_issue_number(issue_number: int) -> int:
+    if isinstance(issue_number, bool) or not isinstance(issue_number, int) or issue_number <= 0:
+        raise QueueError("issue number must be positive")
+    return issue_number
 
 
 class TaskQueue:
@@ -167,3 +175,46 @@ class TaskQueue:
             self._api.post_issue_comment(ready.issue_number, claim_body)
         except Exception as exc:
             raise QueueError("issue claim could not be completed") from exc
+
+    def post_patch_chunks(
+        self,
+        issue_number: int,
+        task_id: str,
+        chunks: tuple[PatchChunk, ...],
+    ) -> None:
+        _positive_issue_number(issue_number)
+        if not isinstance(task_id, str) or not task_id:
+            raise QueueError("task_id must be non-empty text")
+        if not isinstance(chunks, tuple) or any(not isinstance(chunk, PatchChunk) for chunk in chunks):
+            raise QueueError("patch chunks must be a tuple of PatchChunk values")
+        total = len(chunks)
+        for expected_index, chunk in enumerate(chunks, start=1):
+            if chunk.index != expected_index or chunk.total != total:
+                raise QueueError("patch chunks are not one complete ordered sequence")
+            payload = {
+                "schema_version": "astra.patch-chunk.v1",
+                "task_id": task_id,
+                "index": chunk.index,
+                "total": chunk.total,
+                "text": chunk.text,
+                "sha256": chunk.sha256,
+                "patch_sha256": chunk.patch_sha256,
+            }
+            body = _PATCH_PREFIX + canonical_json_v1(payload).decode("utf-8")
+            try:
+                self._api.post_issue_comment(issue_number, body)
+            except Exception as exc:
+                raise QueueError("patch chunk could not be posted") from exc
+
+    def post_receipt(self, issue_number: int, signed_receipt: str) -> None:
+        _positive_issue_number(issue_number)
+        if not isinstance(signed_receipt, str) or not signed_receipt.startswith("ASTRA_RECEIPT_V1 "):
+            raise QueueError("signed receipt framing is invalid")
+        try:
+            decode_signed_envelope(signed_receipt, "receipt")
+        except ProtocolError as exc:
+            raise QueueError("signed receipt envelope is malformed") from exc
+        try:
+            self._api.post_issue_comment(issue_number, signed_receipt)
+        except Exception as exc:
+            raise QueueError("signed receipt could not be posted") from exc
