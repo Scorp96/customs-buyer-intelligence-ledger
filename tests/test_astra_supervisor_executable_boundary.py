@@ -248,7 +248,7 @@ class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
         self.assertFalse(marker.exists())
 
     @unittest.skipIf(os.name == "nt", "POSIX Git signature helper regression")
-    def test_git_show_signature_cannot_execute_configured_gpg_program(self):
+    def test_git_signature_rendering_cannot_execute_configured_gpg_program(self):
         parent = subprocess.run(
             ["git", "-C", str(self.root), "rev-parse", "HEAD"],
             check=True,
@@ -295,12 +295,15 @@ class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
             check=True,
         )
 
-        LocalExecutor().execute(
-            self._manifest(["git", "log", "--show-signature", "-1", "HEAD"]),
-            apply=True,
+        cases = (
+            ["git", "log", "--show-signature", "-1", "HEAD"],
+            ["git", "log", "--format=%G?", "-1", "HEAD"],
         )
-
-        self.assertFalse(marker.exists())
+        for argv in cases:
+            marker.unlink(missing_ok=True)
+            with self.subTest(argv=argv):
+                LocalExecutor().execute(self._manifest(argv), apply=True)
+                self.assertFalse(marker.exists())
 
     @unittest.skipIf(os.name == "nt", "POSIX Git clean-filter helper regression")
     def test_git_clean_filter_cannot_execute_during_clean_tree_gate(self):
