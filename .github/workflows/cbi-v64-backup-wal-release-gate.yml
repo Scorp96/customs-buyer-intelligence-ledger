@@ -1,0 +1,44 @@
+name: CBI v6.4 backup WAL release gate
+
+on:
+  push:
+    branches:
+      - cbi-v64-backup-wal-hardening-20260909
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-backup-wal-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: regression (${{ matrix.os }}, py${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.11"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - name: Checkout exact SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install pinned timezone data
+        run: python -m pip install --disable-pip-version-check --no-input tzdata==2026.3
+      - name: Run full repository unittest suite
+        run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Run enforced performance acceptance
+        run: python scripts/run_v6_load_acceptance.py --profile smoke --enforce-targets
+      - name: Run privacy scan
+        run: python tests/privacy_scan.py
+      - name: Compile Runtime modules
+        run: python -m compileall -q mcp unified_runtime
