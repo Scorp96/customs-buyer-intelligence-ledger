@@ -302,7 +302,8 @@ class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
         for argv in cases:
             marker.unlink(missing_ok=True)
             with self.subTest(argv=argv):
-                LocalExecutor().execute(self._manifest(argv), apply=True)
+                with self.assertRaises(LocalExecutionError):
+                    LocalExecutor().execute(self._manifest(argv), apply=True)
                 self.assertFalse(marker.exists())
 
     @unittest.skipIf(os.name == "nt", "POSIX Git clean-filter helper regression")
