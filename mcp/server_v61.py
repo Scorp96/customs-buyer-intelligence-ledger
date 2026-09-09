@@ -935,6 +935,36 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
             tool["description"] = "[LEGACY_COMPATIBILITY_ONLY] " + str(
                 tool.get("description") or ""
             )
+
+    tools.append(
+        {
+            "name": "get_mutation_wal_audit",
+            "description": (
+                "Read-only sanitized audit of terminal production mutation WAL records. "
+                "Returns allowlisted metadata only; never raw arguments, idempotency keys, "
+                "resource snapshots, or result payloads."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["COMMITTED_ERROR", "COMMITTED"],
+                        "default": "COMMITTED_ERROR",
+                        "description": "Terminal WAL status to audit; defaults to committed errors.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 500,
+                        "default": 100,
+                        "description": "Maximum number of latest matching sanitized rows to return.",
+                    },
+                },
+            },
+        }
+    )
     return tools
 
 
@@ -943,6 +973,7 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
 _server.tool_descriptors = hardened_tool_descriptors
 _server.TOOL_HANDLERS["get_runtime_contract"] = _contract_with_adapter_wal
 _server.TOOL_HANDLERS["get_runtime_health"] = _health_with_adapter_wal
+_server.TOOL_HANDLERS["get_mutation_wal_audit"] = _mutation_wal_audit
 for _name in _MUTATING_TOOLS:
     if _name in _ORIGINAL_HANDLERS:
         _server.TOOL_HANDLERS[_name] = _wrap_handler(
