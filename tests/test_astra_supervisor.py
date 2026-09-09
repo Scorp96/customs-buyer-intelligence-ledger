@@ -214,6 +214,16 @@ class LocalExecutorTests(unittest.TestCase):
         self.assertTrue(result.applied)
         self.assertEqual((self.root / "generated.py").read_text(encoding="utf-8"), "VALUE = 42\n")
         self.assertEqual(result.steps[-1].returncode, 0)
+        self.assertEqual(
+            list(self.root.rglob("*.pyc")),
+            [],
+            "allowlisted unittest execution must not create undeclared bytecode artifacts",
+        )
+        self.assertEqual(
+            [path for path in self.root.rglob("__pycache__") if path.is_dir()],
+            [],
+            "allowlisted unittest execution must not create undeclared __pycache__ directories",
+        )
 
     def test_rejects_python_c(self):
         manifest = self._manifest(
