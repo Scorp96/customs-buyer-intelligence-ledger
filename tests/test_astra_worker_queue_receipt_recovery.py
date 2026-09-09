@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+import unittest
+
+from astra_worker.receipt_gate import ReceiptGateError
+from tests.test_astra_worker_gates import (
+    RECEIPT_KEY,
+    TASK_KEY,
+    receipt_event,
+    signed_receipt_body,
+    valid_receipt_mapping,
+    valid_task_mapping,
+)
+from tests.test_astra_worker_gates import ReceiptGateTests
+
+
+class ReceiptGateRecoveryTests(unittest.TestCase):
+    def _fixture(self):
+        helper = ReceiptGateTests()
+        task = valid_task_mapping()
+        receipt = valid_receipt_mapping(task)
+        api, body = helper._api_for_receipt(task=task, receipt=receipt)
+        gate = helper._gate(api)
+        return task, receipt, api, body, gate
+
+    def test_verified_terminal_retry_is_idempotent(self) -> None:
+        _task, _receipt, api, body, gate = self._fixture()
+        api.labels = {"astra-task/result-verified", "astra-task/completed"}
+        result = gate.process(receipt_event(body))
+        self.assertEqual(result.status, "VERIFIED")
+        self.assertEqual(result.receipt_status, "APPLY_READY")
+        self.assertEqual(
+            api.labels,
+            {"astra-task/result-verified", "astra-task/completed"},
+        )
+
+    def test_case_colliding_receipt_changed_paths_fail_closed(self) -> None:
+        task = valid_task_mapping()
+        receipt = valid_receipt_mapping(task)
+        receipt["evidence"]["changed_paths"] = ["example.txt", "EXAMPLE.TXT"]
+        helper = ReceiptGateTests()
+        api, body = helper._api_for_receipt(task=task, receipt=receipt)
+        gate = helper._gate(api)
+        with self.assertRaises(ReceiptGateError):
+            gate.process(receipt_event(body))
+        self.assertEqual(api.labels, {"astra-task/claimed"})
+
+
+if __name__ == "__main__":
+    unittest.main()
