@@ -14,6 +14,8 @@ class GitHubApiError(RuntimeError):
 
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+_COMMENTS_PER_PAGE = 100
+_MAX_COMMENT_PAGES = 10
 
 
 class GitHubIssueClient:
@@ -90,12 +92,19 @@ class GitHubIssueClient:
     def list_issue_comments(self, issue_number: int) -> list[dict[str, Any]]:
         if isinstance(issue_number, bool) or not isinstance(issue_number, int) or issue_number <= 0:
             raise GitHubApiError("issue number must be positive")
-        result = self._request(
-            "GET", f"/repos/{self.repository}/issues/{issue_number}/comments?per_page=100"
-        )
-        if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
-            raise GitHubApiError("GitHub issue comments response is invalid")
-        return result
+        comments: list[dict[str, Any]] = []
+        for page in range(1, _MAX_COMMENT_PAGES + 1):
+            result = self._request(
+                "GET",
+                f"/repos/{self.repository}/issues/{issue_number}/comments"
+                f"?per_page={_COMMENTS_PER_PAGE}&page={page}",
+            )
+            if not isinstance(result, list) or not all(isinstance(item, dict) for item in result):
+                raise GitHubApiError("GitHub issue comments response is invalid")
+            comments.extend(result)
+            if len(result) < _COMMENTS_PER_PAGE:
+                return comments
+        raise GitHubApiError("GitHub issue comments exceeded pagination safety limit")
 
     def post_issue_comment(self, issue_number: int, body: str) -> None:
         if not isinstance(body, str) or not body:
