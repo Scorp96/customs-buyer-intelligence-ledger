@@ -15,6 +15,15 @@ _SHA1_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 _DRIVE_RE = re.compile(r"^[A-Za-z]:/")
 _MAX_OPERATIONS = 32
+_WINDOWS_INVALID_PATH_CHARS = frozenset('<>:"|?*')
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
 
 
 def _require_exact_keys(payload: Mapping[str, Any], expected: set[str], context: str) -> None:
@@ -44,7 +53,12 @@ def _sha256(value: Any, field: str) -> str:
 
 
 def _relative_repo_path(value: Any, field: str) -> str:
-    raw = _nonempty_text(value, field).replace("\\", "/")
+    if not isinstance(value, str) or not value or "\x00" in value:
+        raise TaskValidationError(f"{field} must be a non-empty repository path without NUL")
+    if value != value.strip():
+        raise TaskValidationError(f"{field} may not have leading or trailing whitespace")
+
+    raw = value.replace("\\", "/")
     if raw.startswith("/") or _DRIVE_RE.match(raw):
         raise TaskValidationError(f"{field} must be repository-relative")
     parts = PurePosixPath(raw).parts
@@ -52,7 +66,21 @@ def _relative_repo_path(value: Any, field: str) -> str:
         raise TaskValidationError(f"{field} escapes or does not name a repository path")
     if any(part.lower() == ".git" for part in parts):
         raise TaskValidationError(f"{field} may not access .git metadata")
-    return str(PurePosixPath(*parts))
+
+    canonical = str(PurePosixPath(*parts))
+    if raw != canonical:
+        raise TaskValidationError(f"{field} must use one canonical repository path spelling")
+
+    for part in parts:
+        if part.endswith((" ", ".")):
+            raise TaskValidationError(f"{field} is not portable to the Windows worker")
+        if any(ord(character) < 32 or character in _WINDOWS_INVALID_PATH_CHARS for character in part):
+            raise TaskValidationError(f"{field} contains a Windows-ambiguous path character")
+        device_stem = part.split(".", 1)[0].upper()
+        if device_stem in _WINDOWS_RESERVED_NAMES:
+            raise TaskValidationError(f"{field} uses a reserved Windows device name")
+
+    return canonical
 
 
 def _utc_timestamp(value: Any, field: str) -> datetime:
