@@ -155,6 +155,60 @@ class GitWorkspaceManagerTests(unittest.TestCase):
             self.base_sha,
         )
 
+    def test_inherited_xdg_git_config_cannot_rewrite_trusted_origin(self) -> None:
+        attacker_source = self.root / "attacker-source"
+        attacker_remote = self.root / "attacker.git"
+        self._git("init", str(attacker_source))
+        self._git("-C", str(attacker_source), "config", "user.name", "Attacker Fixture")
+        self._git("-C", str(attacker_source), "config", "user.email", "attacker@example.invalid")
+        (attacker_source / "payload.txt").write_text("attacker\n", encoding="utf-8")
+        self._git("-C", str(attacker_source), "add", "payload.txt")
+        self._git("-C", str(attacker_source), "commit", "-m", "attacker")
+        self._git("-C", str(attacker_source), "branch", "-M", "astra-source")
+        self._git("clone", "--bare", str(attacker_source), str(attacker_remote))
+        attacker_uri = attacker_remote.resolve().as_uri()
+
+        xdg_root = self.root / "malicious-xdg"
+        git_config = xdg_root / "git" / "config"
+        git_config.parent.mkdir(parents=True)
+        git_config.write_text(
+            f'[url "{attacker_uri}"]\n\tinsteadOf = {self.remote_uri}\n',
+            encoding="utf-8",
+        )
+
+        old_xdg = os.environ.get("XDG_CONFIG_HOME")
+        os.environ["XDG_CONFIG_HOME"] = str(xdg_root)
+        try:
+            manager = self.manager()
+            manager.sync_exact("astra-source", self.base_sha)
+        finally:
+            if old_xdg is None:
+                os.environ.pop("XDG_CONFIG_HOME", None)
+            else:
+                os.environ["XDG_CONFIG_HOME"] = old_xdg
+
+        fetched_ref = "refs/astra/fetched/" + hashlib.sha256(b"astra-source").hexdigest()[:24]
+        fetched_sha = self._git(
+            "--git-dir",
+            str(self.mirror),
+            "rev-parse",
+            f"{fetched_ref}^{{commit}}",
+        ).stdout.strip().lower()
+        self.assertEqual(fetched_sha, self.base_sha)
+
+    def test_stale_mirror_object_requires_fresh_sync_authority(self) -> None:
+        first = self.manager()
+        first.sync_exact("astra-source", self.base_sha)
+
+        fresh_manager = self.manager()
+        try:
+            handle = fresh_manager.create_task_worktree("task-stale", self.base_sha)
+        except GitWorkspaceError:
+            return
+        cleanup = fresh_manager.cleanup(handle)
+        self.assertTrue(cleanup.success)
+        self.fail("fresh manager created a worktree without a successful sync_exact authority")
+
     def test_cleanup_removes_worktree_and_generated_branch(self) -> None:
         manager = self.manager()
         manager.sync_exact("astra-source", self.base_sha)
