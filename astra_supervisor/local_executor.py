@@ -224,7 +224,7 @@ class LocalExecutor:
         environment = {
             key: value
             for key, value in os.environ.items()
-            if not key.upper().startswith("GIT_")
+            if not key.upper().startswith(("GIT_", "PYTHON"))
         }
         environment["GIT_PAGER"] = "cat"
         environment["PAGER"] = "cat"
@@ -233,6 +233,7 @@ class LocalExecutor:
         environment["GIT_CONFIG_COUNT"] = "1"
         environment["GIT_CONFIG_KEY_0"] = "core.fsmonitor"
         environment["GIT_CONFIG_VALUE_0"] = "false"
+        environment["PYTHONNOUSERSITE"] = "1"
         return environment
 
     @staticmethod
@@ -386,9 +387,37 @@ class LocalExecutor:
 
             if "/" in item or "\\" in item or item.lower().endswith(".py"):
                 self._validate_command_path(root, cwd, item, "unittest target")
-            elif not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", item):
+            elif re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", item):
+                self._validate_unittest_module_target(root, cwd, item)
+            else:
                 raise LocalExecutionError(f"unittest target is not a safe module or path: {item}")
             index += 1
+
+    def _validate_unittest_module_target(self, root: Path, cwd: Path, target: str) -> None:
+        parts = target.split(".")
+        for end in range(len(parts), 0, -1):
+            module_parts = parts[:end]
+            module_path = cwd.joinpath(*module_parts)
+            candidates = (module_path.with_suffix(".py"), module_path / "__init__.py")
+            for candidate in candidates:
+                if not candidate.is_file():
+                    continue
+                resolved = candidate.resolve()
+                try:
+                    common = os.path.commonpath([str(root), str(resolved)])
+                except ValueError as exc:
+                    raise LocalExecutionError(
+                        f"unittest module target is outside repository: {target}"
+                    ) from exc
+                if common != str(root):
+                    raise LocalExecutionError(
+                        f"unittest module target is outside repository: {target}"
+                    )
+                return
+
+        raise LocalExecutionError(
+            f"unittest dotted target does not resolve to a repository module: {target}"
+        )
 
     def _validate_compileall_args(self, root: Path, cwd: Path, args: tuple[str, ...]) -> None:
         for item in args:
