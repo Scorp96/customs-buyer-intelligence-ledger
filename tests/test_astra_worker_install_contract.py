@@ -36,6 +36,20 @@ class InstallContractTests(unittest.TestCase):
         self.assertIn("-Algorithm SHA256", text)
         self.assertIn("Remove-Item", text)
 
+    def test_winsw_config_exists_before_first_service_install(self) -> None:
+        text = read_required(INSTALLER).lower()
+        config_write_at = text.find("writealltext($winswxml")
+        install_at = text.find("& $winswexe install")
+        self.assertTrue(
+            -1 not in {config_write_at, install_at},
+            "installer must materialize WinSW XML and then register the service",
+        )
+        self.assertLess(
+            config_write_at,
+            install_at,
+            "WinSW service registration must not run before its sidecar XML exists",
+        )
+
     def test_service_is_reconfigured_to_virtual_non_admin_identity_before_start(self) -> None:
         text = read_required(INSTALLER)
         lowered = text.lower()
