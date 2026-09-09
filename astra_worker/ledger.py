@@ -104,7 +104,6 @@ class WorkerLease:
         self.release()
 
 
-
 def _lock_file(handle: BinaryIO) -> None:
     handle.seek(0, os.SEEK_END)
     if handle.tell() == 0:
@@ -130,7 +129,6 @@ def _lock_file(handle: BinaryIO) -> None:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError as exc:
         raise LeaseError("worker lease is already held") from exc
-
 
 
 def _unlock_file(handle: BinaryIO) -> None:
@@ -338,6 +336,52 @@ class TaskLedger:
             except sqlite3.Error as exc:
                 self._rollback()
                 raise LedgerError("failed to claim task") from exc
+
+    def mark_executing(
+        self,
+        task_id: str,
+        *,
+        mirror_identity: str,
+        worktree: str,
+        generated_branch: str,
+    ) -> TaskRecord:
+        task_id = _require_text("task_id", task_id)
+        mirror_identity = _require_text("mirror_identity", mirror_identity)
+        worktree = _require_text("worktree", worktree)
+        generated_branch = _require_text("generated_branch", generated_branch)
+        now = _utc_now()
+
+        with self._mutex:
+            self._begin_immediate()
+            try:
+                row = self._get_task(task_id)
+                if row is None:
+                    raise LedgerStateError("unknown task cannot begin execution")
+                if row["state"] != "CLAIMED":
+                    raise LedgerStateError("only a claimed task can begin execution")
+                self._conn.execute(
+                    """
+                    UPDATE tasks
+                       SET state = 'EXECUTING',
+                           mirror_identity = ?,
+                           worktree = ?,
+                           generated_branch = ?,
+                           updated_at = ?
+                     WHERE task_id = ?
+                    """,
+                    (mirror_identity, worktree, generated_branch, now, task_id),
+                )
+                updated = self._get_task(task_id)
+                if updated is None:
+                    raise LedgerError("executing task could not be read back")
+                self._commit()
+                return self._row_to_record(updated)
+            except LedgerError:
+                self._rollback()
+                raise
+            except sqlite3.Error as exc:
+                self._rollback()
+                raise LedgerError("failed to mark task executing") from exc
 
     def mark_terminal(
         self,
