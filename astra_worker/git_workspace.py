@@ -7,7 +7,6 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Mapping
 from urllib.parse import urlparse
 
 from .config import RepositoryBinding
@@ -92,15 +91,23 @@ class GitWorkspaceManager:
         self._token = token
         self._git = str(Path(resolved_git).resolve())
         self._timeout = int(command_timeout_seconds)
+        self._verified_base_sha: str | None = None
         self.mirror_root = Path(binding.mirror_root).resolve(strict=False)
         if len(self.mirror_root.parents) < 2:
             raise GitWorkspaceError("mirror root does not provide a worker-owned parent")
         self.worker_root = self.mirror_root.parent.parent.resolve(strict=False)
         self.worktree_root = (self.worker_root / "worktrees" / binding.repository_id).resolve(strict=False)
         self.home_root = (self.worker_root / "home").resolve(strict=False)
+        self.xdg_config_root = (self.worker_root / "xdg-config").resolve(strict=False)
         self.empty_hooks_root = (self.worker_root / "empty-hooks").resolve(strict=False)
 
-        for child in (self.mirror_root, self.worktree_root, self.home_root, self.empty_hooks_root):
+        for child in (
+            self.mirror_root,
+            self.worktree_root,
+            self.home_root,
+            self.xdg_config_root,
+            self.empty_hooks_root,
+        ):
             if child != self.worker_root and self.worker_root not in child.parents:
                 raise GitWorkspaceError("worker-owned Git path escaped worker root")
 
@@ -113,8 +120,10 @@ class GitWorkspaceManager:
             env[key] = value
 
         self.home_root.mkdir(parents=True, exist_ok=True)
+        self.xdg_config_root.mkdir(parents=True, exist_ok=True)
         self.empty_hooks_root.mkdir(parents=True, exist_ok=True)
         env["HOME"] = str(self.home_root)
+        env["XDG_CONFIG_HOME"] = str(self.xdg_config_root)
         if os.name == "nt":
             env["USERPROFILE"] = str(self.home_root)
         env["GIT_CONFIG_NOSYSTEM"] = "1"
@@ -224,6 +233,7 @@ class GitWorkspaceManager:
             raise GitWorkspaceError("trusted mirror origin does not match configured source")
 
     def sync_exact(self, base_ref: str, base_sha: str) -> None:
+        self._verified_base_sha = None
         base_ref = self._validate_base_ref(base_ref)
         base_sha = _require_sha(base_sha)
         self._ensure_mirror()
@@ -247,11 +257,16 @@ class GitWorkspaceManager:
         ).stdout.strip().lower()
         if resolved != base_sha:
             raise GitWorkspaceError("fetched branch head does not match signed base_commit_sha")
+        self._verified_base_sha = base_sha
 
     def create_task_worktree(self, task_id: str, base_sha: str) -> WorktreeHandle:
         if not isinstance(task_id, str) or not task_id or "\x00" in task_id:
             raise GitWorkspaceError("task_id must be non-empty")
         base_sha = _require_sha(base_sha)
+        if self._verified_base_sha != base_sha:
+            raise GitWorkspaceError(
+                "base_commit_sha must be freshly verified by sync_exact in this manager instance"
+            )
         self._ensure_mirror()
 
         object_probe = self._run_git(
