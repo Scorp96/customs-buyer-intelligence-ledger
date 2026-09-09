@@ -311,10 +311,9 @@ class ReceiptGate:
             raise ReceiptGateError("issue state could not be re-read") from exc
         if not isinstance(issue, dict) or issue.get("state", "open") != "open":
             raise ReceiptGateError("receipt issue is not open")
-        if _astra_labels(issue) != {_CLAIMED}:
-            raise ReceiptGateError("receipt issue is not exclusively claimed")
         if not isinstance(comments, list) or any(not isinstance(item, dict) for item in comments):
             raise ReceiptGateError("issue comments have an unexpected shape")
+        astra_labels = _astra_labels(issue)
 
         task = self._signed_task(comments)
         receipt = self._single_valid_receipt(comments, event_receipt)
@@ -331,10 +330,16 @@ class ReceiptGate:
             terminal = _REJECTED
         else:  # ReceiptEnvelope already validates this; retain fail-closed defense in depth.
             raise ReceiptGateError("receipt status is unsupported")
-        try:
-            self._api.replace_astra_labels(issue_number, {_RESULT_VERIFIED, terminal})
-        except Exception as exc:
-            raise ReceiptGateError("verified receipt labels could not be persisted") from exc
+
+        expected_terminal_labels = {_RESULT_VERIFIED, terminal}
+        if astra_labels == {_CLAIMED}:
+            try:
+                self._api.replace_astra_labels(issue_number, expected_terminal_labels)
+            except Exception as exc:
+                raise ReceiptGateError("verified receipt labels could not be persisted") from exc
+        elif astra_labels != expected_terminal_labels:
+            raise ReceiptGateError("receipt issue lifecycle does not match verified receipt")
+
         return ReceiptGateResult(
             status="VERIFIED",
             issue_number=issue_number,
