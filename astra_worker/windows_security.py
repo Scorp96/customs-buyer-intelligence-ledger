@@ -323,14 +323,15 @@ def resolve_service_sid(service_name: str = "ASTRAWorker") -> str:
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=False,
             timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise WindowsSecurityError("service SID query is unavailable") from exc
     if completed.returncode != 0:
         raise WindowsSecurityError("service SID query failed")
-    matches = _SERVICE_SID_RE.findall(completed.stdout)
+    stdout = completed.stdout if isinstance(completed.stdout, bytes) else b""
+    matches = [value.decode("ascii") for value in re.findall(br"S-1-5-80(?:-\d+)+", stdout)]
     unique = list(dict.fromkeys(matches))
     if len(unique) != 1 or _SID_RE.fullmatch(unique[0]) is None:
         raise WindowsSecurityError("service SID query returned an ambiguous result")
@@ -473,7 +474,7 @@ def _run_icacls(path: Path, *arguments: str) -> None:
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=False,
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
