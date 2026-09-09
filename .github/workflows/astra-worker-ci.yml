@@ -5,10 +5,13 @@ on:
     branches:
       - "astra-phase2-*"
     paths:
+      - "astra_supervisor/**"
       - "astra_worker/**"
+      - "scripts/astra_local_executor.py"
       - "scripts/astra_worker*.py"
       - "scripts/astra_task_gate.py"
       - "scripts/astra_receipt_gate.py"
+      - "tests/test_astra_supervisor*.py"
       - "tests/test_astra_worker*.py"
       - ".github/workflows/astra-worker-ci.yml"
       - "docs/superpowers/specs/2026-09-09-astra-phase2-*.md"
@@ -18,10 +21,13 @@ on:
       - main
       - cbi-v6-3-demand-expansion
     paths:
+      - "astra_supervisor/**"
       - "astra_worker/**"
+      - "scripts/astra_local_executor.py"
       - "scripts/astra_worker*.py"
       - "scripts/astra_task_gate.py"
       - "scripts/astra_receipt_gate.py"
+      - "tests/test_astra_supervisor*.py"
       - "tests/test_astra_worker*.py"
       - ".github/workflows/astra-worker-ci.yml"
 
