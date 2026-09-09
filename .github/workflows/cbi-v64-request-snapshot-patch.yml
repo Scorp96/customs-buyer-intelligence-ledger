@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   patch:
-    if: ${{ !startsWith(github.event.head_commit.message, 'fix(v64): reuse verified session snapshot within one request') }}
+    if: "${{ !startsWith(github.event.head_commit.message, 'fix(v64): reuse verified session snapshot within one request') }}"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
