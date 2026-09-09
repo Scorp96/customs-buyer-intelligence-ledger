@@ -34,7 +34,7 @@ jobs:
   supervisor:
     name: supervisor (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -54,5 +54,16 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Compile ASTRA supervisor sources
+        run: python -m compileall -q astra_supervisor scripts/astra_local_executor.py
+
       - name: Run ASTRA supervisor tests
         run: python -m unittest tests.test_astra_supervisor -v
+
+      - name: Install CBI regression dependencies
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.2 tzdata==2026.3
+
+      - name: Run full CBI unittest regression
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        run: python -m unittest discover -s tests -p "test_*.py" -v
