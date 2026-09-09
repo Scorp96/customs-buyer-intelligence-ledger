@@ -60,6 +60,20 @@ foreach ($Directory in $Directories) {
     New-Item -ItemType Directory -Path $Directory -Force | Out-Null
 }
 
+# Resolve the deterministic virtual-service SID before any state-file write. On a
+# reinstall or recovery attempt the existing state tree may still carry a stale
+# explicit ACL from a prior failed installation, so repair that ACL first.
+$SidOutput = (& sc.exe showsid $ServiceName 2>&1 | Out-String)
+Assert-NativeSuccess "service SID lookup"
+$SidMatch = [regex]::Match($SidOutput, "S-1-5-80(?:-\d+)+")
+if (-not $SidMatch.Success) {
+    throw "virtual service SID could not be resolved"
+}
+$ServiceSid = $SidMatch.Value
+
+& $PythonExe $WorkerLauncher harden-install-acl
+Assert-NativeSuccess "bootstrap worker state ACL recovery"
+
 # PowerShell 5.1 `Set-Content -Encoding UTF8` writes a UTF-8 BOM. The worker's
 # strict JSON protocol deliberately rejects BOM-prefixed JSON, so normalize the
 # trusted local config to UTF-8 without BOM before installation.
@@ -84,14 +98,6 @@ else {
     }
     Move-Item -LiteralPath $DownloadPath -Destination $WinSWExe -Force
 }
-
-$SidOutput = (& sc.exe showsid $ServiceName 2>&1 | Out-String)
-Assert-NativeSuccess "service SID lookup"
-$SidMatch = [regex]::Match($SidOutput, "S-1-5-80(?:-\d+)+")
-if (-not $SidMatch.Success) {
-    throw "virtual service SID could not be resolved"
-}
-$ServiceSid = $SidMatch.Value
 
 $Template = Get-Content -LiteralPath $TemplatePath -Raw -Encoding UTF8
 $RenderedXml = $Template.Replace("@@PYTHON_EXE@@", [Security.SecurityElement]::Escape($PythonExe))
@@ -121,8 +127,8 @@ Assert-NativeSuccess "service SID configuration"
 & sc.exe config $ServiceName obj= $ServiceAccount | Out-Null
 Assert-NativeSuccess "virtual service account configuration"
 
-# Establish the three trusted grants first, then use the Python hardener to remove
-# any pre-existing explicit trustee and verify the complete state tree exactly.
+# Re-establish the trusted grants after all installation writes, then remove any
+# surviving explicit trustee and verify the complete state tree exactly.
 $ServiceGrant = "*$ServiceSid`:(OI)(CI)F"
 $SystemGrant = "*$SystemSid`:(OI)(CI)F"
 $AdministratorsGrant = "*$AdministratorsSid`:(OI)(CI)F"
