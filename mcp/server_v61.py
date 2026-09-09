@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 
 from mcp import server as _server  # noqa: E402
 from unified_runtime import ValidationError  # noqa: E402
+from unified_runtime.production_tool_surface_v64 import MUTATION_WAL_AUDIT_TOOL_NAME  # noqa: E402
 from unified_runtime.resilience import exclusive_file_lock  # noqa: E402
 
 
@@ -938,7 +939,7 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
 
     tools.append(
         {
-            "name": "get_mutation_wal_audit",
+            "name": MUTATION_WAL_AUDIT_TOOL_NAME,
             "description": (
                 "Read-only sanitized audit of terminal production mutation WAL records. "
                 "Returns allowlisted metadata only; never raw arguments, idempotency keys, "
@@ -973,7 +974,7 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
 _server.tool_descriptors = hardened_tool_descriptors
 _server.TOOL_HANDLERS["get_runtime_contract"] = _contract_with_adapter_wal
 _server.TOOL_HANDLERS["get_runtime_health"] = _health_with_adapter_wal
-_server.TOOL_HANDLERS["get_mutation_wal_audit"] = _mutation_wal_audit
+_server.TOOL_HANDLERS[MUTATION_WAL_AUDIT_TOOL_NAME] = _mutation_wal_audit
 for _name in _MUTATING_TOOLS:
     if _name in _ORIGINAL_HANDLERS:
         _server.TOOL_HANDLERS[_name] = _wrap_handler(

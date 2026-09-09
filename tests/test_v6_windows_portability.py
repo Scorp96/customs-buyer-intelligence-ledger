@@ -11,6 +11,7 @@ from pathlib import Path
 
 from unified_runtime import CBI_MCP_TOOL_NAMES
 from unified_runtime.mcp_schema_v63 import build_v63_tool_descriptors
+from unified_runtime.production_tool_surface_v64 import V64_PRODUCTION_ADAPTER_TOOL_NAMES
 
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,7 @@ def _declared_production_tool_names() -> set[str]:
         for item in build_v63_tool_descriptors()
         if isinstance(item, dict) and str(item.get("name") or "")
     )
+    names.update(V64_PRODUCTION_ADAPTER_TOOL_NAMES)
     return names
 
 
