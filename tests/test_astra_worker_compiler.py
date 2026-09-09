@@ -117,7 +117,7 @@ class CompilerTests(unittest.TestCase):
     def test_compile_translates_mutations_into_phase1_manifest(self) -> None:
         before = b"before\n"
         (self.worktree / "a.txt").write_bytes(before)
-        (self.worktree / "b.txt").write_text("delete me\n", encoding="utf-8")
+        (self.worktree / "b.txt").write_bytes(b"delete me\n")
         task = _task(
             [
                 {
