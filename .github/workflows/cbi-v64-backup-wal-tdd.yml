@@ -22,3 +22,5 @@ jobs:
         run: python -m unittest tests.test_v64_state_query_performance_protocol -v
       - name: Immutable backup object-store contract
         run: python -m unittest tests.test_v64_backup_object_store -v
+      - name: Backup retention runtime contract
+        run: python -m unittest tests.test_v64_backup_retention_runtime -v
