@@ -41,7 +41,7 @@ class InstallContractTests(unittest.TestCase):
         text = read_required(INSTALLER)
         lowered = text.lower()
         showsid_at = lowered.find("sc.exe showsid")
-        xml_write_at = lowered.find("writealltext")
+        xml_write_at = lowered.find("writealltext($winswxml")
         install_at = lowered.find(" install")
         sidtype_at = lowered.find("sidtype")
         service_account_at = lowered.find('nt service\\astraworker')
@@ -70,8 +70,9 @@ class InstallContractTests(unittest.TestCase):
         self.assertLess(validate_at, start_at)
         self.assertNotRegex(lowered, r"obj=\s*[\"']?(localsystem|system)\b")
         # Windows virtual service accounts are passwordless and ChangeServiceConfig
-        # requires a NULL password pointer for them. Passing `password= ""` through
-        # sc.exe produces ERROR_INVALID_COMMAND_LINE (1639) on real Windows hosts.
+        # requires a NULL password pointer for them. Passing an explicit empty
+        # password through sc.exe produced ERROR_INVALID_COMMAND_LINE (1639) on a
+        # real Windows host during operational acceptance.
         self.assertNotIn("password=", lowered)
 
     def test_installer_normalizes_config_to_utf8_without_bom(self) -> None:
