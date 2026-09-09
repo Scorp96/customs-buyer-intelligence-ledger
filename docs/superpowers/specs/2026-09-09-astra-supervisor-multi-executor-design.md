@@ -64,6 +64,7 @@ Safety rules:
 - path traversal and absolute paths are rejected;
 - commands run with `shell=False`;
 - Python executable names are matched exactly and v1 only permits constrained `unittest`/`compileall` forms;
+- a manifest may not nominate an arbitrary executable path merely because its basename looks like `python` or `git`; path-form executables are rejected except for the exact current Python interpreter path needed by the supported invocation contract;
 - Git is limited to read-only inspection subcommands and rejects output-to-file, external-diff, no-index, textconv and file-fed pathspec escape surfaces;
 - no package installation, network command, `git push`, shell, PowerShell, cmd, or arbitrary `python -c`;
 - all operations are validated before the first mutation;
@@ -112,7 +113,7 @@ Phase 1 is successful when:
 
 1. executor selection is deterministic and tested;
 2. Local Executor dry-run cannot mutate files;
-3. Local Executor rejects protected branches, dirty trees, path escape, nested `.git` access, disallowed executable lookalikes and unsafe Git output/external-diff options;
+3. Local Executor rejects protected branches, dirty trees, path escape, nested `.git` access, disallowed executable lookalikes, user-selected executable-path spoofing and unsafe Git output/external-diff options;
 4. command path targets for `unittest`/`compileall` remain inside the declared repository root;
 5. an allowed manifest can write a repository file and run a local unittest on a non-protected clean branch;
 6. the ASTRA skill documents the supervisor/executor split and does not claim that the bridge provides unlimited Codex usage;
