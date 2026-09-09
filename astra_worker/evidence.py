@@ -12,6 +12,7 @@ import tempfile
 from typing import Mapping
 
 from astra_supervisor.local_executor import ExecutionResult
+from .compiler import intended_final_hashes
 from .models import ReceiptEnvelope, TaskEnvelope
 
 
@@ -147,6 +148,13 @@ def _status_paths(root: Path) -> tuple[tuple[str, str], ...]:
     return tuple(records)
 
 
+def _changed_paths_from_status(status: tuple[tuple[str, str], ...]) -> tuple[str, ...]:
+    ignored = [path for code, path in status if code == "!!"]
+    if ignored:
+        raise EvidenceError("ignored worktree artifacts are not allowed in final evidence")
+    return tuple(sorted({path for _code, path in status}, key=str.casefold))
+
+
 def _numstat(root: Path) -> tuple[tuple[str, str, str], ...]:
     raw = _run_git(
         root,
@@ -233,6 +241,24 @@ def _assert_final_hashes(
     return observed
 
 
+def _signed_intended_hashes(
+    task: TaskEnvelope,
+    supplied: Mapping[str, str | None] | None = None,
+) -> dict[str, str | None]:
+    try:
+        trusted = intended_final_hashes(task)
+    except ValueError as exc:
+        raise EvidenceError("signed mutation authority could not be derived") from exc
+    if supplied is not None:
+        try:
+            candidate = dict(supplied)
+        except (TypeError, ValueError) as exc:
+            raise EvidenceError("caller supplied intended hashes are malformed") from exc
+        if candidate != trusted:
+            raise EvidenceError("caller supplied intended hashes do not match the signed task")
+    return trusted
+
+
 def _is_tracked(root: Path, path: str) -> bool:
     raw = _run_git(
         root,
@@ -311,6 +337,7 @@ def verify_final_state(
         raise EvidenceError("typed task envelope is required")
     if not isinstance(limits, EvidenceLimits):
         raise EvidenceError("trusted local evidence limits are required")
+    trusted_hashes = _signed_intended_hashes(task, intended_hashes)
     root = Path(worktree).resolve()
     if not root.is_dir():
         raise EvidenceError("worktree root does not exist")
@@ -319,15 +346,12 @@ def verify_final_state(
     if head != task.base_commit_sha:
         raise EvidenceError("worktree HEAD no longer matches signed base commit")
 
-    signed_paths = tuple(sorted(intended_hashes, key=str.casefold))
+    signed_paths = tuple(sorted(trusted_hashes, key=str.casefold))
     if len({path.casefold() for path in signed_paths}) != len(signed_paths):
         raise EvidenceError("intended final paths are ambiguous")
 
     status_before = _status_paths(root)
-    ignored = [path for code, path in status_before if code == "!!"]
-    if ignored:
-        raise EvidenceError("ignored worktree artifacts are not allowed in final evidence")
-    changed_paths = tuple(sorted({path for _code, path in status_before}, key=str.casefold))
+    changed_paths = _changed_paths_from_status(status_before)
     signed_identity = {path.casefold() for path in signed_paths}
     undeclared = [path for path in changed_paths if path.casefold() not in signed_identity]
     if undeclared:
@@ -337,7 +361,7 @@ def verify_final_state(
     if len(changed_paths) > effective_files:
         raise EvidenceError("changed-file count exceeds effective task/local limit")
 
-    observed = _assert_final_hashes(root, intended_hashes)
+    observed = _assert_final_hashes(root, trusted_hashes)
     for added, deleted, path in _numstat(root):
         if added == "-" or deleted == "-":
             raise EvidenceError(f"binary tracked diff is not allowed: {path}")
@@ -347,7 +371,7 @@ def verify_final_state(
     if len(patch) > effective_diff:
         raise EvidenceError("unified diff exceeds effective task/local byte limit")
 
-    observed_after = _assert_final_hashes(root, intended_hashes)
+    observed_after = _assert_final_hashes(root, trusted_hashes)
     status_after = _status_paths(root)
     if status_after != status_before or observed_after != observed:
         raise EvidenceError("worktree changed while final evidence was being collected")
@@ -368,9 +392,26 @@ def build_text_patch(
     if not isinstance(task, TaskEnvelope) or not isinstance(evidence, ChangeEvidence):
         raise EvidenceError("typed task and change evidence are required")
     root = Path(worktree).resolve()
+    trusted_hashes = _signed_intended_hashes(task)
+    if dict(evidence.observed_final_hashes) != trusted_hashes:
+        raise EvidenceError("change evidence final hashes are not bound to the signed task")
+
+    status_before = _status_paths(root)
+    changed_before = _changed_paths_from_status(status_before)
+    if changed_before != evidence.changed_paths:
+        raise EvidenceError("worktree changed after final-state verification")
+    observed_before = _assert_final_hashes(root, trusted_hashes)
+    if observed_before != dict(evidence.observed_final_hashes):
+        raise EvidenceError("worktree final hashes drifted after verification")
+
     patch = _build_patch_bytes(root, evidence.changed_paths)
     if len(patch) != evidence.diff_bytes or hashlib.sha256(patch).hexdigest() != evidence.patch_sha256:
         raise EvidenceError("worktree patch drifted after final-state verification")
+
+    status_after = _status_paths(root)
+    observed_after = _assert_final_hashes(root, trusted_hashes)
+    if status_after != status_before or observed_after != observed_before:
+        raise EvidenceError("worktree changed while patch evidence was being packaged")
     return patch
 
 
@@ -469,8 +510,13 @@ def build_signed_receipt(
     if isinstance(max_command_output_bytes, bool) or not isinstance(max_command_output_bytes, int) or max_command_output_bytes <= 0:
         raise EvidenceError("max_command_output_bytes must be positive")
 
+    trusted_hashes = _signed_intended_hashes(task)
+    if dict(change_evidence.observed_final_hashes) != trusted_hashes:
+        raise EvidenceError("receipt change evidence is not bound to the signed task")
+
     expected_patch_sha = change_evidence.patch_sha256
     expected_total = len(patch_chunks)
+    reconstructed_parts: list[str] = []
     for expected_index, chunk in enumerate(patch_chunks, start=1):
         if not isinstance(chunk, PatchChunk):
             raise EvidenceError("patch_chunks must contain PatchChunk values")
@@ -478,8 +524,18 @@ def build_signed_receipt(
             raise EvidenceError("patch chunks are not in one complete ordered sequence")
         if chunk.patch_sha256 != expected_patch_sha:
             raise EvidenceError("patch chunk is bound to a different complete patch")
-        if hashlib.sha256(chunk.text.encode("utf-8")).hexdigest() != chunk.sha256:
+        encoded_chunk = chunk.text.encode("utf-8")
+        if len(encoded_chunk) > _MAX_PATCH_CHUNK_BYTES:
+            raise EvidenceError("patch chunk exceeds the 48 KiB payload limit")
+        if hashlib.sha256(encoded_chunk).hexdigest() != chunk.sha256:
             raise EvidenceError("patch chunk hash mismatch")
+        reconstructed_parts.append(chunk.text)
+
+    reconstructed = "".join(reconstructed_parts).encode("utf-8")
+    if hashlib.sha256(reconstructed).hexdigest() != expected_patch_sha:
+        raise EvidenceError("ordered patch chunks do not reconstruct the complete patch")
+    if len(reconstructed) != change_evidence.diff_bytes:
+        raise EvidenceError("reconstructed patch byte count does not match change evidence")
 
     steps: list[dict[str, object]] = []
     for step in execution_result.steps:
