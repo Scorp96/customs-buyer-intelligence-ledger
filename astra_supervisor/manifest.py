@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path, PurePosixPath
 import re
+import sys
 from typing import Any, Mapping, Sequence
 
 
@@ -25,6 +27,19 @@ def _validate_relative_file_path(raw_path: str) -> str:
         raise ManifestValidationError(".git metadata is never writable")
 
     return str(PurePosixPath(*parts))
+
+
+def _validate_run_executable(raw_executable: str) -> None:
+    normalized = raw_executable.replace("\\", "/")
+    if "/" not in normalized:
+        return
+
+    candidate = Path(raw_executable).expanduser().resolve()
+    current_python = Path(sys.executable).expanduser().resolve()
+    if os.path.normcase(str(candidate)) != os.path.normcase(str(current_python)):
+        raise ManifestValidationError(
+            "run executable paths are not allowed except for the current Python interpreter"
+        )
 
 
 @dataclass(frozen=True)
@@ -60,6 +75,7 @@ class Operation:
             raise ManifestValidationError("run argv must be a non-empty array of strings")
         if not all(isinstance(item, str) and item for item in argv):
             raise ManifestValidationError("run argv must contain only non-empty strings")
+        _validate_run_executable(argv[0])
 
         cwd = payload.get("cwd", ".")
         if not isinstance(cwd, str) or not cwd:
