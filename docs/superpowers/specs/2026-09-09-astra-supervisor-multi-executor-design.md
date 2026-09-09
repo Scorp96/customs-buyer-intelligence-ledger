@@ -59,16 +59,29 @@ The Local Executor is intentionally narrow and auditable. It consumes a JSON man
 
 Safety rules:
 
-- every path is resolved under repository root;
-- `.git` is never writable;
+- every manifest file path and command path target is resolved under repository root;
+- every path component named `.git` is inaccessible to file mutation or command working directories;
 - path traversal and absolute paths are rejected;
 - commands run with `shell=False`;
-- v1 command policy only permits Python `unittest`/`compileall` and read-only Git inspection commands;
+- Python executable names are matched exactly and v1 only permits constrained `unittest`/`compileall` forms;
+- Git is limited to read-only inspection subcommands and rejects output-to-file, external-diff, no-index, textconv and file-fed pathspec escape surfaces;
 - no package installation, network command, `git push`, shell, PowerShell, cmd, or arbitrary `python -c`;
 - all operations are validated before the first mutation;
 - command failure stops later operations and produces a structured result.
 
-The Local Executor is a transition-grade fallback, not a general unrestricted shell agent. Broader write/commit capabilities require a separate security review.
+The Local Executor is a transition-grade fallback, not a general unrestricted shell agent and not an OS sandbox. An allowlisted test or repository module is still trusted repository code and may itself have side effects when executed. Broader write/commit capabilities or unattended remote invocation require a separate security review.
+
+## Trust boundary for any future unattended local control plane
+
+Phase 1 requires explicit local invocation. If a later phase exposes Local Executor through an always-on service or remote bridge, the following become non-negotiable prerequisites rather than optional hardening:
+
+- the service must pin one or more allowed repository roots in trusted local configuration; a remote manifest must not be allowed to choose an arbitrary `repository_root`;
+- authentication and authorization must be independent of ChatGPT webpage/session tokens;
+- remote callers must not gain unrestricted shell, package installation, arbitrary Python, network-command, credential or Git push access;
+- apply requests must remain branch-bound, clean-tree-bound, auditable and replay-safe;
+- the service must fail closed when local state, branch identity or authorization cannot be proved.
+
+This future control plane is deliberately out of Phase 1 because it changes the threat model from an explicitly invoked local tool to a remotely reachable mutation authority.
 
 ## Supervisor contract
 
@@ -99,10 +112,11 @@ Phase 1 is successful when:
 
 1. executor selection is deterministic and tested;
 2. Local Executor dry-run cannot mutate files;
-3. Local Executor rejects protected branches, dirty trees, path escape, `.git` writes, and disallowed commands;
-4. an allowed manifest can write a repository file and run a local unittest on a non-protected clean branch;
-5. the ASTRA skill documents the supervisor/executor split and does not claim that the bridge provides unlimited Codex usage;
-6. CI passes on Linux and Windows.
+3. Local Executor rejects protected branches, dirty trees, path escape, nested `.git` access, disallowed executable lookalikes and unsafe Git output/external-diff options;
+4. command path targets for `unittest`/`compileall` remain inside the declared repository root;
+5. an allowed manifest can write a repository file and run a local unittest on a non-protected clean branch;
+6. the ASTRA skill documents the supervisor/executor split and does not claim that the bridge provides unlimited Codex usage;
+7. focused CI passes on Linux and Windows and a full CBI regression run passes without ASTRA changing CBI runtime/evidence/WAL/R2 semantics.
 
 ## Stop conditions
 
@@ -111,4 +125,5 @@ Stop and redesign before merge if:
 - implementing this requires changes to CBI evidence/WAL/R2/runtime semantics;
 - the Local Executor needs an unrestricted shell to be useful;
 - GitHub remote execution cannot be kept isolated from production branches;
-- bridge integration requires session-token scraping or unofficial ChatGPT web APIs.
+- bridge integration requires session-token scraping or unofficial ChatGPT web APIs;
+- unattended local execution requires trusting a remotely supplied arbitrary repository root.
