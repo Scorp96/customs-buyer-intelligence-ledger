@@ -8,6 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "astra_stage2_windows.ps1"
+WORKFLOW = ROOT / ".github" / "workflows" / "astra-worker-ci.yml"
 
 
 class AstraWorkerStage2RunnerContractTests(unittest.TestCase):
@@ -54,6 +55,10 @@ class AstraWorkerStage2RunnerContractTests(unittest.TestCase):
         self.assertEqual(text.count('Write-Host "ASTRA_STAGE2_OK"'), 1)
         self.assertIn("Status -ne", text)
         self.assertIn("Running", text)
+
+    def test_worker_ci_watches_stage2_runner(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('"scripts/astra_stage2_windows.ps1"', workflow)
 
     @unittest.skipUnless(os.name == "nt", "PowerShell 5.1 parser validation is Windows-only")
     def test_parses_under_windows_powershell_51(self) -> None:
