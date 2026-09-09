@@ -121,11 +121,16 @@ Assert-NativeSuccess "service SID configuration"
 & sc.exe config $ServiceName obj= $ServiceAccount | Out-Null
 Assert-NativeSuccess "virtual service account configuration"
 
+# Establish the three trusted grants first, then use the Python hardener to remove
+# any pre-existing explicit trustee and verify the complete state tree exactly.
 $ServiceGrant = "*$ServiceSid`:(OI)(CI)F"
 $SystemGrant = "*$SystemSid`:(OI)(CI)F"
 $AdministratorsGrant = "*$AdministratorsSid`:(OI)(CI)F"
 & icacls.exe $StateRoot /inheritance:r /grant:r $ServiceGrant $SystemGrant $AdministratorsGrant /T /C | Out-Null
 Assert-NativeSuccess "worker state ACL hardening"
+
+& $PythonExe $WorkerLauncher harden-install-acl
+Assert-NativeSuccess "exact worker state ACL hardening"
 
 if (-not (Test-Path -LiteralPath $SecretTarget -PathType Leaf)) {
     Write-Host "Protected secrets are not present. Run: python scripts/astra_worker.py provision-secrets --stdin"
