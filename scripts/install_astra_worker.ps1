@@ -115,8 +115,9 @@ if ($null -eq $ExistingService) {
 
 & sc.exe sidtype $ServiceName unrestricted | Out-Null
 Assert-NativeSuccess "service SID configuration"
-# Virtual service accounts are passwordless. ChangeServiceConfig requires a NULL
-# password pointer for `NT SERVICE\<name>` accounts, so do not pass password= "".
+# Virtual service accounts are passwordless. ChangeServiceConfig requires the
+# password pointer to be NULL for `NT SERVICE\<name>` identities, so no password
+# argument is supplied to sc.exe here.
 & sc.exe config $ServiceName obj= $ServiceAccount | Out-Null
 Assert-NativeSuccess "virtual service account configuration"
 
