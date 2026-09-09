@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import hashlib
 from pathlib import Path
 import shutil
@@ -37,6 +37,24 @@ def _task(base_sha: str, operations: list[dict], *, max_files: int = 8, max_diff
             "operations": operations,
             "acceptance": {"max_changed_files": max_files, "max_diff_bytes": max_diff},
         }
+    )
+
+
+def _success_execution(task: TaskEnvelope) -> ExecutionResult:
+    return ExecutionResult(
+        task_id=task.task_id,
+        success=True,
+        applied=True,
+        steps=(
+            ExecutionStepResult(
+                index=1,
+                kind="run",
+                success=True,
+                returncode=0,
+                stdout="ok",
+                stderr="",
+            ),
+        ),
     )
 
 
@@ -104,6 +122,25 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             verify_final_state(task, self.root, intended_final_hashes(task), self.limits)
 
+    def test_caller_supplied_intended_hashes_cannot_override_signed_content(self) -> None:
+        task = _task(
+            self.base_sha,
+            [
+                {
+                    "kind": "write_text",
+                    "path": "tracked.txt",
+                    "content": "signed\n",
+                    "expected_sha256": hashlib.sha256(b"before\n").hexdigest(),
+                    "expect_absent": False,
+                }
+            ],
+        )
+        attacker = b"attacker\n"
+        (self.root / "tracked.txt").write_bytes(attacker)
+        forged = {"tracked.txt": hashlib.sha256(attacker).hexdigest()}
+        with self.assertRaises(EvidenceError):
+            verify_final_state(task, self.root, forged, self.limits)
+
     def test_declared_untracked_create_is_verified_and_in_patch(self) -> None:
         task = _task(
             self.base_sha,
@@ -124,6 +161,25 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(evidence.observed_final_hashes["new.txt"], intended["new.txt"])
         self.assertIn(b"+++ b/new.txt", patch)
         self.assertIn(b"+created", patch)
+
+    def test_build_text_patch_rejects_new_undeclared_change_after_verification(self) -> None:
+        task = _task(
+            self.base_sha,
+            [
+                {
+                    "kind": "write_text",
+                    "path": "tracked.txt",
+                    "content": "after\n",
+                    "expected_sha256": hashlib.sha256(b"before\n").hexdigest(),
+                    "expect_absent": False,
+                }
+            ],
+        )
+        (self.root / "tracked.txt").write_bytes(b"after\n")
+        evidence = verify_final_state(task, self.root, intended_final_hashes(task), self.limits)
+        (self.root / "late.tmp").write_bytes(b"late undeclared change\n")
+        with self.assertRaises(EvidenceError):
+            build_text_patch(task, self.root, evidence)
 
     def test_binary_diff_is_rejected(self) -> None:
         task = _task(
@@ -192,6 +248,41 @@ class EvidenceTests(unittest.TestCase):
         reordered = hashlib.sha256("".join(chunk.sha256 for chunk in reversed(chunks)).encode("ascii")).hexdigest()
         self.assertNotEqual(ordered, reordered)
         self.assertTrue(all(chunk.patch_sha256 == hashlib.sha256(patch).hexdigest() for chunk in chunks))
+
+    def test_receipt_rejects_chunk_sequence_not_reconstructing_complete_patch(self) -> None:
+        task = _task(
+            self.base_sha,
+            [
+                {
+                    "kind": "write_text",
+                    "path": "tracked.txt",
+                    "content": "after\n",
+                    "expected_sha256": hashlib.sha256(b"before\n").hexdigest(),
+                    "expect_absent": False,
+                }
+            ],
+        )
+        (self.root / "tracked.txt").write_bytes(b"after\n")
+        evidence = verify_final_state(task, self.root, intended_final_hashes(task), self.limits)
+        patch = build_text_patch(task, self.root, evidence)
+        chunks = list(chunk_patch(patch, max_payload_bytes=128))
+        self.assertTrue(chunks)
+        tampered_text = chunks[0].text + "x"
+        chunks[0] = replace(
+            chunks[0],
+            text=tampered_text,
+            sha256=hashlib.sha256(tampered_text.encode("utf-8")).hexdigest(),
+        )
+        with self.assertRaises(EvidenceError):
+            build_signed_receipt(
+                task,
+                status="APPLY_READY",
+                change_evidence=evidence,
+                patch_chunks=tuple(chunks),
+                cleanup_success=True,
+                execution_result=_success_execution(task),
+                max_command_output_bytes=128,
+            )
 
     def test_receipt_binds_patch_hash_cleanup_and_bounded_output_without_local_path(self) -> None:
         task = _task(
