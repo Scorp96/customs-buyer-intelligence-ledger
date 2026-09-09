@@ -1,0 +1,90 @@
+name: CBI v6.4 request snapshot patch
+
+on:
+  push:
+    branches:
+      - cbi-v64-release-candidate-performance-takeover-20260909
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cbi-v64-request-snapshot-patch
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: ${{ !startsWith(github.event.head_commit.message, 'fix(v64): reuse verified session snapshot within one request') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Apply exact-anchor request snapshot patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected one anchor, found {count}")
+              return text.replace(old, new, 1)
+
+          core = Path('unified_runtime/core.py')
+          text = core.read_text(encoding='utf-8')
+          text = replace_once(
+              text,
+              '''import hashlib\nimport json\nimport os\nimport re\nimport secrets\nimport unicodedata\nimport zipfile\nfrom contextvars import ContextVar\n''',
+              '''import asyncio\nimport copy\nimport hashlib\nimport json\nimport os\nimport re\nimport secrets\nimport threading\nimport unicodedata\nimport zipfile\nfrom contextlib import contextmanager\nfrom contextvars import ContextVar\n''',
+              'core imports',
+          )
+          text = replace_once(
+              text,
+              '''_ACTIVE_INPUT_SANITIZATION: ContextVar[dict[str, Any] | None] = ContextVar(\n    "cbi_active_input_sanitization",\n    default=None,\n)\n\n\ndef _sanitize_unicode_scalars''',
+              '''_ACTIVE_INPUT_SANITIZATION: ContextVar[dict[str, Any] | None] = ContextVar(\n    "cbi_active_input_sanitization",\n    default=None,\n)\n_ACTIVE_VERIFIED_SESSION_SNAPSHOTS: ContextVar[\n    dict[tuple[int, int | None, int, str], tuple[list[dict[str, Any]], str]] | None\n] = ContextVar(\n    "cbi_active_verified_session_snapshots",\n    default=None,\n)\n\n\ndef _verified_session_snapshot_key(\n    store_id: int,\n    investigation_id: str,\n) -> tuple[int, int | None, int, str]:\n    try:\n        task = asyncio.current_task()\n    except RuntimeError:\n        task = None\n    return (\n        threading.get_ident(),\n        id(task) if task is not None else None,\n        store_id,\n        investigation_id,\n    )\n\n\ndef _sanitize_unicode_scalars''',
+              'snapshot context',
+          )
+          text = replace_once(
+              text,
+              '''    def _read_unlocked(self, investigation_id: str) -> list[dict[str, Any]]:\n''',
+              '''    @contextmanager\n    def verified_read_snapshot(self, investigation_id: str):\n        """Reuse one fully verified durable read only inside the current request scope."""\n        key = _verified_session_snapshot_key(id(self), investigation_id)\n        active = _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.get()\n        if active is not None and key in active:\n            yield\n            return\n\n        verified = self.read(investigation_id)\n        snapshot = copy.deepcopy(verified)\n        fingerprint = digest(snapshot)\n        updated = dict(active or {})\n        updated[key] = (snapshot, fingerprint)\n        token = _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.set(updated)\n        mutation_detected = False\n        try:\n            yield\n        finally:\n            current = _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.get() or {}\n            cached = current.get(key)\n            mutation_detected = (\n                cached is None\n                or digest(cached[0]) != cached[1]\n            )\n            _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.reset(token)\n            if mutation_detected:\n                raise ValidationError(\n                    "verified session snapshot mutated during request; fail closed"\n                )\n\n    def _read_unlocked(self, investigation_id: str) -> list[dict[str, Any]]:\n''',
+              'snapshot scope',
+          )
+          text = replace_once(
+              text,
+              '''    def read(self, investigation_id: str) -> list[dict[str, Any]]:\n        lock_path = self.root / f".{investigation_id}.write.lock"\n        with exclusive_file_lock(lock_path, timeout_seconds=30.0):\n            return self._read_unlocked(investigation_id)\n''',
+              '''    def read(self, investigation_id: str) -> list[dict[str, Any]]:\n        key = _verified_session_snapshot_key(id(self), investigation_id)\n        active = _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.get()\n        if active is not None and key in active:\n            snapshot, _fingerprint = active[key]\n            return copy.deepcopy(snapshot)\n        lock_path = self.root / f".{investigation_id}.write.lock"\n        with exclusive_file_lock(lock_path, timeout_seconds=30.0):\n            return self._read_unlocked(investigation_id)\n''',
+              'store read',
+          )
+          core.write_text(text, encoding='utf-8')
+
+          overlay = Path('unified_runtime/research_orchestration_hardening.py')
+          text = overlay.read_text(encoding='utf-8')
+          old = '''    def get_account_state(\n        self,\n        arguments: dict[str, Any],\n    ) -> dict[str, Any]:\n        result = dict(super().get_account_state(arguments))\n        investigation_id = self._investigation_id(arguments)\n        outreach = self.evaluate_outreach_readiness(arguments)\n        source_plan = self.plan_public_source_calls(\n            {"investigation_id": investigation_id, "limit": 1}\n        )\n        result["outreach_readiness"] = outreach\n        result["routes"] = list(outreach.get("canonical_route_view") or [])\n        result["source_coverage"] = {\n            "source_coverage_complete": bool(\n                source_plan.get("source_coverage_complete")\n            ),\n            "source_coverage_status": str(\n                source_plan.get("source_coverage_status") or "INCOMPLETE"\n            ),\n            "remaining_source_attempt_count_at_least": int(\n                source_plan.get("remaining_source_attempt_count_at_least") or 0\n            ),\n            "planner_truncated": bool(source_plan.get("truncated")),\n            "closure_snapshot_policy": "CLOSURE_MUTATION_RESULT_UNCHANGED",\n        }\n        state = self._v6_state(investigation_id)\n        result["route_projection_diagnostics"] = self._route_projection_diagnostics(\n            state, outreach\n        )\n        result["peer_reconciliation"] = self._peer_reconciliation_view(state)\n        return result\n'''
+          new = '''    def get_account_state(\n        self,\n        arguments: dict[str, Any],\n    ) -> dict[str, Any]:\n        investigation_id = (\n            str(arguments.get("investigation_id") or "").strip()\n            if isinstance(arguments, dict)\n            else ""\n        )\n        store = getattr(self, "store", None)\n        snapshot_scope = getattr(store, "verified_read_snapshot", None)\n        if investigation_id and callable(snapshot_scope):\n            with snapshot_scope(investigation_id):\n                return self._get_account_state_derived_view(arguments)\n        return self._get_account_state_derived_view(arguments)\n\n    def _get_account_state_derived_view(\n        self,\n        arguments: dict[str, Any],\n    ) -> dict[str, Any]:\n        result = dict(super().get_account_state(arguments))\n        investigation_id = self._investigation_id(arguments)\n        outreach = self.evaluate_outreach_readiness(arguments)\n        source_plan = self.plan_public_source_calls(\n            {"investigation_id": investigation_id, "limit": 1}\n        )\n        result["outreach_readiness"] = outreach\n        result["routes"] = list(outreach.get("canonical_route_view") or [])\n        result["source_coverage"] = {\n            "source_coverage_complete": bool(\n                source_plan.get("source_coverage_complete")\n            ),\n            "source_coverage_status": str(\n                source_plan.get("source_coverage_status") or "INCOMPLETE"\n            ),\n            "remaining_source_attempt_count_at_least": int(\n                source_plan.get("remaining_source_attempt_count_at_least") or 0\n            ),\n            "planner_truncated": bool(source_plan.get("truncated")),\n            "closure_snapshot_policy": "CLOSURE_MUTATION_RESULT_UNCHANGED",\n        }\n        state = self._v6_state(investigation_id)\n        result["route_projection_diagnostics"] = self._route_projection_diagnostics(\n            state, outreach\n        )\n        result["peer_reconciliation"] = self._peer_reconciliation_view(state)\n        return result\n'''
+          text = replace_once(text, old, new, 'account state wrapper')
+          overlay.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Run focused snapshot and existing orchestration regressions
+        run: >-
+          python -m unittest -v
+          tests.test_v64_request_scoped_verified_snapshot
+          tests.test_v61_research_orchestration_hardening
+
+      - name: Commit green implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Scorp96"
+          git config user.email "130877686+Scorp96@users.noreply.github.com"
+          git add unified_runtime/core.py unified_runtime/research_orchestration_hardening.py
+          git diff --cached --check
+          git commit -m "fix(v64): reuse verified session snapshot within one request"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
