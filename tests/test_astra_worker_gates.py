@@ -236,6 +236,37 @@ class GitHubClientSurfaceTests(unittest.TestCase):
         self.assertIsInstance(error, GitHubApiError)
         self.assertNotIn(token, str(error))
 
+    def test_comment_listing_paginates_beyond_first_hundred(self) -> None:
+        client = GitHubIssueClient("Scorp96/customs-buyer-intelligence-ledger", "token-value")
+        calls: list[str] = []
+
+        def fake_request(method: str, path: str, payload=None):
+            self.assertEqual(method, "GET")
+            self.assertIsNone(payload)
+            calls.append(path)
+            if "page=2" in path:
+                return [{"id": 101}]
+            return [{"id": index} for index in range(1, 101)]
+
+        client._request = fake_request  # type: ignore[method-assign]
+        comments = client.list_issue_comments(42)
+        self.assertEqual(len(comments), 101)
+        self.assertTrue(any("page=2" in path for path in calls))
+
+    def test_comment_listing_fails_closed_at_pagination_cap(self) -> None:
+        client = GitHubIssueClient("Scorp96/customs-buyer-intelligence-ledger", "token-value")
+        calls: list[str] = []
+
+        def fake_request(method: str, path: str, payload=None):
+            self.assertEqual(method, "GET")
+            calls.append(path)
+            return [{"id": index} for index in range(100)]
+
+        client._request = fake_request  # type: ignore[method-assign]
+        with self.assertRaises(GitHubApiError):
+            client.list_issue_comments(42)
+        self.assertGreaterEqual(len(calls), 2)
+
 
 class WorkflowContractTests(unittest.TestCase):
     def test_signer_workflow_has_minimal_permissions_and_no_pull_request_target(self) -> None:
