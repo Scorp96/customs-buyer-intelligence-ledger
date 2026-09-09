@@ -235,6 +235,7 @@ class LocalExecutor:
         environment["GIT_CONFIG_KEY_0"] = "core.fsmonitor"
         environment["GIT_CONFIG_VALUE_0"] = "false"
         environment["PYTHONNOUSERSITE"] = "1"
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
         return environment
 
     @staticmethod
@@ -385,21 +386,24 @@ class LocalExecutor:
                 continue
             if item.startswith("-"):
                 raise LocalExecutionError(f"unittest option is not allowed: {item}")
-
-            if "/" in item or "\\" in item or item.lower().endswith(".py"):
-                self._validate_command_path(root, cwd, item, "unittest target")
-            elif re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", item):
-                self._validate_unittest_module_target(root, cwd, item)
-            else:
-                raise LocalExecutionError(f"unittest target is not a safe module or path: {item}")
+            self._validate_unittest_target(root, cwd, item)
             index += 1
 
-    def _validate_unittest_module_target(self, root: Path, cwd: Path, target: str) -> None:
+    def _validate_unittest_target(self, root: Path, cwd: Path, target: str) -> None:
+        if not isinstance(target, str) or not target or "\x00" in target:
+            raise LocalExecutionError("unittest target must be non-empty text")
+        if "/" in target or "\\" in target:
+            self._validate_command_path(root, cwd, target, "unittest target")
+            return
+        if target.startswith(".") or target.endswith(".") or ".." in target:
+            raise LocalExecutionError(f"unittest dotted target is invalid: {target}")
         parts = target.split(".")
+        if any(not part or not part.isidentifier() for part in parts):
+            raise LocalExecutionError(f"unittest dotted target is invalid: {target}")
+
         for end in range(len(parts), 0, -1):
-            module_parts = parts[:end]
-            module_path = cwd.joinpath(*module_parts)
-            candidates = (module_path.with_suffix(".py"), module_path / "__init__.py")
+            relative = Path(*parts[:end])
+            candidates = (cwd / relative.with_suffix(".py"), cwd / relative / "__init__.py")
             for candidate in candidates:
                 if not candidate.is_file():
                     continue
@@ -407,101 +411,80 @@ class LocalExecutor:
                 try:
                     common = os.path.commonpath([str(root), str(resolved)])
                 except ValueError as exc:
-                    raise LocalExecutionError(
-                        f"unittest module target is outside repository: {target}"
-                    ) from exc
+                    raise LocalExecutionError("unittest dotted target is outside repository") from exc
                 if common != str(root):
-                    raise LocalExecutionError(
-                        f"unittest module target is outside repository: {target}"
-                    )
+                    raise LocalExecutionError("unittest dotted target is outside repository")
                 return
-
-        raise LocalExecutionError(
-            f"unittest dotted target does not resolve to a repository module: {target}"
-        )
+        raise LocalExecutionError(f"unittest dotted target does not resolve inside repository: {target}")
 
     def _validate_compileall_args(self, root: Path, cwd: Path, args: tuple[str, ...]) -> None:
-        for item in args:
+        index = 0
+        saw_target = False
+        while index < len(args):
+            item = args[index]
             if item in self._COMPILEALL_SWITCHES:
+                index += 1
                 continue
             if item.startswith("-"):
                 raise LocalExecutionError(f"compileall option is not allowed: {item}")
             self._validate_command_path(root, cwd, item, "compileall target")
+            saw_target = True
+            index += 1
+        if not saw_target:
+            raise LocalExecutionError("compileall requires at least one repository-contained target")
 
-    def _validate_git_args(self, root: Path, cwd: Path, argv: tuple[str, ...]) -> None:
-        if len(argv) < 2:
-            raise LocalExecutionError("Git command requires an explicit read-only subcommand")
-
-        subcommand = argv[1]
-        if subcommand not in {"status", "diff", "log", "show", "rev-parse", "branch"}:
-            raise LocalExecutionError(f"Git subcommand is not allowed: {subcommand}")
-
-        arguments = argv[2:]
-        if subcommand == "branch":
-            allowed_branch_args = {"--show-current", "--list", "-a", "-r"}
-            if any(arg not in allowed_branch_args for arg in arguments):
-                raise LocalExecutionError("Git branch is restricted to read-only listing options")
-            return
-
-        for item in arguments:
-            option_name = item.split("=", 1)[0]
-            if option_name in self._GIT_DANGEROUS_OPTIONS:
-                raise LocalExecutionError(f"Git option is not allowed for read-only inspection: {item}")
-            if "%G" in item:
-                raise LocalExecutionError(
-                    f"Git signature pretty-format placeholders are not allowed: {item}"
-                )
-            if self._looks_absolute(item) or self._has_parent_reference(item):
-                raise LocalExecutionError(f"Git argument escapes repository scope: {item}")
-
-        if "--" in arguments:
-            separator = arguments.index("--")
-            for pathspec in arguments[separator + 1 :]:
-                if pathspec.startswith(":"):
-                    raise LocalExecutionError("advanced Git pathspecs are not allowed")
-                self._validate_command_path(root, cwd, pathspec, "Git pathspec")
-
-    def _validate_command_path(self, root: Path, cwd: Path, raw_path: str, label: str) -> Path:
-        if not isinstance(raw_path, str) or not raw_path:
-            raise LocalExecutionError(f"{label} must be a non-empty relative path")
-        if self._looks_absolute(raw_path) or self._has_parent_reference(raw_path):
-            raise LocalExecutionError(f"{label} must stay inside the repository: {raw_path}")
-
+    def _validate_command_path(self, root: Path, cwd: Path, raw_path: str, context: str) -> Path:
+        if not isinstance(raw_path, str) or not raw_path or "\x00" in raw_path:
+            raise LocalExecutionError(f"{context} must be a non-empty relative path")
         normalized = raw_path.replace("\\", "/")
+        if normalized.startswith("/") or re.match(r"^[A-Za-z]:/", normalized):
+            raise LocalExecutionError(f"{context} must stay inside repository")
         parts = PurePosixPath(normalized).parts
-        if any(part.lower() == ".git" for part in parts):
-            raise LocalExecutionError(f"{label} cannot access .git metadata")
-
-        target = (cwd / Path(*parts)).resolve() if parts else cwd
+        if ".." in parts or any(part.lower() == ".git" for part in parts):
+            raise LocalExecutionError(f"{context} escapes repository")
+        target = (cwd / Path(*parts)).resolve()
         try:
             common = os.path.commonpath([str(root), str(target)])
         except ValueError as exc:
-            raise LocalExecutionError(f"{label} is outside repository root: {raw_path}") from exc
+            raise LocalExecutionError(f"{context} is outside repository") from exc
         if common != str(root):
-            raise LocalExecutionError(f"{label} is outside repository root: {raw_path}")
+            raise LocalExecutionError(f"{context} is outside repository")
         return target
 
-    @staticmethod
-    def _looks_absolute(raw_value: str) -> bool:
-        normalized = raw_value.replace("\\", "/")
-        return normalized.startswith("/") or bool(re.match(r"^[A-Za-z]:/", normalized))
+    def _validate_git_args(self, root: Path, cwd: Path, argv: tuple[str, ...]) -> None:
+        if len(argv) < 2:
+            raise LocalExecutionError("Git command is missing a subcommand")
+        subcommand = argv[1]
+        allowed_subcommands = {"status", "diff", "log", "show", "rev-parse", "branch"}
+        if subcommand not in allowed_subcommands:
+            raise LocalExecutionError(f"Git subcommand is not allowed: {subcommand}")
+
+        for argument in argv[2:]:
+            option_name = argument.split("=", 1)[0]
+            if option_name in self._GIT_DANGEROUS_OPTIONS:
+                raise LocalExecutionError(f"Git option is not allowed: {option_name}")
+            if "%G" in argument:
+                raise LocalExecutionError("Git signature pretty-format fields are not allowed")
+
+        if subcommand == "branch":
+            for argument in argv[2:]:
+                if argument.startswith("-") and argument not in {"--show-current", "--list"}:
+                    raise LocalExecutionError(f"Git branch option is not allowed: {argument}")
 
     @staticmethod
-    def _has_parent_reference(raw_value: str) -> bool:
-        normalized = raw_value.replace("\\", "/")
-        return ".." in PurePosixPath(normalized).parts
-
-    def _atomic_write_text(self, target: Path, content: str) -> None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
-        temporary = Path(temporary_name)
+    def _atomic_write_text(path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+        temp_path = Path(temp_name)
         try:
             with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
                 handle.write(content)
-            os.replace(str(temporary), str(target))
-        except Exception:
+                handle.flush()
+                os.fsync(handle.fileno())
+            temp_path.replace(path)
+        except BaseException:
             try:
-                temporary.unlink(missing_ok=True)
+                temp_path.unlink(missing_ok=True)
             except OSError:
                 pass
             raise
