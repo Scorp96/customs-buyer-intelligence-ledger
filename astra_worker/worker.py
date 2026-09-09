@@ -428,16 +428,17 @@ class Worker:
             return self._execute_ready(item, binding)
 
     def run_forever(self) -> None:
-        transport_delay = 15.0
+        transport_delays = (15.0, 30.0, 60.0, 120.0, 300.0)
+        transport_index = 0
         while True:
             try:
                 result = self.run_once()
             except WorkerTransportError:
-                self._sleep(transport_delay)
-                transport_delay = min(transport_delay * 2.0, 300.0)
+                self._sleep(transport_delays[transport_index])
+                transport_index = min(transport_index + 1, len(transport_delays) - 1)
                 continue
 
-            transport_delay = 15.0
+            transport_index = 0
             if result.status == "DISABLED":
                 return
             self._sleep(float(self.config.poll_interval_seconds))
