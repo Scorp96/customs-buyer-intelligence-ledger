@@ -54,12 +54,26 @@ class RefPolicyTests(unittest.TestCase):
         with self.assertRaises(ConfigError):
             RepositoryBinding.from_mapping("cbi-primary", payload)
 
+    def test_origin_suffix_confusion_is_rejected(self) -> None:
+        payload = valid_config_mapping()["repositories"]["cbi-primary"].copy()
+        payload["expected_origin"] = (
+            "https://github.com/attacker/Scorp96/customs-buyer-intelligence-ledger"
+        )
+        with self.assertRaises(ConfigError):
+            RepositoryBinding.from_mapping("cbi-primary", payload)
+
 
 class WorkerConfigTests(unittest.TestCase):
     def _load(self, payload: dict) -> WorkerConfig:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "worker.json"
             path.write_text(json.dumps(payload), encoding="utf-8")
+            return WorkerConfig.load(path)
+
+    def _load_raw(self, raw: str) -> WorkerConfig:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "worker.json"
+            path.write_text(raw, encoding="utf-8")
             return WorkerConfig.load(path)
 
     def test_valid_config_resolves_only_known_repository_id(self) -> None:
@@ -97,6 +111,16 @@ class WorkerConfigTests(unittest.TestCase):
         payload["remote_repository_root"] = "C:/escape"
         with self.assertRaises(ConfigError):
             self._load(payload)
+
+    def test_duplicate_json_config_key_is_rejected(self) -> None:
+        raw = json.dumps(valid_config_mapping())
+        raw = raw.replace(
+            '"worker_id": "scorp-windows-01",',
+            '"worker_id": "scorp-windows-01", "worker_id": "scorp-windows-01",',
+            1,
+        )
+        with self.assertRaises(ConfigError):
+            self._load_raw(raw)
 
 
 if __name__ == "__main__":
