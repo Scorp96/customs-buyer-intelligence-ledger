@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
-import re
+import subprocess
 import unittest
 
 from astra_worker.cli import make_parser
@@ -49,6 +50,18 @@ class InstallContractTests(unittest.TestCase):
             install_at,
             "WinSW service registration must not run before its sidecar XML exists",
         )
+
+    def test_service_sid_is_bound_into_xml_before_registration(self) -> None:
+        text = read_required(INSTALLER).lower()
+        showsid_at = text.find("sc.exe showsid")
+        xml_write_at = text.find("writealltext($winswxml")
+        install_at = text.find("& $winswexe install")
+        self.assertTrue(
+            -1 not in {showsid_at, xml_write_at, install_at},
+            "installer must resolve SID, render XML, and then register WinSW",
+        )
+        self.assertLess(showsid_at, xml_write_at)
+        self.assertLess(xml_write_at, install_at)
 
     def test_service_is_reconfigured_to_virtual_non_admin_identity_before_start(self) -> None:
         text = read_required(INSTALLER)
@@ -123,6 +136,23 @@ class InstallContractTests(unittest.TestCase):
         self.assertNotIn("download", text)
         self.assertNotIn("update", text)
         self.assertNotIn("latest", text)
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell parser")
+    def test_installer_has_valid_powershell_syntax(self) -> None:
+        installer = str(INSTALLER.resolve()).replace("'", "''")
+        command = (
+            "$errors=$null;$tokens=$null;"
+            f"[System.Management.Automation.Language.Parser]::ParseFile('{installer}',[ref]$tokens,[ref]$errors)|Out-Null;"
+            "if($errors.Count -ne 0){$errors|ForEach-Object{$_.ToString()};exit 2}"
+        )
+        completed = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
 if __name__ == "__main__":
