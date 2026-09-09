@@ -42,12 +42,12 @@ class InstallContractTests(unittest.TestCase):
         lowered = text.lower()
         showsid_at = lowered.find("sc.exe showsid")
         xml_write_at = lowered.find("writealltext($winswxml")
-        install_at = lowered.find(" install")
-        sidtype_at = lowered.find("sidtype")
+        install_at = lowered.find("& $winswexe install")
+        sidtype_at = lowered.find("sc.exe sidtype")
         service_account_at = lowered.find('nt service\\astraworker')
         config_at = lowered.find("sc.exe config")
         validate_at = lowered.find("validate-install")
-        start_at = lowered.find(" start")
+        start_at = lowered.find("& $winswexe start")
         self.assertTrue(
             -1 not in {
                 showsid_at,
@@ -113,7 +113,7 @@ class InstallContractTests(unittest.TestCase):
         text = read_required(INSTALLER).lower()
         self.assertIn("config.json", text)
         self.assertIn("provision-secrets", text)
-        self.assertLess(text.find("validate-install"), text.find(" start"))
+        self.assertLess(text.find("validate-install"), text.find("& $winswexe start"))
 
     def test_cli_exposes_read_only_acl_and_install_validation_plus_admin_provisioning(self) -> None:
         choices = subcommands(make_parser())
