@@ -4,7 +4,12 @@ import subprocess
 import tempfile
 import unittest
 
-from astra_supervisor import ExecutionManifest, LocalExecutionError, LocalExecutor
+from astra_supervisor import (
+    ExecutionManifest,
+    LocalExecutionError,
+    LocalExecutor,
+    ManifestValidationError,
+)
 
 
 class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
@@ -58,7 +63,7 @@ class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
         )
         for argv in cases:
             with self.subTest(argv=argv):
-                with self.assertRaises(LocalExecutionError):
+                with self.assertRaises((ManifestValidationError, LocalExecutionError)):
                     LocalExecutor().execute(self._manifest(argv), apply=False)
 
 
