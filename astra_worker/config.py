@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 import re
 from typing import Any, Mapping, Sequence
+
+from .protocol import ProtocolError, parse_strict_json
 
 
 class ConfigError(ValueError):
@@ -114,14 +115,21 @@ class RepositoryBinding:
                 raise ConfigError("protected/empty base-ref prefixes are not allowed")
         if set(exact).intersection(prefixes):
             raise ConfigError("exact and prefix ref rules must remain distinct")
+
+        github_repository = _validate_repository_name(
+            payload["github_repository"], "github_repository"
+        )
         origin = _text(payload["expected_origin"], f"repository[{repository_id}].expected_origin")
-        if not origin.startswith("https://github.com/") or not origin.endswith(
-            _validate_repository_name(payload["github_repository"], "github_repository")
-        ):
-            raise ConfigError("expected_origin must pin the configured GitHub repository")
+        allowed_origins = {
+            f"https://github.com/{github_repository}",
+            f"https://github.com/{github_repository}.git",
+        }
+        if origin not in allowed_origins:
+            raise ConfigError("expected_origin must exactly pin the configured GitHub repository")
+
         return cls(
             repository_id=_text(repository_id, "repository_id"),
-            github_repository=_validate_repository_name(payload["github_repository"], "github_repository"),
+            github_repository=github_repository,
             expected_origin=origin,
             mirror_root=_absolute_local_path(payload["mirror_root"], "mirror_root"),
             allowed_base_refs_exact=exact,
@@ -199,8 +207,8 @@ class WorkerConfig:
     def load(cls, path: Path) -> "WorkerConfig":
         try:
             raw = Path(path).read_text(encoding="utf-8")
-            payload = json.loads(raw)
-        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            payload = parse_strict_json(raw)
+        except (OSError, UnicodeError, ProtocolError) as exc:
             raise ConfigError(f"cannot load worker config: {exc}") from exc
         return cls.from_mapping(payload)
 
