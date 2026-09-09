@@ -6,14 +6,14 @@ import unittest
 from unittest.mock import Mock
 
 from astra_worker.worker import WorkerCycleResult, WorkerError, WorkerTransportError
-from tests.test_astra_worker_worker import WorkerTests
+from tests import test_astra_worker_worker as worker_fixtures
 
 
 class WorkerBackoffTests(unittest.TestCase):
     def _worker(self):
         temporary = tempfile.TemporaryDirectory()
         root = Path(temporary.name)
-        helper = WorkerTests()
+        helper = worker_fixtures.WorkerTests()
         worker, _queue, _ledger, _workspace, _executor = helper._worker(root)
         return temporary, worker
 
