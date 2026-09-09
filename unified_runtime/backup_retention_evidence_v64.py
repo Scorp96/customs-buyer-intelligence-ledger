@@ -17,7 +17,9 @@ def _backup_status(health: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _snapshot_id(status: dict[str, Any]) -> str:
-    return str(dict(status.get("latest") or {}).get("snapshot_id") or "").strip()
+    durable = dict(status.get("durable_latest") or {})
+    local = dict(status.get("latest") or {})
+    return str(durable.get("snapshot_id") or local.get("snapshot_id") or "").strip()
 
 
 def build_backup_retention_evidence(
