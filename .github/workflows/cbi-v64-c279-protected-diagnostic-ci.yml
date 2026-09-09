@@ -1,9 +1,11 @@
-name: CBI v6.4 protected C279 diagnostic CI
+name: CBI production required CI
 
 on:
   push:
     branches:
+      - cbi-v6-cloud-runtime-20260901
       - cbi-v64-c279-protected-diagnostic-minimal-20260909
+      - "cbi-v64-c279-protected-diagnostic-revert-*"
   pull_request:
     branches:
       - cbi-v6-cloud-runtime-20260901
@@ -12,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cbi-v64-c279-protected-diagnostic-${{ github.ref }}
+  group: cbi-production-required-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -34,22 +36,9 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python }}
-      - name: Verify C279 diagnostic contracts
-        run: >-
-          python -m unittest -v
-          tests.test_v64_c279_single_session_export
-          tests.test_v64_c279_export_transport
-          tests.test_v64_c279_export_entrypoint_contract
-          tests.test_v64_c279_transport_main_forwarding
-          tests.test_v64_c279_export_operator_intent
       - name: Run full repository unittest suite
         run: python -m unittest discover -s tests -p "test_*.py"
       - name: Run privacy scan
         run: python tests/privacy_scan.py
-      - name: Compile diagnostic runtime modules
-        run: >-
-          python -m py_compile
-          mcp/c279_single_session_export_v64.py
-          mcp/chatgpt_oauth_transport.py
-          mcp/remote_transport.py
-          mcp/server_v61_remote.py
+      - name: Compile Runtime modules
+        run: python -m compileall -q mcp unified_runtime
