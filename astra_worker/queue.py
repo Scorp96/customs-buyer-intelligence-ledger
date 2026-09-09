@@ -88,7 +88,7 @@ class TaskQueue:
         if not isinstance(comments, list):
             raise QueueError("issue comments have an unexpected shape")
 
-        valid_by_digest: dict[str, TaskEnvelope] = {}
+        valid: list[tuple[TaskEnvelope, str]] = []
         for comment in comments:
             if not isinstance(comment, dict) or _comment_author(comment) != _BOT_LOGIN:
                 continue
@@ -102,14 +102,13 @@ class TaskQueue:
                 digest = hashlib.sha256(canonical_json_v1(payload)).hexdigest()
             except (ProtocolError, ValueError):
                 continue
-            valid_by_digest.setdefault(digest, task)
+            valid.append((task, digest))
 
-        if not valid_by_digest:
+        if not valid:
             return None
-        if len(valid_by_digest) != 1:
-            raise QueueError("issue contains conflicting valid signed tasks")
-        digest, task = next(iter(valid_by_digest.items()))
-        return task, digest
+        if len(valid) != 1:
+            raise QueueError("issue must contain exactly one valid signed task")
+        return valid[0]
 
     def find_ready(self, worker_id: str) -> list[ReadyTask]:
         if not isinstance(worker_id, str) or not worker_id:
