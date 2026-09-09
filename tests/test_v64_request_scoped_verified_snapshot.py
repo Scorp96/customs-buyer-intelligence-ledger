@@ -31,7 +31,11 @@ class _MemoryOnlyBase:
             "remaining_source_attempt_count_at_least": 1,
             "truncated": False,
         }
-        self.state = {"observations": {}, "peers": {}}
+        self.state = {
+            "start": {"account": {"account_id": "C-MEMORY"}},
+            "observations": {},
+            "peers": {},
+        }
 
     def get_account_state(self, arguments):
         return dict(self.account_result)
@@ -53,7 +57,19 @@ class _MemoryOnlyBase:
 
 
 class _MemoryOnlyRuntime(V61ResearchOrchestrationHardeningMixin, _MemoryOnlyBase):
-    pass
+    """Exercise only the mixin get_account_state wrapper without a persistent store."""
+
+    def evaluate_outreach_readiness(self, arguments):
+        return _MemoryOnlyBase.evaluate_outreach_readiness(self, arguments)
+
+    def plan_public_source_calls(self, arguments):
+        return _MemoryOnlyBase.plan_public_source_calls(self, arguments)
+
+    def _route_projection_diagnostics(self, state, outreach):
+        return _MemoryOnlyBase._route_projection_diagnostics(self, state, outreach)
+
+    def _peer_reconciliation_view(self, state):
+        return _MemoryOnlyBase._peer_reconciliation_view(self, state)
 
 
 class RequestScopedVerifiedSnapshotTests(unittest.TestCase):
