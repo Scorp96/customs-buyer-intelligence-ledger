@@ -133,12 +133,42 @@ try {
     }
 
     Write-Host "----- installer -----"
-    $installerOutput = @(
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $InstallerPath -ConfigPath $ConfigPath 2>&1
-    )
-    $installerExit = $LASTEXITCODE
-    $installerOutput | ForEach-Object { Write-Host $_ }
-    $installerText = $installerOutput | Out-String
+    $captureId = [Guid]::NewGuid().ToString("N")
+    $installerStdout = Join-Path $env:TEMP "ASTRA-Stage1-$captureId-installer.stdout.log"
+    $installerStderr = Join-Path $env:TEMP "ASTRA-Stage1-$captureId-installer.stderr.log"
+    try {
+        $installerArgs = @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", (Quote-ProcessArgument $InstallerPath),
+            "-ConfigPath", (Quote-ProcessArgument $ConfigPath)
+        )
+        $installerProcess = Start-Process \
+            -FilePath "powershell.exe" \
+            -ArgumentList $installerArgs \
+            -Wait \
+            -PassThru \
+            -RedirectStandardOutput $installerStdout \
+            -RedirectStandardError $installerStderr
+        $installerExit = $installerProcess.ExitCode
+        $installerOutText = if (Test-Path -LiteralPath $installerStdout) {
+            Get-Content -LiteralPath $installerStdout -Raw -ErrorAction SilentlyContinue
+        } else { "" }
+        $installerErrText = if (Test-Path -LiteralPath $installerStderr) {
+            Get-Content -LiteralPath $installerStderr -Raw -ErrorAction SilentlyContinue
+        } else { "" }
+        if (-not [string]::IsNullOrWhiteSpace($installerOutText)) {
+            Write-Host $installerOutText.TrimEnd()
+        }
+        if (-not [string]::IsNullOrWhiteSpace($installerErrText)) {
+            Write-Host $installerErrText.TrimEnd()
+        }
+        $installerText = $installerOutText + [Environment]::NewLine + $installerErrText
+    }
+    finally {
+        Remove-Item -LiteralPath $installerStdout -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $installerStderr -Force -ErrorAction SilentlyContinue
+    }
 
     $hardenCount = ([regex]::Matches($installerText, "ASTRA_ACL_HARDENED")).Count
     if ($hardenCount -ne 2) {
