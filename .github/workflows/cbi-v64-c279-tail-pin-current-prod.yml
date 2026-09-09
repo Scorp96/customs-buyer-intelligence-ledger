@@ -1,0 +1,88 @@
+name: CBI v6.4 current-production C279 tail pin
+
+on:
+  push:
+    branches:
+      - cbi-v64-c279-current-prod-gate-20260909
+    paths:
+      - .github/workflows/cbi-v64-c279-tail-pin-current-prod.yml
+
+permissions:
+  contents: read
+
+env:
+  PRODUCTION_BASE_URL: https://cbi-v61-preview.onrender.com
+  EXPECTED_PRODUCTION_SHA: a311a2a57ee43a1f1a3b2819bf28946566b05692
+  EXPECTED_INVESTIGATION_ID: INV-20260902T093152Z-5f3526759f65
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - name: Read current tail without mutation
+        env:
+          CBI_V64_DISCOVERY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c279-tail-pin"
+          python - <<'PY'
+          import json, os, urllib.request
+          from pathlib import Path
+          from scripts.discover_v64_positive_route_candidate import _mcp, sanitize_health, READ_TIMEOUT_SECONDS
+
+          base = os.environ["PRODUCTION_BASE_URL"].rstrip("/")
+          bearer = os.environ["CBI_V64_DISCOVERY_BEARER"].strip()
+          investigation_id = os.environ["EXPECTED_INVESTIGATION_ID"]
+          if not bearer:
+              raise SystemExit("TAIL_PIN_BEARER_INVALID")
+
+          before = sanitize_health(
+              json.load(urllib.request.urlopen(base + "/healthz", timeout=READ_TIMEOUT_SECONDS)),
+              _mcp(base, bearer, 1, "get_runtime_health", {}),
+          )
+          if before["status"] != "ok" or before["git_sha"] != os.environ["EXPECTED_PRODUCTION_SHA"] or before["runtime_ready"] is not True:
+              raise SystemExit("TAIL_PIN_PRODUCTION_IDENTITY_INVALID")
+          if before["wal_prepared_count"] != 0 or before["wal_invalid_count"] != 0 or before["wal_reconciliation_required"] is not False:
+              raise SystemExit("TAIL_PIN_WAL_INVALID")
+
+          tail = _mcp(base, bearer, 2, "get_investigation_state", {"investigation_id": investigation_id})
+          if not isinstance(tail, dict):
+              raise SystemExit("TAIL_PIN_STATE_INVALID")
+          seq = int(tail.get("last_safe_seq") or 0)
+          event_hash = str(tail.get("last_safe_event_hash") or "").strip().lower()
+          if seq <= 0 or len(event_hash) != 64 or any(ch not in "0123456789abcdef" for ch in event_hash):
+              raise SystemExit("TAIL_PIN_VALUE_INVALID")
+
+          after = sanitize_health(
+              json.load(urllib.request.urlopen(base + "/healthz", timeout=READ_TIMEOUT_SECONDS)),
+              _mcp(base, bearer, 3, "get_runtime_health", {}),
+          )
+          if before != after:
+              raise SystemExit("TAIL_PIN_PRODUCTION_INVARIANT_CHANGED")
+
+          receipt = {
+              "schema": "cbi.v64-c279-tail-pin.v1",
+              "investigation_id": investigation_id,
+              "last_safe_seq": seq,
+              "last_safe_event_hash": event_hash,
+              "production_before": before,
+              "production_after": after,
+          }
+          path = Path(os.environ["RUNNER_TEMP"]) / "c279-tail-pin/receipt.json"
+          path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          print(f"C279_TAIL_PIN=PASS seq={seq} hash={event_hash}")
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-c279-tail-pin-${{ github.sha }}
+          path: ${{ runner.temp }}/c279-tail-pin/receipt.json
+          if-no-files-found: error
+          retention-days: 7
