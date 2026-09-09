@@ -8,7 +8,7 @@ on:
       - "astra_supervisor/**"
       - "scripts/astra_local_executor.py"
       - "skills/sol-advisor-astra/**"
-      - "tests/test_astra_supervisor.py"
+      - "tests/test_astra_supervisor*.py"
       - ".github/workflows/astra-supervisor-ci.yml"
       - "docs/superpowers/specs/2026-09-09-astra-supervisor-multi-executor-design.md"
       - "docs/superpowers/plans/2026-09-09-astra-supervisor-multi-executor.md"
@@ -20,7 +20,7 @@ on:
       - "astra_supervisor/**"
       - "scripts/astra_local_executor.py"
       - "skills/sol-advisor-astra/**"
-      - "tests/test_astra_supervisor.py"
+      - "tests/test_astra_supervisor*.py"
       - ".github/workflows/astra-supervisor-ci.yml"
 
 permissions:
@@ -58,7 +58,7 @@ jobs:
         run: python -m compileall -q astra_supervisor scripts/astra_local_executor.py
 
       - name: Run ASTRA supervisor tests
-        run: python -m unittest tests.test_astra_supervisor -v
+        run: python -m unittest tests.test_astra_supervisor tests.test_astra_supervisor_executable_boundary -v
 
       - name: Install CBI regression dependencies
         if: runner.os == 'Linux' && matrix.python-version == '3.11'
