@@ -80,17 +80,20 @@ else {
     Move-Item -LiteralPath $DownloadPath -Destination $WinSWExe -Force
 }
 
-$Escape = [Security.SecurityElement]::Escape
-$Template = Get-Content -LiteralPath $TemplatePath -Raw -Encoding UTF8
-$RenderedXml = $Template.Replace("@@PYTHON_EXE@@", $Escape.Invoke($PythonExe))
-$RenderedXml = $RenderedXml.Replace("@@REPOSITORY_ROOT@@", $Escape.Invoke($RepositoryRoot))
-$RenderedXml = $RenderedXml.Replace("@@STATE_ROOT@@", $Escape.Invoke($StateRoot))
-$RenderedXml = $RenderedXml.Replace("@@LOG_ROOT@@", $Escape.Invoke($LogRoot))
+$SidOutput = (& sc.exe showsid $ServiceName 2>&1 | Out-String)
+Assert-NativeSuccess "service SID lookup"
+$SidMatch = [regex]::Match($SidOutput, "S-1-5-80(?:-\d+)+")
+if (-not $SidMatch.Success) {
+    throw "virtual service SID could not be resolved"
+}
+$ServiceSid = $SidMatch.Value
 
-# WinSW requires its sidecar XML to exist before the first service registration.
-# The service-SID placeholder is harmless at registration time because the service
-# is never started until after SID resolution, final XML rendering, ACL proof, and
-# validate-install all succeed.
+$Template = Get-Content -LiteralPath $TemplatePath -Raw -Encoding UTF8
+$RenderedXml = $Template.Replace("@@PYTHON_EXE@@", [Security.SecurityElement]::Escape($PythonExe))
+$RenderedXml = $RenderedXml.Replace("@@REPOSITORY_ROOT@@", [Security.SecurityElement]::Escape($RepositoryRoot))
+$RenderedXml = $RenderedXml.Replace("@@STATE_ROOT@@", [Security.SecurityElement]::Escape($StateRoot))
+$RenderedXml = $RenderedXml.Replace("@@LOG_ROOT@@", [Security.SecurityElement]::Escape($LogRoot))
+$RenderedXml = $RenderedXml.Replace("@@SERVICE_SID@@", [Security.SecurityElement]::Escape($ServiceSid))
 [IO.File]::WriteAllText($WinSWXml, $RenderedXml, (New-Object Text.UTF8Encoding($false)))
 
 $ExistingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -109,16 +112,6 @@ if ($null -eq $ExistingService) {
 Assert-NativeSuccess "service SID configuration"
 & sc.exe config $ServiceName obj= $ServiceAccount password= "" | Out-Null
 Assert-NativeSuccess "virtual service account configuration"
-
-$SidOutput = (& sc.exe showsid $ServiceName 2>&1 | Out-String)
-Assert-NativeSuccess "service SID lookup"
-$SidMatch = [regex]::Match($SidOutput, "S-1-5-80(?:-\d+)+")
-if (-not $SidMatch.Success) {
-    throw "virtual service SID could not be resolved"
-}
-$ServiceSid = $SidMatch.Value
-$RenderedXml = $RenderedXml.Replace("@@SERVICE_SID@@", $Escape.Invoke($ServiceSid))
-[IO.File]::WriteAllText($WinSWXml, $RenderedXml, (New-Object Text.UTF8Encoding($false)))
 
 $ServiceGrant = "*$ServiceSid`:(OI)(CI)F"
 $SystemGrant = "*$SystemSid`:(OI)(CI)F"
