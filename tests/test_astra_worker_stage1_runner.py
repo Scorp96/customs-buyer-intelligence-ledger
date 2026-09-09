@@ -48,7 +48,7 @@ class Stage1RunnerContractTests(unittest.TestCase):
         self.assertIn("astra-phase2-pull-worker-design-20260909", text)
         self.assertIn("git fetch", text)
         self.assertIn("git rev-parse head", text)
-        self.assertIn("git rev-parse origin/", text)
+        self.assertIn('git rev-parse "origin/$featurebranch"', text)
         self.assertIn("git checkout --detach", text)
         self.assertLess(text.find("git checkout --detach"), text.find("install_astra_worker.ps1"))
 
