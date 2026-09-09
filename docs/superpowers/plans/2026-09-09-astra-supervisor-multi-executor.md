@@ -18,6 +18,7 @@
 - Dry-run is the Local Executor default.
 - Do not expose arbitrary shell, PowerShell, CMD, package install, network commands, `git push`, or `python -c` through the Local Executor.
 - All manifest paths and command path targets must remain under the declared repository root; nested `.git` metadata is inaccessible.
+- User-supplied executable paths may not bypass the command allowlist by presenting an allowlisted basename; path-form executables are rejected except for the exact current Python interpreter path used by the supported Python invocation contract.
 - Repository-authoritative work should prefer GitHub execution rather than pretending Codex is mandatory.
 - `codex-with-chatgpt` is read-only workspace visibility only; it is not an execution authority and not a quota bypass.
 - Local Executor v1 is a command-boundary hardening layer, not an OS sandbox; allowlisted repository test/module execution still trusts repository code.
@@ -74,7 +75,9 @@
 
 **Files:**
 - Modify: `astra_supervisor/local_executor.py`
+- Modify: `astra_supervisor/manifest.py`
 - Modify: `tests/test_astra_supervisor.py`
+- Create: `tests/test_astra_supervisor_executable_boundary.py`
 
 **Interfaces:**
 - File mutations: repository-confined UTF-8 atomic writes and explicit deletes.
@@ -83,7 +86,11 @@
 - [x] Happy path: write a module and execute `python -m unittest`.
 - [x] Security RED exposed six containment gaps: nested `.git`, Python-lookalike executable, out-of-root unittest target, out-of-root compileall target, `git diff --output`, and `git diff --ext-diff`.
 - [x] Harden Python/Git argument validation, nested `.git` protection and repository path containment.
-- [x] Verify the 27-test focused ASTRA suite on Ubuntu/Windows × Python 3.10/3.11.
+- [x] Independent follow-up review found a seventh command-origin gap: arbitrary paths whose basename was `python` or `git` could pass the executable-name allowlist.
+- [x] Add the executable-origin regression first and observe RED with two failing subcases proving `.../tools/python` and `.../tools/git` path spoofing were accepted before the fix.
+- [x] Reject user-selected executable paths at manifest validation, except the exact current Python interpreter path needed by the supported Python invocation contract.
+- [x] Add the new executable-origin regression to the focused Windows/Linux CI matrix.
+- [x] Verify the focused ASTRA suite is now 28 tests and GREEN on Ubuntu/Windows × Python 3.10/3.11.
 
 ### Task 5: CLI and ASTRA skill contract
 
@@ -113,18 +120,21 @@
 
 - [x] Add focused matrix workflow.
 - [x] Add full CBI regression gate without modifying CBI runtime files.
-- [x] Verify implementation head `6365325e444c5ad1fa3f474297c1fd30ab856a46`: focused 27/27 tests pass on all four matrix jobs; full CBI regression runs 966 tests and returns `OK (skipped=4)`.
-- [x] Verify PR merge-ref after the first completion-record commit: focused 27/27 tests pass on all four matrix jobs; full CBI regression again runs 966 tests and returns `OK (skipped=4)`.
-- [x] Compare implementation to base `f59731cb412e194052d16e81c8137c507964350d`: changed files remain limited to ASTRA supervisor/tests/skill/docs/script/workflow, with no CBI runtime/evidence/WAL/R2 changes.
+- [x] Verify the earlier implementation head: focused 27/27 tests pass on all four matrix jobs; full CBI regression runs 966 tests and returns `OK (skipped=4)`.
+- [x] Verify the security-hardened code head `ef0c5e120e0b323db6bc23a548905a4599e3721c`: focused 28/28 tests pass on all four matrix jobs; full CBI regression runs 967 tests and returns `OK (skipped=4)`.
+- [x] Compare the security-hardened code head to base `f59731cb412e194052d16e81c8137c507964350d`: changed files remain limited to ASTRA supervisor/tests/skill/docs/script/workflow, with no CBI runtime/evidence/WAL/R2 changes.
 - [x] Keep draft PR #23 targeting `cbi-v6-3-demand-expansion`; do not auto-merge.
 
 ## Verification record
 
 - Initial TDD RED: `07b3d22becbc69916fec1d82fc398c117d080154` — missing `astra_supervisor` import as expected.
-- Security RED: `4ab75ff45db02da72117be29e384957398c62efe` — six containment failures intentionally exposed before fixing them.
-- Security fixes: `b8580ab15850d1e4c233045a6b08bf5df7232678` and `b3d5220ac663e5cbb649d6ce08b884f8a2270fab`.
-- Integration gate: `6365325e444c5ad1fa3f474297c1fd30ab856a46` — focused matrix GREEN and full 966-test CBI regression GREEN (`skipped=4`).
-- PR merge-ref verification after `e2f81757d31fccfa9a7430895e14eb7d9ad472f4` — all four focused matrix jobs GREEN; Ubuntu/Python 3.11 full CBI regression GREEN with 966 tests and four platform skips.
+- First security RED: `4ab75ff45db02da72117be29e384957398c62efe` — six containment failures intentionally exposed before fixing them.
+- First security fixes: `b8580ab15850d1e4c233045a6b08bf5df7232678` and `b3d5220ac663e5cbb649d6ce08b884f8a2270fab`.
+- Zero-diff history cleanup: the pre-cleanup feature head was preserved as `astra-supervisor-local-executor-20260909-precleanup-backup`; the feature branch was safely moved back to the last effective tree before continuing.
+- Executable-origin RED path: dedicated regression introduced at `c7295e1b842d29d5b0e4f754a02fb06f30bf8cbd`; focused CI was then wired to run it at `44f1089728e3c7390b7aef776da28604bb1f977d` and produced two expected failures for user-selected Python/Git executable paths.
+- Executable-origin production fix: `1de1227151543311fe7373ef40f1b7cb719701a3` — rejection moved into manifest validation. The first post-fix run showed the unsafe paths were rejected but the test over-specified the exception layer; `ef0c5e120e0b323db6bc23a548905a4599e3721c` corrected that test contract without weakening production behavior.
+- Security-hardened verification at `ef0c5e120e0b323db6bc23a548905a4599e3721c`: GitHub Actions run #43 — all four focused matrix jobs GREEN, 28 tests `OK`; Ubuntu/Python 3.11 full CBI regression GREEN with 967 tests and `skipped=4`.
+- Fresh base check at the same verification point: `cbi-v6-3-demand-expansion` remained pinned at `f59731cb412e194052d16e81c8137c507964350d`; the ASTRA diff contained 14 changed files and no CBI runtime/evidence/WAL/R2 file.
 
 ## Remaining boundary
 
