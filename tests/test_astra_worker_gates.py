@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import unittest
@@ -8,16 +9,19 @@ import unittest
 from astra_worker.config import RepositoryBinding
 from astra_worker.github_api import GitHubApiError, GitHubIssueClient
 from astra_worker.protocol import (
+    canonical_json_v1,
     decode_signed_envelope,
     encode_signed_envelope,
     hmac_sha256_hex,
     verify_hmac_sha256,
 )
+from astra_worker.receipt_gate import ReceiptGate, ReceiptGateError
 from astra_worker.task_gate import TaskGate
 
 
 BASE_SHA = "a" * 40
 TASK_KEY = b"t" * 32
+RECEIPT_KEY = b"r" * 32
 
 
 def binding() -> RepositoryBinding:
@@ -72,6 +76,75 @@ def issue_event(payload: dict | str, *, proposer: str = "Scorp96", labels=None) 
     }
 
 
+def signed_task_body(payload: dict, *, key: bytes = TASK_KEY) -> str:
+    return encode_signed_envelope("task", payload, hmac_sha256_hex(key, payload))
+
+
+def patch_chunk_body(
+    task_id: str,
+    *,
+    index: int,
+    total: int,
+    text: str,
+    patch_sha256: str,
+) -> str:
+    payload = {
+        "schema_version": "astra.patch-chunk.v1",
+        "task_id": task_id,
+        "index": index,
+        "total": total,
+        "text": text,
+        "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "patch_sha256": patch_sha256,
+    }
+    return "ASTRA_PATCH_CHUNK_V1 " + canonical_json_v1(payload).decode("utf-8")
+
+
+def valid_receipt_mapping(
+    task: dict,
+    *,
+    chunks: tuple[str, ...] = ("abc", "def"),
+    status: str = "APPLY_READY",
+    observed_final_hashes: dict[str, str | None] | None = None,
+) -> dict:
+    patch = "".join(chunks).encode("utf-8")
+    final_hashes = observed_final_hashes or {
+        "example.txt": hashlib.sha256(b"hello\n").hexdigest()
+    }
+    return {
+        "schema_version": "astra.receipt.v1",
+        "task_id": task["task_id"],
+        "worker_id": task["worker_id"],
+        "repository_id": task["repository_id"],
+        "base_ref": task["base_ref"],
+        "base_commit_sha": task["base_commit_sha"],
+        "status": status,
+        "evidence": {
+            "changed_paths": ["example.txt"],
+            "observed_final_hashes": final_hashes,
+            "diff_bytes": len(patch),
+            "patch_sha256": hashlib.sha256(patch).hexdigest(),
+            "patch_chunk_sha256": [
+                hashlib.sha256(chunk.encode("utf-8")).hexdigest() for chunk in chunks
+            ],
+            "cleanup_success": True,
+            "execution": {"success": True, "applied": True, "steps": []},
+        },
+    }
+
+
+def signed_receipt_body(payload: dict, *, key: bytes = RECEIPT_KEY) -> str:
+    return encode_signed_envelope("receipt", payload, hmac_sha256_hex(key, payload))
+
+
+def receipt_event(body: str) -> dict:
+    return {
+        "repository": {"full_name": "Scorp96/customs-buyer-intelligence-ledger"},
+        "issue": {"number": 42},
+        "comment": {"body": body, "user": {"login": "worker-runtime"}},
+    }
+
+
 class FakeGitHub:
     def __init__(self, *, ref_sha: str = BASE_SHA, existing_comments=None) -> None:
         self.ref_sha = ref_sha
@@ -83,6 +156,13 @@ class FakeGitHub:
     def resolve_branch_head(self, repository: str, ref: str) -> str:
         self.resolve_calls.append((repository, ref))
         return self.ref_sha
+
+    def get_issue(self, issue_number: int) -> dict:
+        return {
+            "number": issue_number,
+            "state": "open",
+            "labels": [{"name": label} for label in sorted(self.labels)],
+        }
 
     def list_issue_comments(self, issue_number: int) -> list[dict]:
         return list(self.existing_comments)
@@ -204,12 +284,138 @@ class TaskGateTests(unittest.TestCase):
         self.assertEqual(api.comments, [])
 
 
+class ReceiptGateTests(unittest.TestCase):
+    def _api_for_receipt(
+        self,
+        *,
+        task: dict | None = None,
+        chunks: tuple[str, ...] = ("abc", "def"),
+        receipt: dict | None = None,
+        receipt_key: bytes = RECEIPT_KEY,
+        chunk_order: tuple[int, ...] | None = None,
+        extra_receipts: tuple[str, ...] = (),
+    ) -> tuple[FakeGitHub, str]:
+        task = task or valid_task_mapping()
+        receipt = receipt or valid_receipt_mapping(task, chunks=chunks)
+        patch = "".join(chunks).encode("utf-8")
+        patch_sha = hashlib.sha256(patch).hexdigest()
+        order = chunk_order or tuple(range(1, len(chunks) + 1))
+        comments: list[dict] = [
+            {"user": {"login": "github-actions[bot]"}, "body": signed_task_body(task)}
+        ]
+        for index in order:
+            comments.append(
+                {
+                    "user": {"login": "worker-runtime"},
+                    "body": patch_chunk_body(
+                        task["task_id"],
+                        index=index,
+                        total=len(chunks),
+                        text=chunks[index - 1],
+                        patch_sha256=patch_sha,
+                    ),
+                }
+            )
+        body = signed_receipt_body(receipt, key=receipt_key)
+        comments.extend(
+            {"user": {"login": "worker-runtime"}, "body": item} for item in extra_receipts
+        )
+        comments.append({"user": {"login": "worker-runtime"}, "body": body})
+        api = FakeGitHub(existing_comments=comments)
+        api.labels = {"astra-task/claimed"}
+        return api, body
+
+    def _gate(self, api: FakeGitHub) -> ReceiptGate:
+        return ReceiptGate(
+            api=api,
+            repository="Scorp96/customs-buyer-intelligence-ledger",
+            task_key=TASK_KEY,
+            receipt_key=RECEIPT_KEY,
+        )
+
+    def test_invalid_receipt_hmac_never_sets_result_verified(self) -> None:
+        api, body = self._api_for_receipt(receipt_key=b"x" * 32)
+        with self.assertRaises(ReceiptGateError):
+            self._gate(api).process(receipt_event(body))
+        self.assertEqual(api.labels, {"astra-task/claimed"})
+        self.assertNotIn("astra-task/result-verified", api.labels)
+
+    def test_missing_or_reordered_chunk_is_rejected(self) -> None:
+        task = valid_task_mapping()
+        receipt = valid_receipt_mapping(task, chunks=("abc", "def"))
+        api, body = self._api_for_receipt(
+            task=task,
+            chunks=("abc", "def"),
+            receipt=receipt,
+            chunk_order=(2, 1),
+        )
+        with self.assertRaises(ReceiptGateError):
+            self._gate(api).process(receipt_event(body))
+        self.assertEqual(api.labels, {"astra-task/claimed"})
+
+        api2, body2 = self._api_for_receipt(
+            task=task,
+            chunks=("abc", "def"),
+            receipt=receipt,
+            chunk_order=(1,),
+        )
+        with self.assertRaises(ReceiptGateError):
+            self._gate(api2).process(receipt_event(body2))
+        self.assertEqual(api2.labels, {"astra-task/claimed"})
+
+    def test_duplicate_conflicting_terminal_receipt_is_rejected(self) -> None:
+        task = valid_task_mapping()
+        first = valid_receipt_mapping(task)
+        duplicate = signed_receipt_body(first)
+        api, body = self._api_for_receipt(task=task, receipt=first, extra_receipts=(duplicate,))
+        with self.assertRaises(ReceiptGateError):
+            self._gate(api).process(receipt_event(body))
+        self.assertEqual(api.labels, {"astra-task/claimed"})
+
+        conflicting = valid_receipt_mapping(task, status="QUARANTINED")
+        api2, body2 = self._api_for_receipt(
+            task=task,
+            receipt=first,
+            extra_receipts=(signed_receipt_body(conflicting),),
+        )
+        with self.assertRaises(ReceiptGateError):
+            self._gate(api2).process(receipt_event(body2))
+        self.assertEqual(api2.labels, {"astra-task/claimed"})
+
+    def test_task_receipt_identity_and_signed_final_hashes_are_reverified(self) -> None:
+        task = valid_task_mapping()
+        wrong_identity = valid_receipt_mapping(task)
+        wrong_identity["base_commit_sha"] = "b" * 40
+        api, body = self._api_for_receipt(task=task, receipt=wrong_identity)
+        with self.assertRaises(ReceiptGateError):
+            self._gate(api).process(receipt_event(body))
+
+        wrong_hash = valid_receipt_mapping(
+            task,
+            observed_final_hashes={"example.txt": hashlib.sha256(b"evil\n").hexdigest()},
+        )
+        api2, body2 = self._api_for_receipt(task=task, receipt=wrong_hash)
+        with self.assertRaises(ReceiptGateError):
+            self._gate(api2).process(receipt_event(body2))
+        self.assertNotIn("astra-task/result-verified", api2.labels)
+
+    def test_valid_apply_ready_receipt_sets_verified_and_completed(self) -> None:
+        api, body = self._api_for_receipt()
+        result = self._gate(api).process(receipt_event(body))
+        self.assertEqual(result.status, "VERIFIED")
+        self.assertEqual(
+            api.labels,
+            {"astra-task/result-verified", "astra-task/completed"},
+        )
+
+
 class GitHubClientSurfaceTests(unittest.TestCase):
     def test_client_does_not_expose_source_write_or_pr_write_methods(self) -> None:
         client_methods = {name for name in dir(GitHubIssueClient) if not name.startswith("_")}
         self.assertTrue(
             {
                 "get_issue",
+                "list_open_issues_by_label",
                 "list_issue_comments",
                 "post_issue_comment",
                 "replace_astra_labels",
@@ -277,6 +483,19 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("pull-requests: write", workflow)
         self.assertNotIn("pull_request_target", workflow)
         self.assertIn("scripts/astra_task_gate.py", workflow)
+
+    def test_receipt_workflow_has_minimal_permissions_and_comment_only_trigger(self) -> None:
+        workflow = Path(".github/workflows/astra-receipt-verify.yml").read_text(encoding="utf-8")
+        self.assertIn("issue_comment:", workflow)
+        self.assertIn("types: [created]", workflow)
+        self.assertIn("issues: write", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("pull-requests: write", workflow)
+        self.assertNotIn("pull_request_target", workflow)
+        self.assertIn("scripts/astra_receipt_gate.py", workflow)
+        self.assertIn("ASTRA_TASK_HMAC_KEY", workflow)
+        self.assertIn("ASTRA_RECEIPT_HMAC_KEY", workflow)
 
 
 if __name__ == "__main__":
