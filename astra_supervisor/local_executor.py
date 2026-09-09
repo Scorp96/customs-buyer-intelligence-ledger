@@ -72,6 +72,7 @@ class LocalExecutor:
         "--output",
         "--pathspec-from-file",
         "--pathspec-file-nul",
+        "--show-signature",
     }
 
     def __init__(
@@ -446,6 +447,10 @@ class LocalExecutor:
             option_name = item.split("=", 1)[0]
             if option_name in self._GIT_DANGEROUS_OPTIONS:
                 raise LocalExecutionError(f"Git option is not allowed for read-only inspection: {item}")
+            if "%G" in item:
+                raise LocalExecutionError(
+                    f"Git signature pretty-format placeholders are not allowed: {item}"
+                )
             if self._looks_absolute(item) or self._has_parent_reference(item):
                 raise LocalExecutionError(f"Git argument escapes repository scope: {item}")
 
