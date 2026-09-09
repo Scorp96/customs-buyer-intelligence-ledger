@@ -114,6 +114,76 @@ class CompilerTests(unittest.TestCase):
             },
         )
 
+    def test_duplicate_or_case_colliding_mutation_paths_fail_closed(self) -> None:
+        for second_path in ("same.txt", "SAME.TXT"):
+            with self.subTest(second_path=second_path):
+                task = _task(
+                    [
+                        {
+                            "kind": "write_text",
+                            "path": "same.txt",
+                            "content": "first\n",
+                            "expected_sha256": None,
+                            "expect_absent": True,
+                        },
+                        {
+                            "kind": "write_text",
+                            "path": second_path,
+                            "content": "second\n",
+                            "expected_sha256": None,
+                            "expect_absent": True,
+                        },
+                    ]
+                )
+                with self.assertRaises(CompilerError):
+                    intended_final_hashes(task)
+                with self.assertRaises(CompilerError):
+                    verify_pre_state(task, self.worktree)
+
+    def test_symlink_file_cannot_alias_signed_mutation_path(self) -> None:
+        target = self.worktree / "real.txt"
+        target.write_bytes(b"before\n")
+        link = self.worktree / "link.txt"
+        try:
+            link.symlink_to(target.name)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink unavailable on this runner: {exc}")
+        task = _task(
+            [
+                {
+                    "kind": "write_text",
+                    "path": "link.txt",
+                    "content": "after\n",
+                    "expected_sha256": hashlib.sha256(b"before\n").hexdigest(),
+                    "expect_absent": False,
+                }
+            ]
+        )
+        with self.assertRaises(CompilerError):
+            verify_pre_state(task, self.worktree)
+
+    def test_symlink_parent_cannot_alias_absent_mutation_path(self) -> None:
+        real_dir = self.worktree / "real-dir"
+        real_dir.mkdir()
+        alias_dir = self.worktree / "alias-dir"
+        try:
+            alias_dir.symlink_to(real_dir.name, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink unavailable on this runner: {exc}")
+        task = _task(
+            [
+                {
+                    "kind": "write_text",
+                    "path": "alias-dir/new.txt",
+                    "content": "created\n",
+                    "expected_sha256": None,
+                    "expect_absent": True,
+                }
+            ]
+        )
+        with self.assertRaises(CompilerError):
+            verify_pre_state(task, self.worktree)
+
     def test_compile_translates_mutations_into_phase1_manifest(self) -> None:
         before = b"before\n"
         (self.worktree / "a.txt").write_bytes(before)
