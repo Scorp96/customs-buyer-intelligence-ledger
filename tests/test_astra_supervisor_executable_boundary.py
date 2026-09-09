@@ -247,6 +247,61 @@ class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertFalse(marker.exists())
 
+    @unittest.skipIf(os.name == "nt", "POSIX Git signature helper regression")
+    def test_git_show_signature_cannot_execute_configured_gpg_program(self):
+        parent = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
+        tree = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD^{tree}"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
+        commit_payload = (
+            f"tree {tree}\n"
+            f"parent {parent}\n"
+            "author ASTRA Test <astra-test@example.invalid> 1700000000 +0000\n"
+            "committer ASTRA Test <astra-test@example.invalid> 1700000000 +0000\n"
+            "gpgsig -----BEGIN PGP SIGNATURE-----\n"
+            " Version: ASTRA Test\n"
+            " \n"
+            " invalid-signature-material\n"
+            " -----END PGP SIGNATURE-----\n"
+            "\n"
+            "synthetic signed commit\n"
+        )
+        signed_commit = subprocess.run(
+            ["git", "-C", str(self.root), "hash-object", "-t", "commit", "-w", "--stdin"],
+            input=commit_payload,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "-C", str(self.root), "update-ref", "refs/heads/astra-test", signed_commit, parent],
+            check=True,
+        )
+
+        script, marker = self._marker_script("gpg-program")
+        subprocess.run(
+            ["git", "-C", str(self.root), "config", "gpg.program", str(script)],
+            check=True,
+        )
+
+        LocalExecutor().execute(
+            self._manifest(["git", "log", "--show-signature", "-1", "HEAD"]),
+            apply=True,
+        )
+
+        self.assertFalse(marker.exists())
+
     @unittest.skipIf(os.name == "nt", "POSIX Git clean-filter helper regression")
     def test_git_clean_filter_cannot_execute_during_clean_tree_gate(self):
         (self.root / ".gitattributes").write_text("*.flt filter=astra_clean\n", encoding="utf-8")
