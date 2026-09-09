@@ -23,7 +23,7 @@ jobs:
       - name: Configure git
         run: |
           git config user.name 'cbi-v64-task5'
-          git config user.email 'actions@users.noreply.github.com'
+          git config user.email 'cbi-v64-task5@example.invalid'
       - name: Implement sanitized WAL audit core
         run: python scripts/cbi_v64_task5_wal_audit_green.py
       - name: Verify WAL audit GREEN before push
