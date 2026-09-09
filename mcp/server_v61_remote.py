@@ -16,7 +16,6 @@ closed.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import os
 import re
@@ -30,7 +29,6 @@ if str(ROOT) not in sys.path:
 
 _GIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _DEPLOYMENT_IDENTITY_SCHEMA = "cbi.remote-deployment-identity.v6.3"
-_PROCESS_STARTED_AT = datetime.now(timezone.utc)
 
 
 def _env_flag(name: str) -> bool:
@@ -90,7 +88,6 @@ _LIVE_ROOT = _EXPECTED_ROOT.parent
 # production module creates the UnifiedRuntime at import time and therefore must
 # observe CBI_SESSION_ROOT; acceptance pin failures must occur before it starts.
 from mcp import server_v61_backup_recovery as _production  # noqa: E402
-from mcp.c279_single_session_export_v64 import build_export_callback  # noqa: E402
 from mcp.chatgpt_oauth_transport import main as _remote_transport_main  # noqa: E402
 from mcp.object_store_recovery_v63 import (  # noqa: E402
     RecoveryObjectStoreStateManagerV63,
@@ -102,15 +99,6 @@ from mcp.remote_durability_checkpoint_v63 import (  # noqa: E402
 
 _RUNTIME = _production._RUNTIME
 _BASE_DISPATCH = _production._v61._server.handle
-_DIAGNOSTIC_STATIC_BEARER = str(os.environ.get("CBI_REMOTE_BEARER_TOKEN") or "")
-_DIAGNOSTIC_OPERATOR_INTENT = str(os.environ.get("CBI_V64_C279_EXPORT_INTENT") or "").strip()
-_DIAGNOSTIC_EXPORT = build_export_callback(
-    _RUNTIME.store.root,
-    os.environ,
-    process_started_at=_PROCESS_STARTED_AT,
-)
-if len(_DIAGNOSTIC_STATIC_BEARER) < 32 and len(_DIAGNOSTIC_OPERATOR_INTENT) < 32:
-    _DIAGNOSTIC_EXPORT = None
 _PERSISTENCE = RecoveryObjectStoreStateManagerV63.from_env()
 if _PERSISTENCE is not None:
     _PERSISTENCE.attach_existing(_LIVE_ROOT)
@@ -233,13 +221,7 @@ def main() -> int:
     # Delegate CLI parsing to the ChatGPT-aware remote transport so --host/--port
     # remain operator overrides while auth can accept static admin bearer and
     # explicitly allowlisted GitHub OAuth identities.
-    return _remote_transport_main(
-        _dispatch,
-        health=_health,
-        diagnostic_export=_DIAGNOSTIC_EXPORT,
-        diagnostic_static_bearer=_DIAGNOSTIC_STATIC_BEARER,
-        diagnostic_operator_intent=_DIAGNOSTIC_OPERATOR_INTENT,
-    )
+    return _remote_transport_main(_dispatch, health=_health)
 
 
 if __name__ == "__main__":
