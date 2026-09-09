@@ -48,7 +48,7 @@ Executor availability is an input, never inferred from optimism. If no eligible 
 - Remote implementation work starts from an isolated branch and is reviewed before merge.
 - The Local Executor requires an exact expected branch and a clean working tree before `--apply`.
 - Inherited `GIT_*` control variables must not redirect branch or clean-tree inspection to another repository.
-- Git inspection must suppress known configuration-driven external helpers used by status/diff/show/log paths: `core.fsmonitor`, external diff, and textconv.
+- Git inspection must suppress known configuration-driven external helpers used by status/diff/show/log paths: `core.fsmonitor`, external diff, textconv, and signature-verification helpers.
 - Dry-run is the default.
 
 ## Local Executor v1
@@ -67,15 +67,19 @@ Safety rules:
 - commands run with `shell=False`;
 - Python executable names are matched exactly and v1 only permits constrained `unittest`/`compileall` forms;
 - a manifest may not nominate an arbitrary executable path merely because its basename looks like `python` or `git`; path-form executables are rejected except for the exact current Python interpreter path needed by the supported invocation contract;
+- inherited `PYTHON*` environment variables are stripped before allowed Python execution, `PYTHONNOUSERSITE=1` is forced, and a dotted `unittest` target must resolve to a module/package under the declared repository root before execution;
 - inherited `GIT_*` environment variables are stripped before Git inspection or manifest Git execution, then only bounded noninteractive Git controls are reintroduced;
 - Git branch/clean-tree inspection forces `core.fsmonitor=false`, preventing a repository-configured fsmonitor helper from executing during the safety gate;
 - manifest `git diff`, `git log`, and `git show` execution is forced through `--no-ext-diff` and `--no-textconv`, preventing repository-configured external diff/textconv helpers from executing through those allowlisted commands;
-- Git is limited to read-only inspection subcommands and rejects output-to-file, external-diff, no-index, textconv and file-fed pathspec escape surfaces;
+- Git signature rendering/verification surfaces that can invoke configured GPG helpers are rejected: `--show-signature` and `%G*` pretty-format placeholders are not allowed;
+- Git is limited to read-only inspection subcommands and rejects output-to-file, external-diff, no-index, textconv, signature-verification and file-fed pathspec escape surfaces;
 - no package installation, network command, `git push`, shell, PowerShell, cmd, or arbitrary `python -c`;
 - all operations are validated before the first mutation;
 - command failure stops later operations and produces a structured result.
 
-The Local Executor is a transition-grade fallback, not a general unrestricted shell agent and not an OS sandbox. An allowlisted test or repository module is still trusted repository code and may itself have side effects when executed. Phase 1 also assumes the local OS account, executable search path and installed Python/Git binaries are trusted; it is not designed to defend against a compromised local `PATH` or a replaced interpreter/Git binary. Broader write/commit capabilities or unattended remote invocation require a separate security review.
+The Local Executor is a transition-grade fallback, not a general unrestricted shell agent and not an OS sandbox. An allowlisted repository test or module is still trusted repository code and may itself import dependencies, spawn processes, use the network, or perform other side effects. Phase 1 also assumes the local OS account, executable search path, installed Python/Git binaries, and dependencies imported by trusted repository code are trusted; it is not designed to defend against a compromised local `PATH`, replaced interpreter/Git binary, or malicious dependency already available to trusted repository code. Broader write/commit capabilities or unattended remote invocation require a separate security review.
+
+A dedicated clean-filter probe also verified that the tested `git status --porcelain --untracked-files=all` clean-tree gate did not invoke a configured clean filter helper. This is retained as a regression test, but it is not used as evidence that arbitrary Git attributes/configuration are harmless; only the tested command path is claimed.
 
 ## Trust boundary for any future unattended local control plane
 
@@ -86,6 +90,7 @@ Phase 1 requires explicit local invocation. If a later phase exposes Local Execu
 - remote callers must not gain unrestricted shell, package installation, arbitrary Python, network-command, credential or Git push access;
 - apply requests must remain branch-bound, clean-tree-bound, auditable and replay-safe;
 - the service must establish a trusted executable environment rather than inheriting an attacker-controlled `PATH`;
+- dependency/import trust must be explicit rather than inherited accidentally from a user environment;
 - the service must fail closed when local state, branch identity or authorization cannot be proved.
 
 This future control plane is deliberately out of Phase 1 because it changes the threat model from an explicitly invoked local tool to a remotely reachable mutation authority.
@@ -121,8 +126,8 @@ Phase 1 is successful when:
 2. Local Executor dry-run cannot mutate files;
 3. Local Executor rejects protected branches, dirty trees, path escape, nested `.git` access, disallowed executable lookalikes, user-selected executable-path spoofing and unsafe Git output/external-diff options;
 4. inherited `GIT_DIR` / `GIT_WORK_TREE` cannot redirect branch or clean-tree gates to another repository;
-5. repository-configured `core.fsmonitor`, external diff and textconv helpers cannot execute through the Local Executor's safety gates or allowlisted Git diff/show/log commands;
-6. command path targets for `unittest`/`compileall` remain inside the declared repository root;
+5. repository-configured `core.fsmonitor`, external diff, textconv and GPG signature helpers cannot execute through the Local Executor's tested safety gates or allowlisted Git operations;
+6. command path targets for `unittest`/`compileall` remain inside the declared repository root, inherited `PYTHONPATH` cannot redirect a dotted unittest target outside the repository, and dotted unittest targets must resolve to repository modules/packages;
 7. an allowed manifest can write a repository file and run a local unittest on a non-protected clean branch;
 8. the ASTRA skill documents the supervisor/executor split and does not claim that the bridge provides unlimited Codex usage or universally separate quota pools;
 9. focused CI passes on Linux and Windows and a full CBI regression run passes without ASTRA changing CBI runtime/evidence/WAL/R2 semantics.
@@ -136,4 +141,4 @@ Stop and redesign before merge if:
 - GitHub remote execution cannot be kept isolated from production branches;
 - bridge integration requires session-token scraping or unofficial ChatGPT web APIs;
 - unattended local execution requires trusting a remotely supplied arbitrary repository root;
-- Phase 2 would inherit a remotely controllable executable search path or other unproved local execution authority.
+- Phase 2 would inherit a remotely controllable executable search path, dependency/import path, or other unproved local execution authority.
