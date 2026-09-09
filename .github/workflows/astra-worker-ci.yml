@@ -1,0 +1,74 @@
+name: ASTRA worker CI
+
+on:
+  push:
+    branches:
+      - "astra-phase2-*"
+    paths:
+      - "astra_worker/**"
+      - "scripts/astra_worker*.py"
+      - "scripts/astra_task_gate.py"
+      - "scripts/astra_receipt_gate.py"
+      - "tests/test_astra_worker*.py"
+      - ".github/workflows/astra-worker-ci.yml"
+      - "docs/superpowers/specs/2026-09-09-astra-phase2-*.md"
+      - "docs/superpowers/plans/2026-09-09-astra-phase2-*.md"
+  pull_request:
+    branches:
+      - main
+      - cbi-v6-3-demand-expansion
+    paths:
+      - "astra_worker/**"
+      - "scripts/astra_worker*.py"
+      - "scripts/astra_task_gate.py"
+      - "scripts/astra_receipt_gate.py"
+      - "tests/test_astra_worker*.py"
+      - ".github/workflows/astra-worker-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: astra-worker-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  worker:
+    name: worker (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+        python-version:
+          - "3.10"
+          - "3.11"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile Phase 1 ASTRA sources
+        run: python -m compileall -q astra_supervisor scripts/astra_local_executor.py
+
+      - name: Run Phase 1 ASTRA regression
+        run: python -m unittest tests.test_astra_supervisor tests.test_astra_supervisor_executable_boundary -v
+
+      - name: Run Phase 2A worker tests
+        run: python -m unittest discover -s tests -p "test_astra_worker*.py" -v
+
+      - name: Install CBI regression dependencies
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.2 tzdata==2026.3
+
+      - name: Run full CBI unittest regression
+        if: runner.os == 'Linux' && matrix.python-version == '3.11'
+        run: python -m unittest discover -s tests -p "test_*.py" -v
