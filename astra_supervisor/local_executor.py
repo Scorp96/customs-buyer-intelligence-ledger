@@ -158,7 +158,7 @@ class LocalExecutor:
                 environment = self._sanitized_environment()
                 try:
                     completed = subprocess.run(
-                        list(operation.argv),
+                        self._execution_argv(operation.argv),
                         cwd=str(cwd),
                         shell=False,
                         check=False,
@@ -230,7 +230,21 @@ class LocalExecutor:
         environment["PAGER"] = "cat"
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GIT_OPTIONAL_LOCKS"] = "0"
+        environment["GIT_CONFIG_COUNT"] = "1"
+        environment["GIT_CONFIG_KEY_0"] = "core.fsmonitor"
+        environment["GIT_CONFIG_VALUE_0"] = "false"
         return environment
+
+    @staticmethod
+    def _execution_argv(argv: tuple[str, ...]) -> list[str]:
+        executable = Path(argv[0]).name.lower() if argv else ""
+        if (
+            executable in {"git", "git.exe"}
+            and len(argv) >= 2
+            and argv[1] in {"diff", "log", "show"}
+        ):
+            return [argv[0], argv[1], "--no-ext-diff", "--no-textconv", *argv[2:]]
+        return list(argv)
 
     def _git(self, root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         environment = self._sanitized_environment()
