@@ -231,6 +231,7 @@ class IntegratedWorkerAcceptanceTests(unittest.TestCase):
                 "COMPLETED",
                 f"{result.detail}; cleanup-prestatus={workspace.status_before_cleanup!r}",
             )
+            self.assertEqual(workspace.status_before_cleanup, "?? feature.py")
             self.assertEqual(workspace.observed_feature, feature_content.encode("utf-8"))
             self.assertEqual(queue.claimed, [77])
             self.assertEqual(len(queue.patch_posts), 1)
