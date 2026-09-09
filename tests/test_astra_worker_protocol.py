@@ -143,6 +143,36 @@ class TaskSchemaTests(unittest.TestCase):
         with self.assertRaises(TaskValidationError):
             TaskEnvelope.from_mapping(payload)
 
+    def test_windows_ambiguous_or_device_paths_are_rejected_portably(self) -> None:
+        unsafe_paths = (
+            "notes.txt:secret",
+            "C:drive-relative.txt",
+            "CON",
+            "con.txt",
+            "folder/NUL.dat",
+            "folder/trailing.",
+            "folder/trailing. ",
+            "bad<name>.txt",
+            "bad>name.txt",
+            'bad"name.txt',
+            "bad|name.txt",
+            "bad?name.txt",
+            "bad*name.txt",
+        )
+        for path in unsafe_paths:
+            with self.subTest(path=path):
+                payload = valid_task_mapping()
+                payload["operations"] = [
+                    {
+                        "kind": "write_text",
+                        "path": path,
+                        "content": "x",
+                        "expect_absent": True,
+                    }
+                ]
+                with self.assertRaises(TaskValidationError):
+                    TaskEnvelope.from_mapping(payload)
+
 
 if __name__ == "__main__":
     unittest.main()
