@@ -97,11 +97,12 @@ class SignedFakeQueue:
 
 
 class ObservingWorkspace(GitWorkspaceManager):
-    """Real workspace manager with a read-only observation immediately before cleanup."""
+    """Real workspace manager with read-only observations immediately before cleanup."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.observed_feature: bytes | None = None
+        self.status_before_cleanup: str | None = None
         self.last_worktree: Path | None = None
         self.last_branch: str | None = None
 
@@ -112,6 +113,13 @@ class ObservingWorkspace(GitWorkspaceManager):
         return handle
 
     def cleanup(self, handle):
+        if handle.path.is_dir():
+            self.status_before_cleanup = run_git(
+                handle.path,
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+            )
         feature = handle.path / "feature.py"
         if feature.is_file():
             self.observed_feature = feature.read_bytes()
@@ -218,7 +226,11 @@ class IntegratedWorkerAcceptanceTests(unittest.TestCase):
             finally:
                 ledger.close()
 
-            self.assertEqual(result.status, "COMPLETED", result.detail)
+            self.assertEqual(
+                result.status,
+                "COMPLETED",
+                f"{result.detail}; cleanup-prestatus={workspace.status_before_cleanup!r}",
+            )
             self.assertEqual(workspace.observed_feature, feature_content.encode("utf-8"))
             self.assertEqual(queue.claimed, [77])
             self.assertEqual(len(queue.patch_posts), 1)
