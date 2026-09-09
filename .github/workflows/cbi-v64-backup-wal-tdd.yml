@@ -18,3 +18,5 @@ jobs:
         run: python -m pip install --disable-pip-version-check --no-input tzdata==2026.3
       - name: Request-scoped snapshot contract
         run: python -m unittest tests.test_v64_request_scoped_verified_snapshot -v
+      - name: Stable state-query performance protocol
+        run: python -m unittest tests.test_v64_state_query_performance_protocol -v
