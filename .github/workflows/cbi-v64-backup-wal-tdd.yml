@@ -28,3 +28,5 @@ jobs:
         run: python -m unittest tests.test_v64_backup_replica_server_wiring -v
       - name: Sanitized mutation WAL audit contract
         run: python -m unittest tests.test_v64_mutation_wal_audit -v
+      - name: WAL audit MCP exposure contract
+        run: python -m unittest tests.test_v64_mutation_wal_audit_mcp -v
