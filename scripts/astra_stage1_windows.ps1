@@ -143,13 +143,7 @@ try {
             "-File", (Quote-ProcessArgument $InstallerPath),
             "-ConfigPath", (Quote-ProcessArgument $ConfigPath)
         )
-        $installerProcess = Start-Process \
-            -FilePath "powershell.exe" \
-            -ArgumentList $installerArgs \
-            -Wait \
-            -PassThru \
-            -RedirectStandardOutput $installerStdout \
-            -RedirectStandardError $installerStderr
+        $installerProcess = Start-Process -FilePath "powershell.exe" -ArgumentList $installerArgs -Wait -PassThru -RedirectStandardOutput $installerStdout -RedirectStandardError $installerStderr
         $installerExit = $installerProcess.ExitCode
         $installerOutText = if (Test-Path -LiteralPath $installerStdout) {
             Get-Content -LiteralPath $installerStdout -Raw -ErrorAction SilentlyContinue
