@@ -20,6 +20,8 @@
 - All manifest paths and command path targets must remain under the declared repository root; nested `.git` metadata is inaccessible.
 - Repository-authoritative work should prefer GitHub execution rather than pretending Codex is mandatory.
 - `codex-with-chatgpt` is read-only workspace visibility only; it is not an execution authority and not a quota bypass.
+- Local Executor v1 is a command-boundary hardening layer, not an OS sandbox; allowlisted repository test/module execution still trusts repository code.
+- Any future unattended local control plane must pin allowed repository roots in trusted local configuration; remote manifests may not choose arbitrary roots.
 - No automatic merge into the active CBI development branch or production branch.
 
 ---
@@ -111,8 +113,9 @@
 
 - [x] Add focused matrix workflow.
 - [x] Add full CBI regression gate without modifying CBI runtime files.
-- [x] Verify head `6365325e444c5ad1fa3f474297c1fd30ab856a46`: focused 27/27 tests pass on all four matrix jobs; full CBI regression runs 966 tests and returns `OK (skipped=4)`.
-- [x] Compare to base `f59731cb412e194052d16e81c8137c507964350d`: seven commits ahead, zero behind; changed files limited to ASTRA supervisor/tests/skill/docs/script/workflow, with no CBI runtime/evidence/WAL/R2 changes.
+- [x] Verify implementation head `6365325e444c5ad1fa3f474297c1fd30ab856a46`: focused 27/27 tests pass on all four matrix jobs; full CBI regression runs 966 tests and returns `OK (skipped=4)`.
+- [x] Verify PR merge-ref after the first completion-record commit: focused 27/27 tests pass on all four matrix jobs; full CBI regression again runs 966 tests and returns `OK (skipped=4)`.
+- [x] Compare implementation to base `f59731cb412e194052d16e81c8137c507964350d`: changed files remain limited to ASTRA supervisor/tests/skill/docs/script/workflow, with no CBI runtime/evidence/WAL/R2 changes.
 - [x] Keep draft PR #23 targeting `cbi-v6-3-demand-expansion`; do not auto-merge.
 
 ## Verification record
@@ -121,7 +124,10 @@
 - Security RED: `4ab75ff45db02da72117be29e384957398c62efe` — six containment failures intentionally exposed before fixing them.
 - Security fixes: `b8580ab15850d1e4c233045a6b08bf5df7232678` and `b3d5220ac663e5cbb649d6ce08b884f8a2270fab`.
 - Integration gate: `6365325e444c5ad1fa3f474297c1fd30ab856a46` — focused matrix GREEN and full 966-test CBI regression GREEN (`skipped=4`).
+- PR merge-ref verification after `e2f81757d31fccfa9a7430895e14eb7d9ad472f4` — all four focused matrix jobs GREEN; Ubuntu/Python 3.11 full CBI regression GREEN with 966 tests and four platform skips.
 
 ## Remaining boundary
 
-This phase removes Codex as the single point of failure for **repository-authoritative GitHub work** and supplies a fail-closed Local Executor implementation. It does **not** create a writable ChatGPT-to-PC bridge. `codex-with-chatgpt` remains read-only, so fully autonomous mutation of uncommitted local-only state still requires an explicitly invoked local process. Any always-on local control plane or self-hosted executor is a separate security-sensitive architectural phase and is not part of this plan.
+This phase removes Codex as the single point of failure for **repository-authoritative GitHub work** and supplies a fail-closed Local Executor implementation. It does **not** create a writable ChatGPT-to-PC bridge. `codex-with-chatgpt` remains read-only, so fully autonomous mutation of uncommitted local-only state still requires an explicitly invoked local process.
+
+The next architectural phase, if approved, is an unattended local control plane. That changes the threat model and must not be obtained by simply exposing the Phase 1 CLI. Before such a phase can be implemented, its design must pin trusted repository roots outside remote manifests, define independent authentication/authorization, preserve exact branch/clean-tree gates and auditability, and continue to deny unrestricted shell/package/network/Git-push authority.
