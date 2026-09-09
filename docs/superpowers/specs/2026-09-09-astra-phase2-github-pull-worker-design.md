@@ -49,7 +49,8 @@ ASTRA Windows Worker
         +-- ephemeral worktree isolation
         +-- task -> Phase 1 manifest compiler
         +-- Phase 1 LocalExecutor
-        +-- diff / test / receipt generation
+        +-- final-state / diff / test verification
+        +-- signed receipt generation
         |
         | post signed receipt + patch chunks
         v
@@ -63,7 +64,8 @@ VERIFIED RESULT
 ASTRA independent review
         |
         v
-GitHub executor applies approved change to isolated remote branch / PR
+GitHub executor applies signed final content
+from the same exact base commit to an isolated branch / PR
 ```
 
 The Windows worker has **no inbound listening port** in Phase 2A. It polls and synchronizes only over outbound HTTPS/Git HTTPS to the pre-bound GitHub repository.
@@ -100,7 +102,7 @@ The following are trusted local configuration or runtime authorities and are nev
 
 - logical repository ID -> pinned GitHub repository + local worker-mirror mapping;
 - expected GitHub repository identity and origin URL;
-- allowed base-ref patterns;
+- exact allowed base refs and allowed base-ref prefixes;
 - worker ID;
 - ephemeral worker branch namespace;
 - protected branch list;
@@ -119,15 +121,16 @@ A task becomes eligible only after:
 
 1. schema validation;
 2. canonical serialization;
-3. signing by the dedicated GitHub Actions gate;
-4. worker-side signature verification;
-5. worker ID match;
-6. repository ID match to trusted local registry;
-7. base-ref policy match;
-8. TTL validation;
-9. task ID/nonce replay check;
-10. exact base-ref -> base-commit verification after read-only synchronization;
-11. all file/state preconditions passing.
+3. proposer identity authorization by the GitHub signing gate;
+4. signing by the dedicated GitHub Actions gate;
+5. worker-side signature verification;
+6. worker ID match;
+7. repository ID match to trusted local registry;
+8. base-ref policy match;
+9. TTL validation;
+10. task ID/nonce replay check;
+11. exact base-ref -> base-commit verification after read-only synchronization;
+12. all file/state preconditions passing.
 
 ### Explicit out-of-scope host compromise
 
@@ -158,7 +161,7 @@ Phase 2A uses a dedicated label namespace:
 - `astra-task/rejected`
 - `astra-task/result-verified`
 
-Only a task with a valid signed envelope and `astra-task/ready` is executable.
+Only a task with exactly one valid signed task envelope and `astra-task/ready` is executable. Multiple conflicting valid task envelopes in one issue are ambiguous and fail closed.
 
 ### Proposal -> signing gate
 
@@ -167,19 +170,43 @@ ASTRA creates a proposed GitHub issue containing a single JSON task envelope and
 A GitHub Actions workflow from the repository's trusted authoritative branch:
 
 1. confirms the issue is in the expected repository;
-2. parses the task envelope;
-3. validates worker ID, repository ID, allowed base-ref pattern, task schema, TTL bounds, and size limits;
-4. resolves the allowed `base_ref` to an exact commit and requires it to equal `base_commit_sha`;
-5. canonicalizes the JSON;
-6. computes an HMAC-SHA256 signature using the task-signing secret;
-7. posts a signed task comment as `github-actions[bot]`;
-8. removes `astra-task/proposed` and applies `astra-task/ready` only on success.
+2. checks the issue proposer against a configured stable GitHub-account allowlist;
+3. parses the task envelope with duplicate-key and non-finite-number rejection;
+4. validates worker ID, repository ID, allowed base-ref policy, task schema, TTL bounds, and size limits;
+5. resolves the allowed `base_ref` to an exact commit and requires it to equal `base_commit_sha`;
+6. canonicalizes the task JSON;
+7. computes an HMAC-SHA256 signature using the task-signing secret;
+8. posts a signed task comment as `github-actions[bot]`;
+9. removes `astra-task/proposed` and applies `astra-task/ready` only on success.
 
 The signing workflow must run trusted workflow/script content from the authoritative branch; task-provided code is never executed by the signer.
 
-Malformed, stale, oversized, unknown-repository, or disallowed-ref proposals are labeled `astra-task/rejected` and never become ready.
+Malformed, stale, oversized, unauthorized-proposer, unknown-repository, disallowed-ref, or ref/SHA-mismatch proposals are labeled `astra-task/rejected` and never become ready.
 
 The worker does not trust an unsigned issue body, even when the issue author is allowlisted.
+
+## Canonical JSON v1
+
+Task and receipt signatures use one repository-defined canonicalization rule so GitHub Actions and the Windows worker cannot disagree about signed bytes.
+
+`canonical_json_v1` requires:
+
+- UTF-8;
+- JSON objects/arrays/strings/booleans/null and bounded integers only;
+- no floats, NaN or infinity;
+- no duplicate object keys;
+- object keys sorted lexicographically;
+- no insignificant whitespace;
+- non-ASCII characters encoded directly as UTF-8 rather than escaped solely for ASCII compatibility;
+- signature metadata excluded from the bytes being signed.
+
+The reference Python form is equivalent to strict parsing followed by:
+
+```python
+json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+```
+
+with the stricter type/duplicate-key rules enforced before serialization.
 
 ## Cryptographic task and receipt binding
 
@@ -188,13 +215,15 @@ Phase 2A uses two independent HMAC-SHA256 keys:
 - `ASTRA_TASK_HMAC_KEY`: GitHub Actions signs task envelopes; worker verifies them.
 - `ASTRA_RECEIPT_HMAC_KEY`: worker signs execution receipts; GitHub Actions verifies them.
 
-Both keys are generated during trusted installation/provisioning. GitHub copies are stored only as Actions secrets. Windows copies are stored using Windows-protected local secret storage and ACLs restricted to the dedicated worker identity and local administrators.
+Both keys are generated during trusted installation/provisioning. GitHub copies are stored only as Actions secrets. Windows copies are stored in one DPAPI-protected worker secret file with restrictive ACLs.
 
 The two keys are not interchangeable.
 
-Every signature covers canonical UTF-8 JSON bytes, including schema version, task ID, worker ID, repository ID, base ref, base commit, expiry, nonce, operations, and limits relevant to execution.
+Every task signature covers canonical JSON including schema version, task ID, worker ID, repository ID, base ref, base commit, expiry, nonce, operations, and limits relevant to execution.
 
-A changed byte invalidates the signature.
+Every receipt signature covers the task binding, terminal state, evidence hashes, cleanup state, and patch/chunk hashes.
+
+A changed byte invalidates the corresponding signature.
 
 ## Worker GitHub credential
 
@@ -210,9 +239,41 @@ The worker must not receive Contents write, Pull requests write, Actions write, 
 
 Contents read exists solely for fixed-source synchronization. The worker cannot commit or push authoritative CBI source through GitHub.
 
+## Windows secret and service identity model
+
+Normal worker runtime uses a dedicated non-administrator local service account.
+
+Secrets are stored at a fixed worker-owned location under `%ProgramData%/ASTRAWorker/` using:
+
+- Windows DPAPI with machine scope for encrypted secret bytes;
+- NTFS ACLs granting read access only to the dedicated worker service identity, `SYSTEM`, and local `Administrators`;
+- no plaintext token/HMAC values in config, logs, task issues, receipts, process command lines, or Git configuration.
+
+Local Administrator compromise remains out of scope.
+
+The worker runs as a Windows service using **WinSW**. The installer must pin an exact WinSW release artifact and SHA-256; no runtime auto-update is permitted. Replacement of the pinned service wrapper requires a new trusted installation action.
+
+## Provisioning boundary
+
+Installation/provisioning is a one-time explicit trusted administrative workflow, separate from task execution.
+
+Provisioning must:
+
+1. create/configure the dedicated non-admin worker identity;
+2. create the protected `%ProgramData%/ASTRAWorker/` state tree and ACLs;
+3. generate independent task/receipt HMAC keys using a cryptographically secure RNG;
+4. store Windows copies in the DPAPI-protected secret file;
+5. provision the matching values as GitHub Actions secrets through an explicit authenticated administrative step;
+6. provision a fine-grained runtime GitHub token with only Metadata read, Contents read, and Issues read/write;
+7. initialize the dedicated worker Git mirror from the pinned repository;
+8. pin and install the WinSW service wrapper;
+9. install/start the worker service only after configuration validation succeeds.
+
+Runtime tasks can never invoke or repeat provisioning.
+
 ## Trusted local configuration
 
-The worker reads a local configuration owned by the worker installation, for example:
+The worker reads local configuration owned by the worker installation, for example:
 
 ```json
 {
@@ -224,8 +285,10 @@ The worker reads a local configuration owned by the worker installation, for exa
       "github_repository": "Scorp96/customs-buyer-intelligence-ledger",
       "expected_origin": "https://github.com/Scorp96/customs-buyer-intelligence-ledger",
       "mirror_root": "D:/ASTRAWorker/repos/cbi-primary.git",
+      "allowed_base_refs_exact": [
+        "cbi-v6-3-demand-expansion"
+      ],
       "allowed_base_ref_prefixes": [
-        "cbi-v6-3-demand-expansion",
         "astra-"
       ],
       "ephemeral_branch_prefix": "astra-worker/"
@@ -243,7 +306,7 @@ The worker reads a local configuration owned by the worker installation, for exa
 
 The local mirror path and Git remote are never copied from the signed remote task. Remote callers use only the logical `repository_id` and an allowed `base_ref`.
 
-The worker refuses startup if required trusted configuration or secret material is missing, unreadable, schema-invalid, or has unsafe local permissions.
+The worker refuses startup if required trusted configuration or secret material is missing, unreadable, schema-invalid, DPAPI-unprotectable, or has unsafe local permissions.
 
 ## Task schema
 
@@ -252,7 +315,7 @@ The signed Phase 2A task envelope has this logical shape:
 ```json
 {
   "schema_version": "astra.task.v1",
-  "task_id": "uuid-or-equivalent-opaque-id",
+  "task_id": "opaque-unique-task-id",
   "worker_id": "scorp-windows-01",
   "repository_id": "cbi-primary",
   "base_ref": "astra-some-isolated-branch",
@@ -270,7 +333,7 @@ The signed Phase 2A task envelope has this logical shape:
 
 The task does **not** contain:
 
-- `repository_root` or mirror path;
+- `repository_root` or mirror/worktree path;
 - shell text;
 - an arbitrary executable path;
 - GitHub credentials;
@@ -292,12 +355,13 @@ pinned repository + signed allowed base_ref -> read-only fetch into worker mirro
 Invariants:
 
 - repository URL comes only from trusted local config;
-- `base_ref` must match the local allowlist and must already have been bound to `base_commit_sha` by the GitHub signing gate;
-- no task-supplied remote URL, refspec, credential helper, proxy, alternate object directory, submodule URL, or Git config is accepted;
+- `base_ref` must match an exact-ref or prefix allowlist and must already have been bound to `base_commit_sha` by the GitHub signing gate;
+- no task-supplied remote URL, arbitrary refspec, credential helper, proxy, alternate object directory, submodule URL, or Git config is accepted;
 - fetch uses a dedicated worker-owned mirror, not the user's normal CBI checkout;
 - no tags, submodules, LFS pull, hooks, or package/dependency installation are requested;
-- Git global/system config and inherited `GIT_*` controls are suppressed for synchronization; the mirror uses worker-owned local config;
-- authentication is supplied by worker-owned secret handling and is never embedded in task JSON, repository config, logs, or receipt output;
+- Git system/global config and inherited `GIT_*` controls are suppressed for synchronization; the mirror uses worker-owned local config only;
+- the worker mirror pins `core.hooksPath` to a worker-owned empty hooks directory;
+- authentication is passed only to the fetch subprocess through worker-controlled ephemeral environment/config values, never the command line, task JSON, persistent Git config, logs, or receipts;
 - after fetch, the worker resolves the fetched allowed ref and requires exact equality with signed `base_commit_sha`; mismatch fails closed before worktree creation.
 
 The synchronizer is an internal capability. It is not exposed as a generic remote `run git fetch` operation.
@@ -316,7 +380,7 @@ Fields:
 - complete replacement UTF-8 text;
 - exactly one precondition: `expected_sha256` for an existing file or `expect_absent=true` for creation.
 
-The worker refuses a stale or mismatched precondition.
+The signed task therefore fixes both the pre-state and intended final file content.
 
 ### `delete_file`
 
@@ -355,26 +419,39 @@ For each accepted task:
 
 1. resolve `repository_id` through trusted local config;
 2. verify the dedicated worker mirror exists and its origin matches the pinned expected origin;
-3. perform the bounded read-only synchronization for the signed allowed `base_ref`;
+3. perform bounded read-only synchronization for the signed allowed `base_ref`;
 4. prove the fetched ref resolves exactly to signed `base_commit_sha`;
 5. create a worker-owned ephemeral Git worktree from that exact commit;
 6. create a generated local branch under `astra-worker/<task-id-derived-name>`;
 7. inject the ephemeral worktree path into the Phase 1 manifest locally;
-8. execute the task there;
-9. collect diff/test evidence;
-10. cleanly remove the ephemeral worktree and generated local branch after receipt construction.
+8. verify all write/delete pre-state hashes/absence conditions;
+9. execute the task there;
+10. verify declared final file state and unexpected mutation rules;
+11. collect diff/test evidence;
+12. cleanly remove the ephemeral worktree and generated local branch after receipt construction.
 
 The generated worktree path, mirror path, origin and refspec are never accepted from the task payload.
 
-The dedicated mirror must disable inherited/global/system Git behavior that could introduce untrusted hooks, filters, credential helpers, alternate object stores, or external helpers. Worker-created Git config is the only local Git configuration authority for synchronization/worktree creation.
+The dedicated mirror/worktree Git environment must suppress inherited/global/system configuration that could introduce untrusted hooks, filters, credential helpers, alternate object stores, or external helpers. Worker-created Git config is the only local Git configuration authority for synchronization/worktree creation.
 
-## Mutation-set confinement
+## Mutation-set and final-state confinement
 
-Remote `write_text` and `delete_file` operations declare the complete expected mutable path set.
+Remote `write_text` and `delete_file` operations define the complete mutable path set and intended terminal state.
 
-After all operations and tests run, the worker compares Git status/diff against that declared set.
+Before execution:
 
-If test code or another process changes or creates an undeclared repository path, the task is not eligible for successful completion. The worker returns a failed/quarantined receipt and does not mark the candidate patch as apply-ready.
+- each existing target with `expected_sha256` must match exactly;
+- each `expect_absent=true` target must not exist.
+
+After all operations and tests:
+
+- no undeclared tracked/untracked repository path may be modified or created;
+- every final `write_text` target must still hash to the content fixed by the signed task's final operation for that path;
+- every final `delete_file` target must still be absent;
+- no binary diff is allowed;
+- changed-file and diff-size limits must hold.
+
+If test code or another process changes an undeclared path **or changes a declared path away from its signed intended final state**, the task fails/quarantines and is not apply-ready.
 
 This detects unexpected repository-local side effects. It does not claim to detect side effects outside the repository, which remain part of the trusted-code boundary.
 
@@ -413,10 +490,10 @@ On completion it creates a canonical signed receipt containing at least:
 - base ref and exact base commit SHA;
 - worker software/policy version;
 - start and finish timestamps;
-- terminal status;
+- terminal status (`APPLY_READY`, `NOT_APPLY_READY`, `REJECTED`, or `QUARANTINED`);
 - Phase 1 execution result;
 - changed path inventory;
-- before/after SHA-256 for each changed path;
+- signed-task intended final SHA-256 and observed final SHA-256 for each mutable path;
 - patch SHA-256;
 - patch byte count and chunk count;
 - bounded test output or hashes when output is truncated;
@@ -424,6 +501,8 @@ On completion it creates a canonical signed receipt containing at least:
 - local state/config fingerprint excluding paths, credentials and secrets.
 
 UTF-8 text patch content is split into bounded GitHub issue comments when necessary. Each chunk is ordered and independently hashed; the receipt binds the ordered chunk hashes and final patch hash.
+
+The patch exists for ASTRA review. Authoritative application does not trust patch text as the source of final file content; it uses the already signed task content plus verified observed-final hashes.
 
 Binary changes are outside Phase 2A and fail closed.
 
@@ -433,13 +512,14 @@ A failed test may produce a diagnostic candidate patch for ASTRA review, but the
 
 A trusted GitHub Actions workflow triggered by worker result comments:
 
-1. parses the receipt;
+1. parses the receipt with the same strict canonical JSON rules;
 2. verifies the worker HMAC signature with `ASTRA_RECEIPT_HMAC_KEY`;
 3. checks task ID / worker ID / repository ID / base-ref / base-commit consistency with the signed task;
-4. verifies chunk count, per-chunk hashes, and final patch SHA-256;
-5. rejects duplicate or conflicting terminal receipts;
-6. applies `astra-task/result-verified` only when the receipt is internally consistent;
-7. applies `astra-task/completed` or `astra-task/failed` according to the signed terminal status.
+4. verifies intended-final vs observed-final hashes;
+5. verifies chunk count, per-chunk hashes, and final patch SHA-256;
+6. rejects duplicate or conflicting terminal receipts;
+7. applies `astra-task/result-verified` only when the receipt is internally consistent;
+8. applies `astra-task/completed` only for a verified `APPLY_READY` result, otherwise `astra-task/failed`/`rejected` as appropriate.
 
 ASTRA treats an unverified receipt as untrusted evidence.
 
@@ -456,6 +536,7 @@ The ledger records:
 - terminal state;
 - receipt digest;
 - mirror/base-ref/base-commit identity;
+- worktree/generated branch identity;
 - cleanup state.
 
 Rules:
@@ -470,21 +551,18 @@ Only one task executes at a time in Phase 2A.
 
 ## Worker service model
 
-The Windows worker runs under a dedicated non-administrator local identity.
-
-Installation is an explicit trusted administrative operation and is outside remote task authority.
+The Windows worker runs under the dedicated non-administrator local identity provisioned during trusted installation.
 
 Runtime requirements:
 
 - no Administrator/SYSTEM execution for normal worker operation;
-- automatic startup using a Windows service wrapper appropriate to the installed Python runtime;
-- pinned worker dependencies installed only during trusted setup, never by remote task;
+- WinSW service wrapper pinned by version and SHA-256;
+- pinned worker Python/dependencies installed only during trusted setup, never by remote task;
 - state/config/secrets and dedicated Git mirrors stored in protected worker-owned locations;
 - no listening network socket;
 - outbound HTTPS/Git HTTPS only to the configured GitHub host/repository;
-- controlled polling with exponential backoff on transient GitHub failures.
-
-The exact Windows service wrapper is an implementation choice, but it must be version-pinned, checksum-verified during trusted installation, and must not broaden the worker's runtime privileges.
+- controlled polling with exponential backoff on transient GitHub failures;
+- no runtime auto-update of worker code, WinSW, Python, or dependencies.
 
 ## Kill switch
 
@@ -512,9 +590,20 @@ verified signed task
     -> signed + GitHub-verified receipt
     -> ASTRA independent diff/test review
     -> PASS / FAIL decision
-    -> GitHub executor applies approved content to an isolated remote branch
+    -> GitHub executor creates/uses an isolated remote branch
+       from the exact signed base_commit_sha
+    -> GitHub executor applies signed intended final file content
+       only when remote base/file preconditions still match
     -> normal CI / PR review
 ```
+
+Authoritative apply rules:
+
+- the GitHub executor must create the isolated remote branch from the exact signed `base_commit_sha`, or prove an existing isolated branch is still at that exact base before first apply;
+- each existing file must still match the signed task's pre-state SHA before replacement/deletion;
+- if the base branch/ref advanced, a file changed, or any precondition is stale, the result is not force-applied; ASTRA issues a new task against a fresh base;
+- applied final file content comes from the signed task, and resulting GitHub blob/content hashes must correspond to the worker-verified intended final hashes;
+- worker receipt/patch never authorizes merge by itself.
 
 The worker does not receive permission to push source changes, merge PRs, or modify protected branches.
 
@@ -547,57 +636,67 @@ The worker/control-plane code remains an engineering orchestration surface outsi
 Implementation must include at least these adversarial tests before Phase 2A can be called merge-ready:
 
 1. unsigned issue/task is never executed;
-2. tampering with signed task JSON invalidates the task;
-3. wrong worker ID is rejected;
-4. unknown repository ID is rejected;
-5. remote task cannot specify or influence local mirror/worktree/root paths or Git remote URL;
-6. disallowed base ref is rejected by signer and worker;
-7. signer refuses base-ref/base-commit mismatch;
-8. expired task is rejected;
-9. duplicate task ID/nonce is not executed twice;
-10. conflicting payload under reused task ID is rejected;
-11. synchronization cannot use a task-supplied remote/refspec/credential helper;
-12. synchronization fetches only the pinned repository and allowed ref;
-13. post-fetch ref SHA mismatch fails before worktree creation;
-14. source mirror origin mismatch is rejected;
-15. stale file SHA precondition rejects write/delete;
-16. remote task cannot supply arbitrary argv/executable/shell/network command;
-17. unexpected repository path mutation by a test causes failure/quarantine;
-18. binary diff is rejected;
-19. diff/file/output size limits are enforced;
-20. worker cannot process two tasks concurrently;
-21. crash/restart does not silently re-run an ambiguous mutation;
-22. invalid task HMAC cannot be promoted to `ready` execution;
-23. invalid receipt HMAC cannot become `result-verified`;
-24. patch chunk reordering/removal/tampering is detected;
-25. worker GitHub credential can read source but cannot write Contents in the tested configuration;
-26. local `DISABLED` kill switch prevents new claims;
-27. protected CBI branches are never used as worker mutation branches;
-28. ephemeral worktree/generated worker branch is removed after a normal successful task;
-29. cleanup failure produces a non-success/quarantined receipt;
-30. inherited/global/system Git config cannot redirect synchronization or introduce an external helper into source acquisition/worktree creation;
-31. existing Phase 1 LocalExecutor adversarial suite remains green;
-32. full CBI regression remains green with no CBI runtime/evidence/WAL/R2 semantic changes.
+2. unauthorized proposer cannot obtain a signed ready task;
+3. duplicate-key/non-finite/ambiguous JSON is rejected before signing;
+4. tampering with signed task JSON invalidates the task;
+5. multiple conflicting signed task envelopes in one issue fail closed;
+6. wrong worker ID is rejected;
+7. unknown repository ID is rejected;
+8. remote task cannot specify/influence local mirror/worktree/root paths or Git remote URL;
+9. exact base-ref allowlist and prefix allowlist cannot be confused by lookalike names;
+10. signer refuses base-ref/base-commit mismatch;
+11. expired task is rejected;
+12. duplicate task ID/nonce is not executed twice;
+13. conflicting payload under reused task ID is rejected;
+14. synchronization cannot use a task-supplied remote/refspec/credential helper/proxy;
+15. synchronization fetches only the pinned repository and allowed ref;
+16. post-fetch ref SHA mismatch fails before worktree creation;
+17. source mirror origin mismatch is rejected;
+18. synchronization credentials do not appear in command line, persistent Git config, logs, task, or receipt;
+19. stale file SHA/absence precondition rejects write/delete;
+20. remote task cannot supply arbitrary argv/executable/shell/network command;
+21. unexpected repository path mutation by a test causes failure/quarantine;
+22. mutation of a declared path away from signed intended final content causes failure/quarantine;
+23. binary diff is rejected;
+24. diff/file/output size limits are enforced;
+25. worker cannot process two tasks concurrently;
+26. crash/restart does not silently re-run an ambiguous mutation;
+27. invalid task HMAC cannot be promoted to ready execution;
+28. invalid receipt HMAC cannot become `result-verified`;
+29. patch chunk reordering/removal/tampering is detected;
+30. worker GitHub credential can read source and write Issues but cannot write Contents in the tested configuration;
+31. local DPAPI secret cannot be used if blob/config/ACL validation fails;
+32. local `DISABLED` kill switch prevents new claims;
+33. protected CBI branches are never used as worker mutation branches;
+34. ephemeral worktree/generated worker branch is removed after a normal successful task;
+35. cleanup failure produces a non-success/quarantined receipt;
+36. inherited/global/system Git config cannot redirect synchronization or introduce an external helper into source acquisition/worktree creation;
+37. authoritative GitHub apply rejects a stale remote base or stale file hash rather than force-applying;
+38. authoritative applied file content hashes match the signed intended final content approved by the verified receipt;
+39. existing Phase 1 LocalExecutor adversarial suite remains green;
+40. full CBI regression remains green with no CBI runtime/evidence/WAL/R2 semantic changes.
 
 ## Success criteria
 
 Phase 2A is successful only when all of the following are demonstrated with fresh evidence:
 
-1. a GitHub proposed task is schema-validated, base-ref/base-commit bound, and signed before the worker can see it as executable;
+1. a GitHub proposed task is proposer-authorized, schema-validated, base-ref/base-commit bound, and signed before the worker can see it as executable;
 2. the Windows worker polls outbound only and accepts no inbound mutation connection;
 3. remote input identifies only a logical repository ID and allowed base ref, never a local path, remote URL or refspec;
 4. local config maps that repository ID to the sole allowed GitHub repository and dedicated worker mirror;
 5. the worker can continuously synchronize later approved remote commits using Contents-read-only credentials without source-write authority;
 6. tasks execute in worker-owned ephemeral worktrees at the exact signed base commit;
 7. task capabilities compile into the Phase 1 LocalExecutor rather than bypassing it;
-8. replay/crash state is durable and fail-closed;
-9. task/test-induced unexpected repository mutations are detected;
-10. results and patches are integrity-bound and GitHub-verifiable;
-11. ASTRA independently reviews the verified result before authoritative GitHub code mutation;
-12. the worker has no source push/merge/protected-branch authority;
-13. Windows service runtime is non-admin and local secrets/config/mirror are protected;
-14. Phase 1 tests and full CBI regressions remain green;
-15. no CBI production/business-governance semantics are changed.
+8. signed intended final content is preserved through local execution/tests and checked before a result can be apply-ready;
+9. replay/crash state is durable and fail-closed;
+10. task/test-induced unexpected repository mutations are detected;
+11. results and patches are integrity-bound and GitHub-verifiable;
+12. ASTRA independently reviews the verified result before authoritative GitHub code mutation;
+13. authoritative GitHub application rechecks exact base/file preconditions and never force-applies stale worker output;
+14. the worker has no source push/merge/protected-branch authority;
+15. Windows service runtime is non-admin, uses pinned WinSW, and local secrets/config/mirror are protected;
+16. Phase 1 tests and full CBI regressions remain green;
+17. no CBI production/business-governance semantics are changed.
 
 ## Stop conditions
 
@@ -612,6 +711,7 @@ Stop and redesign before implementation or merge if any of these becomes necessa
 - automatically re-running a mutation after ambiguous crash state;
 - accepting a source ref/commit that is not exact-match verified after bounded synchronization;
 - accepting a task after file-hash/base/state preconditions fail;
+- force-applying a verified worker result after its remote base/preconditions have become stale;
 - treating worker execution as self-approval without ASTRA independent review;
 - requiring changes to CBI evidence/WAL/R2/runtime semantics to make the worker viable.
 
