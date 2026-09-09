@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -55,6 +56,20 @@ class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
                 "operations": [{"kind": "run", "argv": argv, "cwd": "."}],
             }
         )
+
+    def _marker_script(self, name, emit_first_argument=False):
+        marker = Path(self.tempdir.name) / f"{name}.marker"
+        script = Path(self.tempdir.name) / f"{name}.sh"
+        lines = [
+            "#!/bin/sh",
+            f": > {shlex.quote(str(marker))}",
+        ]
+        if emit_first_argument:
+            lines.append('cat "$1"')
+        lines.append("exit 0")
+        script.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        script.chmod(0o755)
+        return script, marker
 
     def test_rejects_user_supplied_executable_paths_even_with_allowlisted_basename(self):
         suffix = ".exe" if os.name == "nt" else ""
@@ -123,6 +138,90 @@ class LocalExecutorExecutableBoundaryTests(unittest.TestCase):
                 LocalExecutor().execute(manifest, apply=True)
 
         self.assertFalse((self.root / "must-not-write.txt").exists())
+
+    @unittest.skipIf(os.name == "nt", "POSIX Git fsmonitor helper regression")
+    def test_git_fsmonitor_config_cannot_execute_during_clean_tree_gate(self):
+        script, marker = self._marker_script("fsmonitor")
+        subprocess.run(
+            ["git", "-C", str(self.root), "config", "core.fsmonitor", str(script)],
+            check=True,
+        )
+
+        manifest = ExecutionManifest.from_dict(
+            {
+                "task_id": "git-fsmonitor-boundary",
+                "repository_root": str(self.root),
+                "expected_branch": "astra-test",
+                "operations": [],
+            }
+        )
+        result = LocalExecutor().execute(manifest, apply=True)
+
+        self.assertTrue(result.success)
+        self.assertFalse(marker.exists())
+
+    @unittest.skipIf(os.name == "nt", "POSIX Git external diff helper regression")
+    def test_git_diff_external_config_cannot_execute_from_allowlisted_diff(self):
+        (self.root / "README.md").write_text("second\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "README.md"], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.root), "commit", "-m", "second"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        script, marker = self._marker_script("external-diff")
+        subprocess.run(
+            ["git", "-C", str(self.root), "config", "diff.external", str(script)],
+            check=True,
+        )
+
+        result = LocalExecutor().execute(
+            self._manifest(["git", "diff", "HEAD^", "HEAD"]),
+            apply=True,
+        )
+
+        self.assertTrue(result.success)
+        self.assertFalse(marker.exists())
+
+    @unittest.skipIf(os.name == "nt", "POSIX Git textconv helper regression")
+    def test_git_textconv_config_cannot_execute_from_allowlisted_diff(self):
+        (self.root / ".gitattributes").write_text("*.foo diff=astra_text\n", encoding="utf-8")
+        (self.root / "sample.foo").write_text("first\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(self.root), "add", ".gitattributes", "sample.foo"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.root), "commit", "-m", "textconv baseline"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        (self.root / "sample.foo").write_text("second\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(self.root), "add", "sample.foo"], check=True)
+        subprocess.run(
+            ["git", "-C", str(self.root), "commit", "-m", "textconv second"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        script, marker = self._marker_script("textconv", emit_first_argument=True)
+        subprocess.run(
+            ["git", "-C", str(self.root), "config", "diff.astra_text.textconv", str(script)],
+            check=True,
+        )
+
+        result = LocalExecutor().execute(
+            self._manifest(["git", "diff", "HEAD^", "HEAD"]),
+            apply=True,
+        )
+
+        self.assertTrue(result.success)
+        self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":
