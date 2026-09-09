@@ -21,7 +21,7 @@ def _validate_relative_file_path(raw_path: str) -> str:
     parts = PurePosixPath(normalized).parts
     if not parts or ".." in parts:
         raise ManifestValidationError(f"path traversal is not allowed: {raw_path}")
-    if parts[0].lower() == ".git":
+    if any(part.lower() == ".git" for part in parts):
         raise ManifestValidationError(".git metadata is never writable")
 
     return str(PurePosixPath(*parts))
