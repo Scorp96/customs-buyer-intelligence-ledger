@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import hashlib
 import os
 from pathlib import Path
@@ -187,7 +187,7 @@ class ReceiptGate:
         if len(valid) != 1:
             raise ReceiptGateError("issue must contain exactly one valid terminal receipt")
         receipt, canonical = valid[0]
-        if canonical != canonical_json_v1(event_receipt.to_mapping()):
+        if canonical != canonical_json_v1(asdict(event_receipt)):
             raise ReceiptGateError("event receipt is not the issue's unique valid terminal receipt")
         return receipt
 
