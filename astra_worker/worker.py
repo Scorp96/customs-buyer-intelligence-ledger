@@ -19,13 +19,18 @@ from .evidence import (
     verify_final_state,
 )
 from .git_workspace import WorktreeHandle
+from .github_api import GitHubApiError
 from .models import TaskEnvelope
 from .protocol import encode_signed_envelope, hmac_sha256_hex
-from .queue import ReadyTask
+from .queue import QueueError, ReadyTask
 
 
 class WorkerError(RuntimeError):
     """Raised when a worker cycle cannot safely continue."""
+
+
+class WorkerTransportError(WorkerError):
+    """Transient outbound transport failure eligible for bounded retry."""
 
 
 @dataclass(frozen=True)
@@ -397,6 +402,14 @@ class Worker:
 
             try:
                 candidates = self.queue.find_ready(self.config.worker_id)
+            except QueueError as exc:
+                if isinstance(exc.__cause__, GitHubApiError):
+                    raise WorkerTransportError("ready-task transport failed") from exc
+                raise WorkerError("ready-task queue state failed closed") from exc
+            except GitHubApiError as exc:
+                raise WorkerTransportError("ready-task transport failed") from exc
+            except (OSError, TimeoutError) as exc:
+                raise WorkerTransportError("ready-task transport failed") from exc
             except Exception as exc:
                 raise WorkerError("ready-task discovery failed") from exc
             if not candidates:
@@ -415,8 +428,16 @@ class Worker:
             return self._execute_ready(item, binding)
 
     def run_forever(self) -> None:
+        transport_delay = 15.0
         while True:
-            result = self.run_once()
+            try:
+                result = self.run_once()
+            except WorkerTransportError:
+                self._sleep(transport_delay)
+                transport_delay = min(transport_delay * 2.0, 300.0)
+                continue
+
+            transport_delay = 15.0
             if result.status == "DISABLED":
                 return
             self._sleep(float(self.config.poll_interval_seconds))
