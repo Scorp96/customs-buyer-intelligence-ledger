@@ -43,6 +43,14 @@ class Stage1RunnerContractTests(unittest.TestCase):
         self.assertNotIn('write-host "[ok] installer_reached_secret_gate"', lowered)
         self.assertNotIn('write-host "[ok] independent_acl_verified"', lowered)
 
+    def test_runner_captures_expected_installer_stderr_without_erroraction_stop_short_circuit(self) -> None:
+        text = read_runner().lower()
+        self.assertIn("-redirectstandardoutput", text)
+        self.assertIn("-redirectstandarderror", text)
+        self.assertIn("installerstdout", text)
+        self.assertIn("installerstderr", text)
+        self.assertNotIn("& powershell.exe -noprofile -executionpolicy bypass -file $installerpath -configpath $configpath 2>&1", text)
+
     def test_runner_requires_exact_remote_feature_head_before_install(self) -> None:
         text = read_runner().lower()
         self.assertIn("astra-phase2-pull-worker-design-20260909", text)
