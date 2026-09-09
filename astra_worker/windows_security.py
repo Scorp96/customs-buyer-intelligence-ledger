@@ -465,6 +465,67 @@ def _state_paths(root: Path) -> list[Path]:
     return paths
 
 
+def _run_icacls(path: Path, *arguments: str) -> None:
+    try:
+        completed = subprocess.run(
+            ["icacls.exe", str(path), *arguments],
+            shell=False,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise WindowsSecurityError("worker ACL hardening command is unavailable") from exc
+    if completed.returncode != 0:
+        raise WindowsSecurityError("worker ACL hardening command failed")
+
+
+def harden_worker_acl(
+    path: Path,
+    service_sid: str,
+    *,
+    enforce_programdata: bool = True,
+) -> None:
+    """Replace the worker state DACL with the exact three-trustee contract."""
+
+    _require_windows()
+    if not isinstance(service_sid, str) or _SID_RE.fullmatch(service_sid) is None:
+        raise WindowsSecurityError("service_sid is not a valid SID string")
+    root = Path(path).resolve()
+    if not root.is_dir():
+        raise WindowsSecurityError("worker state root is not a directory")
+    if _is_reparse_point(root):
+        raise WindowsSecurityError("worker state root cannot be a reparse point")
+
+    if enforce_programdata:
+        expected = _programdata_worker_root()
+        if os.path.normcase(str(root)) != os.path.normcase(str(expected)):
+            raise WindowsSecurityError("worker ACL hardening is restricted to ProgramData/ASTRAWorker")
+
+    paths = _state_paths(root)
+    allowed = (service_sid, _SYSTEM_SID, _ADMINISTRATORS_SID)
+    allowed_set = set(allowed)
+
+    for current in paths:
+        _run_icacls(current, "/inheritance:r")
+        permission = "(OI)(CI)F" if current.is_dir() else "F"
+        _run_icacls(
+            current,
+            "/grant:r",
+            *(f"*{sid}:{permission}" for sid in allowed),
+        )
+
+        grants, denies, _protected = _acl_for_path(current)
+        for sid in sorted(set(grants) - allowed_set):
+            _run_icacls(current, "/remove:g", f"*{sid}")
+        for sid in sorted(denies):
+            _run_icacls(current, "/remove:d", f"*{sid}")
+
+    verify_worker_acl(root, service_sid, enforce_programdata=enforce_programdata)
+
+
 def verify_worker_acl(
     path: Path,
     service_sid: str,
