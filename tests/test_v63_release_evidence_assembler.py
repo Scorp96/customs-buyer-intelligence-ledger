@@ -155,6 +155,27 @@ class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
         })
         return report
 
+    def _backup_retention_report(self, sha="a" * 64):
+        snapshot_id = "SNAP-20260901T061755Z-0813157703d0"
+        return {
+            "schema": "cbi.v64-backup-retention-evidence.v1",
+            "verified": True,
+            "production_source_snapshot_sha256": sha,
+            "preexisting_snapshot_observed": True,
+            "snapshot_id_before_deploy": snapshot_id,
+            "snapshot_id_after_restart": snapshot_id,
+            "snapshot_ids_after_deploy": [snapshot_id],
+            "backup_history_preserved_after_restart": True,
+            "backup_history_preserved_after_deploy": True,
+            "backup_root_persistence_mode": "OBJECT_STORE_REPLICATED",
+            "external_replication_verified": True,
+            "external_snapshot_locator": f"s3://cbi-prod/backups-v61/{snapshot_id}",
+            "restore_target_isolated": True,
+            "restore_overwrites_live_root": False,
+            "observed_at": "2026-09-04T00:00:00Z",
+            "source": "HOST_BACKUP_RETENTION_HEALTH_SEQUENCE",
+        }
+
     def _bundle(self):
         return {
             "health": self._health(),
@@ -164,6 +185,7 @@ class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
             "backend_correlation_acceptance_report": self._backend_report(),
             "recovery_overlay_acceptance_report": self._recovery_overlay_report(),
             "render_r2_pvc_acceptance_report": self._render_r2_pvc_receipt(),
+            "backup_retention_evidence_report": self._backup_retention_report(),
         }
 
     def test_complete_evidence_bundle_produces_production_ready(self):

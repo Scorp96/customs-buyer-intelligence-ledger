@@ -298,7 +298,7 @@ class ResearchOrchestrationTests(unittest.TestCase):
                     "guessed": False,
                     "channel_proof": True,
                 },
-                "source": {"freshness": "CURRENT_LIKELY"},
+                "source": {"freshness": "CURRENT_CONFIRMED"},
             }
         }
         result = self.runtime.get_account_state(self.args)

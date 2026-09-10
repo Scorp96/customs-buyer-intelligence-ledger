@@ -20,13 +20,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from mcp import server_v61_sync_recovery as _base  # noqa: E402
+from mcp.backup_replica_binding_v64 import backup_replica_from_env  # noqa: E402
 from unified_runtime.backup_recovery_hardened import ProductionBackupRecoveryManager  # noqa: E402
 from unified_runtime.resilience import digest  # noqa: E402
 
 
 _v61 = _base._v61
 _RUNTIME = _base._RUNTIME
-_BACKUP = ProductionBackupRecoveryManager.from_runtime(_RUNTIME)
+_EXTERNAL_BACKUP = backup_replica_from_env()
+_BACKUP = ProductionBackupRecoveryManager.from_runtime(
+    _RUNTIME,
+    external_replica=_EXTERNAL_BACKUP,
+)
 _TOOL_HANDLERS = _v61._server.TOOL_HANDLERS
 _ORIGINAL_HANDLERS = dict(_TOOL_HANDLERS)
 _MUTATING_TOOLS = set(_v61._MUTATING_TOOLS)
@@ -90,7 +95,10 @@ def _migration_backup_manager(arguments: dict[str, Any]) -> ProductionBackupReco
     ).expanduser().resolve()
     if source_root == Path(_RUNTIME.store.root).resolve():
         return _BACKUP
-    return ProductionBackupRecoveryManager.for_session_root(source_root)
+    return ProductionBackupRecoveryManager.for_session_root(
+        source_root,
+        external_replica=_EXTERNAL_BACKUP,
+    )
 
 
 def _pre_mutation_backup(tool_name: str, arguments: dict[str, Any]) -> None:

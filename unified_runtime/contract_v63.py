@@ -189,6 +189,17 @@ def build_v63_contract() -> dict[str, Any]:
             "reference_runner_sufficient": False,
             "side_effect_reexecution_allowed": False,
         },
+        "deployment_backup_retention_v6_4": {
+            "required_before_production": True,
+            "evidence_schema": "cbi.v64-backup-retention-evidence.v1",
+            "preexisting_snapshot_must_survive_restart": True,
+            "preexisting_snapshot_must_survive_deploy": True,
+            "external_replication_required": True,
+            "local_ephemeral_root_sufficient": False,
+            "primary_r2_state_restore_proves_backup_retention": False,
+            "restore_target_must_be_isolated": True,
+            "restore_may_overwrite_live_root": False,
+        },
         "runtime_durable_backend_contract_v6_3": {
             "schema": "cbi.v63-production-durable-backend.v1",
             "binding_strategy": "EXISTING_PRODUCTION_APPEND_ONLY_STORE",

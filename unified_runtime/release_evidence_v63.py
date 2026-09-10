@@ -122,6 +122,64 @@ def _validate_render_r2_pvc_release_receipt(receipt: Any) -> dict[str, Any]:
     }
 
 
+
+def _validate_backup_retention_report(
+    report: dict[str, Any] | None,
+    *,
+    expected_production_source_snapshot_sha256: str,
+) -> dict[str, Any]:
+    payload = dict(report or {})
+    blockers: list[str] = []
+    if payload.get("schema") != "cbi.v64-backup-retention-evidence.v1":
+        blockers.append("BACKUP_RETENTION_EVIDENCE_SCHEMA_INVALID")
+    snapshot = str(payload.get("production_source_snapshot_sha256") or "").lower()
+    expected = str(expected_production_source_snapshot_sha256 or "").lower()
+    if snapshot != expected or len(snapshot) != 64:
+        blockers.append("PRODUCTION_SOURCE_SNAPSHOT_MISMATCH")
+    if payload.get("source") != "HOST_BACKUP_RETENTION_HEALTH_SEQUENCE":
+        blockers.append("BACKUP_RETENTION_SOURCE_INVALID")
+    if not str(payload.get("observed_at") or "").strip():
+        blockers.append("BACKUP_RETENTION_OBSERVED_AT_MISSING")
+    if payload.get("preexisting_snapshot_observed") is not True:
+        blockers.append("PREEXISTING_BACKUP_SNAPSHOT_NOT_OBSERVED")
+    before_id = str(payload.get("snapshot_id_before_deploy") or "").strip()
+    restart_id = str(payload.get("snapshot_id_after_restart") or "").strip()
+    after_ids = {str(v).strip() for v in (payload.get("snapshot_ids_after_deploy") or []) if str(v).strip()}
+    if not before_id:
+        blockers.append("PREDEPLOY_BACKUP_SNAPSHOT_ID_MISSING")
+    elif before_id not in after_ids:
+        blockers.append("PREDEPLOY_BACKUP_SNAPSHOT_NOT_PRESERVED")
+    if before_id and restart_id != before_id:
+        blockers.append("PREDEPLOY_BACKUP_SNAPSHOT_NOT_PRESERVED_AFTER_RESTART")
+    if payload.get("backup_history_preserved_after_restart") is not True:
+        blockers.append("BACKUP_HISTORY_NOT_PRESERVED_AFTER_RESTART")
+    if payload.get("backup_history_preserved_after_deploy") is not True:
+        blockers.append("BACKUP_HISTORY_NOT_PRESERVED_AFTER_DEPLOY")
+    persistence_mode = str(payload.get("backup_root_persistence_mode") or "").strip().upper()
+    durable_modes = {"OBJECT_STORE_REPLICATED", "EXTERNAL_DURABLE_ROOT", "PERSISTENT_VOLUME_WITH_EXTERNAL_REPLICA"}
+    if persistence_mode not in durable_modes:
+        blockers.append("BACKUP_ROOT_NOT_DURABLE")
+    if payload.get("external_replication_verified") is not True:
+        blockers.append("EXTERNAL_BACKUP_REPLICATION_NOT_VERIFIED")
+    if not str(payload.get("external_snapshot_locator") or "").strip():
+        blockers.append("EXTERNAL_BACKUP_SNAPSHOT_LOCATOR_MISSING")
+    if payload.get("restore_target_isolated") is not True:
+        blockers.append("BACKUP_RESTORE_TARGET_NOT_ISOLATED")
+    if payload.get("restore_overwrites_live_root") is not False:
+        blockers.append("BACKUP_RESTORE_MAY_OVERWRITE_LIVE_ROOT")
+    blockers = list(dict.fromkeys(blockers))
+    return {
+        "schema": "cbi.v64-backup-retention-validation.v1",
+        "verified": not blockers,
+        "status": "VERIFIED" if not blockers else "BLOCKED",
+        "production_source_snapshot_sha256": snapshot,
+        "snapshot_id_before_deploy": before_id or None,
+        "snapshot_id_after_restart": restart_id or None,
+        "snapshot_ids_after_deploy": sorted(after_ids),
+        "backup_root_persistence_mode": persistence_mode or None,
+        "blockers": blockers,
+    }
+
 def evaluate_v63_release_evidence_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     """Assemble final production-release evidence from validated reports.
 
@@ -149,11 +207,16 @@ def evaluate_v63_release_evidence_bundle(bundle: dict[str, Any]) -> dict[str, An
     render_r2_pvc = _validate_render_r2_pvc_release_receipt(
         payload.get("render_r2_pvc_acceptance_report")
     )
+    backup_retention = _validate_backup_retention_report(
+        payload.get("backup_retention_evidence_report"),
+        expected_production_source_snapshot_sha256=current_snapshot,
+    )
 
     gate_payload = {
         "health": dict(payload.get("health") or {}),
         "contract": dict(payload.get("contract") or {}),
         "render_r2_pvc_acceptance_verified": bool(render_r2_pvc.get("verified")),
+        "backup_retention_verified": bool(backup_retention.get("verified")),
         "exact_v63_recovery_acceptance_verified": bool(exact.get("verified")),
         "live_v63_backend_correlation_acceptance_verified": bool(backend.get("verified")),
         "live_v63_backend_correlation_acceptance_snapshot_sha256": str(
@@ -179,6 +242,7 @@ def evaluate_v63_release_evidence_bundle(bundle: dict[str, Any]) -> dict[str, An
             "backend_correlation": backend,
             "recovery_overlay": recovery_overlay,
             "render_r2_pvc_acceptance": render_r2_pvc,
+            "backup_retention": backup_retention,
         },
         "derived_gate_payload": gate_payload,
         "production_gate": gate,

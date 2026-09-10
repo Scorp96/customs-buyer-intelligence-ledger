@@ -302,6 +302,11 @@ class V6ArchitectureTests(unittest.TestCase):
         })
         self.assertEqual(evaluated["stage"], "ANCHOR_ELIGIBLE")
         self.assertEqual(evaluated["contact_coverage"], {})
+        root_identity = self.compile([
+            self.observation("identity.legal_entity", suffix="root-legal-entity-for-anchor"),
+            self.observation("identity.ultimate_buyer", suffix="root-ultimate-buyer-for-anchor"),
+        ], "BUNDLE-V64-ROOT-IDENTITY-FOR-ANCHOR")
+        self.assertEqual(root_identity["rejected_count"], 0)
         promoted = self.runtime.promote_anchor({
             "investigation_id": self.investigation_id,
             "peer_id": peer["peer_id"],
