@@ -116,7 +116,6 @@ class V63AdapterPatchCompilerTests(unittest.TestCase):
             self.assertEqual(set(result["durable_mutations"]), set(V63_MUTATION_TOOL_NAMES))
             self.assertEqual(set(result["read_only_tools"]), set(V63_READ_ONLY_TOOL_NAMES))
 
-
     def test_full_production_snapshot_drift_blocks_codegen_even_when_base_server_is_unchanged(self):
         from unified_runtime.adapter_patch_compiler_v63 import compile_v63_adapter_patch_candidate
         from unified_runtime.production_source_snapshot_v63 import build_v63_production_source_snapshot
@@ -148,9 +147,9 @@ class V63AdapterPatchCompilerTests(unittest.TestCase):
             self.assertTrue(result["source_snapshot_validation"]["valid"])
 
 
-
 if __name__ == "__main__":
     unittest.main()
+
 
 class V63DelegatedAdapterPatchCompilerTests(V63AdapterPatchCompilerTests):
     def _repo(self, root: Path) -> Path:

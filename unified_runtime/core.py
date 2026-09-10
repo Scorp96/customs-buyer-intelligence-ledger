@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import copy
 import hashlib
 import json
 import os
 import re
 import secrets
+import threading
 import unicodedata
 import zipfile
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -606,6 +610,28 @@ _ACTIVE_INPUT_SANITIZATION: ContextVar[dict[str, Any] | None] = ContextVar(
     "cbi_active_input_sanitization",
     default=None,
 )
+_ACTIVE_VERIFIED_SESSION_SNAPSHOTS: ContextVar[
+    dict[tuple[int, int | None, int, str], tuple[list[dict[str, Any]], str]] | None
+] = ContextVar(
+    "cbi_active_verified_session_snapshots",
+    default=None,
+)
+
+
+def _verified_session_snapshot_key(
+    store_id: int,
+    investigation_id: str,
+) -> tuple[int, int | None, int, str]:
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    return (
+        threading.get_ident(),
+        id(task) if task is not None else None,
+        store_id,
+        investigation_id,
+    )
 
 
 def _sanitize_unicode_scalars(value: Any, path: str = "$") -> tuple[Any, list[dict[str, Any]]]:
@@ -873,6 +899,37 @@ class SessionStore:
             raise ValidationError("investigation_id: invalid")
         return self.root / f"{investigation_id}.jsonl"
 
+    @contextmanager
+    def verified_read_snapshot(self, investigation_id: str):
+        """Reuse one fully verified durable read only inside the current request scope."""
+        key = _verified_session_snapshot_key(id(self), investigation_id)
+        active = _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.get()
+        if active is not None and key in active:
+            yield
+            return
+
+        verified = self.read(investigation_id)
+        snapshot = copy.deepcopy(verified)
+        fingerprint = digest(snapshot)
+        updated = dict(active or {})
+        updated[key] = (snapshot, fingerprint)
+        token = _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.set(updated)
+        mutation_detected = False
+        try:
+            yield
+        finally:
+            current = _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.get() or {}
+            cached = current.get(key)
+            mutation_detected = (
+                cached is None
+                or digest(cached[0]) != cached[1]
+            )
+            _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.reset(token)
+            if mutation_detected:
+                raise ValidationError(
+                    "verified session snapshot mutated during request; fail closed"
+                )
+
     def _read_unlocked(self, investigation_id: str) -> list[dict[str, Any]]:
         path = self.path(investigation_id)
         if not path.is_file():
@@ -898,6 +955,11 @@ class SessionStore:
         return events
 
     def read(self, investigation_id: str) -> list[dict[str, Any]]:
+        key = _verified_session_snapshot_key(id(self), investigation_id)
+        active = _ACTIVE_VERIFIED_SESSION_SNAPSHOTS.get()
+        if active is not None and key in active:
+            snapshot, _fingerprint = active[key]
+            return copy.deepcopy(snapshot)
         lock_path = self.root / f".{investigation_id}.write.lock"
         with exclusive_file_lock(lock_path, timeout_seconds=30.0):
             return self._read_unlocked(investigation_id)
