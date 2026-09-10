@@ -47,11 +47,41 @@ class _EnvironmentRefPolicy:
         return ref in self.exact or any(ref.startswith(prefix) for prefix in self.prefixes)
 
 
+_PROPOSED = "astra-task/proposed"
+_READY = "astra-task/ready"
+_NONREGRESSING_LIFECYCLE = frozenset(
+    {
+        _READY,
+        "astra-task/claimed",
+        "astra-task/result-verified",
+        "astra-task/completed",
+        "astra-task/failed",
+        "astra-task/rejected",
+    }
+)
+
+
 def _utc(value: str) -> datetime:
     parsed = datetime.fromisoformat(value[:-1] + "+00:00")
     if parsed.utcoffset() != timezone.utc.utcoffset(parsed):
         raise TaskGateError("timestamp is not UTC")
     return parsed
+
+
+def _astra_labels(issue: Any) -> set[str]:
+    if not isinstance(issue, dict):
+        raise TaskGateError("live issue is invalid")
+    raw = issue.get("labels", [])
+    if not isinstance(raw, list):
+        raise TaskGateError("live issue labels are invalid")
+    labels: set[str] = set()
+    for item in raw:
+        name = item.get("name") if isinstance(item, dict) else item
+        if not isinstance(name, str) or not name:
+            raise TaskGateError("live issue label is malformed")
+        if name.startswith("astra-task/"):
+            labels.add(name)
+    return labels
 
 
 class TaskGate:
@@ -91,9 +121,13 @@ class TaskGate:
     def _reject(self, issue_number: int | None, reason: str) -> GateResult:
         if issue_number is not None:
             try:
-                self.api.replace_astra_labels(issue_number, {"astra-task/rejected"})
+                live = _astra_labels(self.api.get_issue(issue_number))
+                # Reject only an issue that is still exactly at PROPOSED. A stale
+                # signer event must never overwrite READY/CLAIMED/terminal state.
+                if live == {_PROPOSED}:
+                    self.api.replace_astra_labels(issue_number, {"astra-task/rejected"})
             except Exception:
-                # The security decision remains rejection even if GitHub cannot persist the label.
+                # The security decision remains rejection even if GitHub state cannot be read/persisted.
                 pass
         return GateResult(status="REJECTED", issue_number=issue_number, reason=reason)
 
@@ -150,7 +184,7 @@ class TaskGate:
                 for item in raw_labels
                 if isinstance(item, dict) and isinstance(item.get("name"), str)
             }
-            if "astra-task/proposed" not in labels:
+            if _PROPOSED not in labels:
                 raise TaskGateError("issue is not proposed for ASTRA signing")
 
             body = issue.get("body")
@@ -195,8 +229,24 @@ class TaskGate:
                 comment = encode_signed_envelope("task", payload, expected_signature)
                 self.api.post_issue_comment(issue_number, comment)
 
-            self.api.replace_astra_labels(issue_number, {"astra-task/ready"})
-            return GateResult(status="READY", issue_number=issue_number, reason="signed task ready")
+            # The event payload is a stale snapshot. Re-read the live lifecycle before
+            # promotion so a serialized duplicate signer cannot downgrade a worker that
+            # has already claimed/completed the same signed task.
+            live = _astra_labels(self.api.get_issue(issue_number))
+            if live == {_PROPOSED}:
+                self.api.replace_astra_labels(issue_number, {_READY})
+                return GateResult(status="READY", issue_number=issue_number, reason="signed task ready")
+            if len(live) == 1 and next(iter(live)) in _NONREGRESSING_LIFECYCLE:
+                return GateResult(
+                    status="READY",
+                    issue_number=issue_number,
+                    reason="identical signed task lifecycle already advanced",
+                )
+            return GateResult(
+                status="REJECTED",
+                issue_number=issue_number,
+                reason="live ASTRA lifecycle is ambiguous; no mutation performed",
+            )
         except (TaskGateError, TaskValidationError, ProtocolError, GitHubApiError, ValueError, TypeError):
             return self._reject(issue_number, "task signing gate rejected the proposal")
 
