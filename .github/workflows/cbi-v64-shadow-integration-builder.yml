@@ -1,0 +1,84 @@
+name: CBI v6.4 guarded shadow integration builder
+
+on:
+  push:
+    branches:
+      - cbi-v64-shadow-r2-merge-probe-20260910
+
+permissions:
+  contents: write
+
+jobs:
+  build-shadow-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Merge candidate, resolve one audited conflict, verify, and push shadow only
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='f59731cb412e194052d16e81c8137c507964350d'
+          candidate='4812e1d0d27ab2c1e69d885db3b0456d94305ac9'
+          production='58c3120c534d83f7e119701504c38be58ca9e475'
+          target='cbi-v64-shadow-r2-acceptance-20260910'
+
+          remote_target="$(git ls-remote origin "refs/heads/$target" | awk '{print $1}')"
+          test "$remote_target" = "$base"
+
+          git config user.name 'CBI Shadow Integration'
+          git config user.email 'cbi-shadow-integration@invalid.example'
+          git checkout --detach "$base"
+
+          set +e
+          git merge --no-commit --no-ff "$candidate"
+          merge_rc=$?
+          set -e
+          test "$merge_rc" -ne 0
+
+          mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+          test "${#conflicts[@]}" -eq 1
+          test "${conflicts[0]}" = 'tests/test_v63_render_r2_workflow_contract.py'
+
+          git checkout --theirs -- tests/test_v63_render_r2_workflow_contract.py
+
+          python - <<'PY'
+          from pathlib import Path
+          current = '58c3120c534d83f7e119701504c38be58ca9e475'
+          historical = (
+              'a311a2a57ee43a1f1a3b2819bf28946566b05692',
+              'ba3bffdae13cef186b20b50335c3207fb3390ec6',
+          )
+          for raw in (
+              '.github/workflows/cbi-v63-render-r2-pvc-acceptance.yml',
+              'tests/test_v63_render_r2_workflow_contract.py',
+          ):
+              path = Path(raw)
+              text = path.read_text(encoding='utf-8')
+              for old in historical:
+                  text = text.replace(old, current)
+              path.write_text(text, encoding='utf-8')
+          PY
+
+          git add .
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
+
+          python -m unittest discover -s tests -p 'test_*.py' -q
+          python mcp/v6_protocol_test.py
+          python mcp/v61_hardening_protocol_test.py
+          python tests/privacy_scan.py
+          python -m compileall -q mcp unified_runtime scripts
+
+          git commit -m 'merge(v64-shadow): integrate frozen candidate into isolated R2 acceptance lineage'
+          merged="$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$base" "$merged"
+          git merge-base --is-ancestor "$candidate" "$merged"
+          test "$(git rev-list --parents -n1 "$merged" | awk '{print NF-1}')" -eq 2
+
+          remote_target_after="$(git ls-remote origin "refs/heads/$target" | awk '{print $1}')"
+          test "$remote_target_after" = "$base"
+          git push origin "HEAD:refs/heads/$target"
+          echo "SHADOW_INTEGRATION_SHA=$merged"
