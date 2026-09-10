@@ -415,17 +415,23 @@ class Worker:
             if not candidates:
                 return WorkerCycleResult(status="IDLE")
 
-            item = candidates[0]
-            try:
-                binding = self._validate_ready_task(item)
-            except WorkerError as exc:
-                return WorkerCycleResult(
-                    status="REJECTED",
-                    task_id=getattr(getattr(item, "task", None), "task_id", None),
-                    issue_number=getattr(item, "issue_number", None),
-                    detail=str(exc),
-                )
-            return self._execute_ready(item, binding)
+            first_rejection: WorkerCycleResult | None = None
+            for item in candidates:
+                try:
+                    binding = self._validate_ready_task(item)
+                except WorkerError as exc:
+                    if first_rejection is None:
+                        first_rejection = WorkerCycleResult(
+                            status="REJECTED",
+                            task_id=getattr(getattr(item, "task", None), "task_id", None),
+                            issue_number=getattr(item, "issue_number", None),
+                            detail=str(exc),
+                        )
+                    continue
+                return self._execute_ready(item, binding)
+
+            assert first_rejection is not None
+            return first_rejection
 
     def run_forever(self) -> None:
         transport_delays = (15.0, 30.0, 60.0, 120.0, 300.0)
