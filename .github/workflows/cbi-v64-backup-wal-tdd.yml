@@ -32,3 +32,5 @@ jobs:
         run: python -m unittest tests.test_v64_mutation_wal_audit_mcp -v
       - name: Production adapter tool-surface declaration contract
         run: python -m unittest tests.test_v64_production_tool_surface_declaration -v
+      - name: Backup retention acceptance runner contract
+        run: python -m unittest tests.test_v64_backup_retention_acceptance -v
