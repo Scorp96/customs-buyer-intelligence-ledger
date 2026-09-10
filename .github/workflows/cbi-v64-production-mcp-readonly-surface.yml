@@ -36,30 +36,66 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/cbi-v64-prod-mcp-surface"
           python - <<'PY'
-          import json, os
+          import json
+          import os
+          import urllib.error
+          import urllib.request
           from pathlib import Path
-          from unified_runtime.render_r2_acceptance_client_v63 import (
-              RenderR2AcceptanceClient,
-              RenderR2AcceptanceClientConfig,
-          )
 
+          base = os.environ['PRODUCTION_URL'].rstrip('/')
+          expected_sha = os.environ['PRODUCTION_SHA']
           token = str(os.environ.get('CBI_V63_ACCEPTANCE_BEARER_TOKEN') or '')
           if not token:
               raise SystemExit('PRODUCTION_MCP_READ_TOKEN_MISSING')
-          client = RenderR2AcceptanceClient(RenderR2AcceptanceClientConfig(
-              base_url=os.environ['PRODUCTION_URL'],
-              bearer_token=token,
-              expected_git_sha=os.environ['PRODUCTION_SHA'],
-              timeout_seconds=90.0,
-          ))
-          health = client.read_health()
-          names = client.list_tool_names()
+
+          with urllib.request.urlopen(base + '/healthz', timeout=90.0) as response:
+              health = json.loads(response.read().decode('utf-8'))
+          identity = health.get('deployment_identity') if isinstance(health, dict) else None
+          if not isinstance(identity, dict) or identity.get('git_sha') != expected_sha:
+              raise SystemExit('PRODUCTION_HEALTH_SHA_MISMATCH')
+
+          body = json.dumps({
+              'jsonrpc': '2.0',
+              'id': 1,
+              'method': 'tools/list',
+              'params': {},
+          }, separators=(',', ':')).encode('utf-8')
+          request = urllib.request.Request(
+              base + '/mcp',
+              data=body,
+              method='POST',
+              headers={
+                  'Authorization': 'Bearer ' + token,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  'MCP-Protocol-Version': '2026-07-28',
+              },
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=90.0) as response:
+                  payload = json.loads(response.read().decode('utf-8'))
+          except urllib.error.HTTPError as exc:
+              raise SystemExit(f'PRODUCTION_MCP_HTTP_{exc.code}') from None
+          if not isinstance(payload, dict) or payload.get('jsonrpc') != '2.0' or payload.get('id') != 1:
+              raise SystemExit('PRODUCTION_MCP_RESPONSE_INVALID')
+          if isinstance(payload.get('error'), dict):
+              code = payload['error'].get('code')
+              raise SystemExit(f'PRODUCTION_MCP_JSONRPC_ERROR:{code}')
+          result = payload.get('result')
+          tools = result.get('tools') if isinstance(result, dict) else None
+          if not isinstance(tools, list):
+              raise SystemExit('PRODUCTION_MCP_TOOLS_LIST_MISSING')
+          names = sorted({
+              str(item.get('name') or '').strip()
+              for item in tools
+              if isinstance(item, dict) and str(item.get('name') or '').strip()
+          })
           keywords = ('export','snapshot','backup','migration','migrate','state','restore')
           relevant = [name for name in names if any(k in name.casefold() for k in keywords)]
           receipt = {
               'schema':'cbi.v64-production-mcp-readonly-surface.v1',
               'production_write_performed':False,
-              'production_git_sha':(health.get('deployment_identity') or {}).get('git_sha'),
+              'production_git_sha':expected_sha,
               'tool_count':len(names),
               'export_snapshot_related_tool_names':relevant,
               'read_only_surface_probe':True,
@@ -70,6 +106,7 @@ jobs:
           PY
 
       - name: Verify production branch after read
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
@@ -78,6 +115,7 @@ jobs:
           echo "PRODUCTION_BRANCH_UNCHANGED=$actual"
 
       - name: Upload sanitized surface receipt
+        if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: cbi-v64-production-mcp-readonly-surface-${{ github.run_id }}
