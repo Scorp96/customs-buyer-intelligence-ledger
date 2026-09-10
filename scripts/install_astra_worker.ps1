@@ -1,7 +1,8 @@
 #requires -Version 5.1
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ConfigPath
+    [string]$ConfigPath,
+    [string]$PythonExecutable = (Join-Path $env:ProgramFiles "Python311\python.exe")
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,11 +42,30 @@ if (-not (Test-Path -LiteralPath $WorkerLauncher -PathType Leaf)) {
 }
 $ResolvedConfig = (Resolve-Path -LiteralPath $ConfigPath).Path
 
-$PythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
-if ($null -eq $PythonCommand) {
-    $PythonCommand = Get-Command python -ErrorAction Stop
+if ([string]::IsNullOrWhiteSpace($PythonExecutable)) {
+    throw "ASTRA service Python path is required"
 }
-$PythonExe = $PythonCommand.Source
+if (-not (Test-Path -LiteralPath $PythonExecutable -PathType Leaf)) {
+    throw "ASTRA service Python 3.11 is not installed under Program Files"
+}
+$PythonExe = (Resolve-Path -LiteralPath $PythonExecutable).Path
+$ProgramFilesRoot = (Resolve-Path -LiteralPath $env:ProgramFiles).Path.TrimEnd('\')
+$ProgramFilesPrefix = $ProgramFilesRoot + '\'
+if (-not $PythonExe.StartsWith($ProgramFilesPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "ASTRA service Python must be under Program Files"
+}
+
+$PythonProbeOutput = @(
+    & $PythonExe -c 'import platform,struct,sys; print("{}|{}.{}|{}|{}".format(platform.python_implementation(),sys.version_info.major,sys.version_info.minor,sys.version_info.releaselevel,struct.calcsize("P") * 8))' 2>&1
+)
+$PythonProbeExit = $LASTEXITCODE
+if ($PythonProbeExit -ne 0) {
+    throw "ASTRA service Python validation failed with exit code $PythonProbeExit"
+}
+$PythonProbe = ($PythonProbeOutput | Out-String).Trim()
+if ($PythonProbe -ne "CPython|3.11|final|64") {
+    throw "ASTRA service Python must be CPython 3.11 final 64-bit under Program Files"
+}
 
 $Directories = @(
     $StateRoot,
