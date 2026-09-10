@@ -24,4 +24,4 @@ jobs:
       - name: Install pinned timezone data
         run: python -m pip install --disable-pip-version-check --no-input tzdata==2026.3
       - name: Run authoritative source evidence contracts
-        run: python -m unittest tests.test_v64_authoritative_source_evidence tests.test_v64_authoritative_source_evidence_remote_wiring
+        run: python -m unittest tests.test_v64_authoritative_source_evidence tests.test_v64_authoritative_source_evidence_remote_wiring tests.test_v64_authoritative_source_evidence_no_store
