@@ -4,6 +4,7 @@ from typing import Any
 
 from .backend_correlation_acceptance_v63 import validate_v63_backend_correlation_acceptance
 from .exact_recovery_acceptance_v63 import validate_v63_exact_recovery_acceptance
+from .mcp_schema_v63 import V63_MUTATION_TOOL_NAMES, V63_READ_ONLY_TOOL_NAMES
 from .production_gate_v63 import evaluate_v63_production_gate
 from .recovery_overlay_acceptance_v63 import validate_v63_recovery_overlay_acceptance
 from .render_r2_pvc_acceptance_v63 import MUTATION_EVENT_TYPES
@@ -52,6 +53,37 @@ def _validate_external_release_report(
         "status": "VERIFIED" if not blockers else "BLOCKED",
         "schema": schema,
         "production_source_snapshot_sha256": snapshot,
+        "blockers": blockers,
+    }
+
+
+_REQUIRED_ACTIVE_MCP_TOOLS = set(V63_READ_ONLY_TOOL_NAMES) | set(V63_MUTATION_TOOL_NAMES)
+
+
+def _validate_mcp_surface_evidence(
+    report: dict[str, Any] | None,
+    *,
+    expected_production_source_snapshot_sha256: str,
+) -> dict[str, Any]:
+    base = _validate_external_release_report(
+        report,
+        schema="cbi.v63-mcp-surface-evidence.v1",
+        expected_production_source_snapshot_sha256=expected_production_source_snapshot_sha256,
+        required_true_fields=("active_entrypoint_observed", "tools_list_observed"),
+    )
+    payload = dict(report or {})
+    tool_names = sorted({str(v) for v in (payload.get("tool_names") or []) if str(v)})
+    missing_tools = sorted(_REQUIRED_ACTIVE_MCP_TOOLS - set(tool_names))
+    blockers = list(base.get("blockers") or [])
+    if missing_tools:
+        blockers.append("ACTIVE_MCP_TOOL_SET_INCOMPLETE")
+    blockers = list(dict.fromkeys(blockers))
+    return {
+        **base,
+        "verified": not blockers,
+        "status": "VERIFIED" if not blockers else "BLOCKED",
+        "tool_names": tool_names,
+        "missing_tools": missing_tools,
         "blockers": blockers,
     }
 
@@ -146,6 +178,10 @@ def evaluate_v63_release_evidence_bundle(bundle: dict[str, Any]) -> dict[str, An
         payload.get("recovery_overlay_acceptance_report") or {},
         expected_production_source_snapshot_sha256=current_snapshot,
     )
+    mcp_surface = _validate_mcp_surface_evidence(
+        payload.get("mcp_surface_evidence_report"),
+        expected_production_source_snapshot_sha256=current_snapshot,
+    )
     render_r2_pvc = _validate_render_r2_pvc_release_receipt(
         payload.get("render_r2_pvc_acceptance_report")
     )
@@ -166,6 +202,7 @@ def evaluate_v63_release_evidence_bundle(bundle: dict[str, Any]) -> dict[str, An
             recovery_overlay.get("production_source_snapshot_sha256") or ""
         ).lower(),
         "current_production_source_snapshot_sha256": current_snapshot,
+        "active_mcp_tool_names": list(mcp_surface.get("tool_names") or []) if mcp_surface.get("verified") else [],
     }
     gate = evaluate_v63_production_gate(gate_payload)
 
@@ -178,6 +215,7 @@ def evaluate_v63_release_evidence_bundle(bundle: dict[str, Any]) -> dict[str, An
             "exact_recovery": exact,
             "backend_correlation": backend,
             "recovery_overlay": recovery_overlay,
+            "mcp_surface": mcp_surface,
             "render_r2_pvc_acceptance": render_r2_pvc,
         },
         "derived_gate_payload": gate_payload,

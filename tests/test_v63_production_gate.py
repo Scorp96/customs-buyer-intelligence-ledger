@@ -1,13 +1,10 @@
 import unittest
 
+from unified_runtime.mcp_schema_v63 import V63_MUTATION_TOOL_NAMES, V63_READ_ONLY_TOOL_NAMES
 from unified_runtime.production_gate_v63 import evaluate_v63_production_gate
 
 
-V63_MUTATIONS = [
-    "append_candidate_discovery",
-    "create_product_opportunity",
-    "promote_opportunity_anchor",
-]
+V63_MUTATIONS = list(V63_MUTATION_TOOL_NAMES)
 
 
 class V63ProductionGateTests(unittest.TestCase):
@@ -93,6 +90,7 @@ class V63ProductionGateTests(unittest.TestCase):
             "live_v63_recovery_overlay_acceptance_verified": True,
             "live_v63_recovery_overlay_acceptance_snapshot_sha256": "a" * 64,
             "current_production_source_snapshot_sha256": "a" * 64,
+            "active_mcp_tool_names": [*V63_READ_ONLY_TOOL_NAMES, *V63_MUTATION_TOOL_NAMES],
         }
 
     def test_current_v61_runtime_is_not_v63_production_ready(self):

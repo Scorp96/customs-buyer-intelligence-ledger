@@ -14,6 +14,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "cbi-v63-render-r2-pvc-acceptance.ym
 SCRIPT = ROOT / "scripts" / "run_v63_render_r2_pvc_acceptance.py"
 STATUS_ARTIFACT = "V63_RENDER_R2_PVC_ACCEPTANCE_STATUS.json"
 ZERO_SHA = "0" * 40
+PRODUCTION_BASELINE = "a311a2a57ee43a1f1a3b2819bf28946566b05692"
 _EXTERNAL_ENV = (
     "CBI_V63_RENDER_DEPLOY_HOOK_URL",
     "CBI_V63_RENDER_RESTART_HOOK_URL",
@@ -42,7 +43,7 @@ class V63RenderR2WorkflowContractTests(unittest.TestCase):
         self.assertIn("Run Render R2 PVC acceptance", text)
         self.assertIn("Upload sanitized Render R2 PVC acceptance receipts", text)
         self.assertIn("Verify production branch baseline is unchanged", text)
-        self.assertIn("ba3bffdae13cef186b20b50335c3207fb3390ec6", text)
+        self.assertIn(PRODUCTION_BASELINE, text)
         self.assertIn("BLOCKED_EXTERNAL", text)
         self.assertNotIn("git push", text)
         self.assertNotIn("gh pr merge", text)

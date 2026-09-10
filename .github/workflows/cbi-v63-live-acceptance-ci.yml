@@ -42,7 +42,9 @@ jobs:
             unified_runtime/exact_checkout_persistence_reader_v63.py \
             unified_runtime/exact_checkout_acceptance_orchestrator_v63.py \
             unified_runtime/exact_checkout_live_recovery_extra_v63.py \
-            scripts/run_v63_exact_checkout_live_acceptance.py
+            unified_runtime/mcp_surface_evidence_v63.py \
+            scripts/run_v63_exact_checkout_live_acceptance.py \
+            scripts/run_v63_mcp_surface_evidence.py
 
   release:
     name: Linux Python 3.11 exact-checkout release gate
@@ -61,7 +63,7 @@ jobs:
           python-version: '3.11'
 
       - name: Run exact-checkout producer targeted tests
-        run: python -m unittest -v tests.test_v63_exact_checkout_live_acceptance_producer
+        run: python -m unittest -v tests.test_v63_exact_checkout_live_acceptance_producer tests.test_v63_mcp_surface_evidence
 
       - name: Run v6.3 regression
         run: python -m unittest discover -s tests -p 'test_v63_*.py' -q
@@ -90,13 +92,15 @@ jobs:
             unified_runtime/exact_checkout_adversarial_idempotency_v63.py \
             unified_runtime/exact_checkout_crash_scenarios_v63.py \
             unified_runtime/exact_checkout_live_recovery_extra_v63.py \
-            scripts/run_v63_exact_checkout_live_acceptance.py
+            unified_runtime/mcp_surface_evidence_v63.py \
+            scripts/run_v63_exact_checkout_live_acceptance.py \
+            scripts/run_v63_mcp_surface_evidence.py
 
       - name: Verify production branch baseline is unchanged
         shell: bash
         run: |
           set -euo pipefail
-          expected='ba3bffdae13cef186b20b50335c3207fb3390ec6'
+          expected='a311a2a57ee43a1f1a3b2819bf28946566b05692'
           actual="$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)"
           if [ "$actual" != "$expected" ]; then
             echo "PRODUCTION_BRANCH_CHANGED expected=$expected actual=$actual" >&2
@@ -110,6 +114,14 @@ jobs:
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/v63-exact-checkout-artifacts"
           python scripts/run_v63_exact_checkout_live_acceptance.py \
+            --expected-git-sha "$GITHUB_SHA" \
+            --output-dir "$RUNNER_TEMP/v63-exact-checkout-artifacts"
+
+      - name: Capture active MCP tools-list evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/run_v63_mcp_surface_evidence.py \
             --expected-git-sha "$GITHUB_SHA" \
             --output-dir "$RUNNER_TEMP/v63-exact-checkout-artifacts"
 
@@ -129,6 +141,7 @@ jobs:
               "V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json",
               "V63_EXACT_CHECKOUT_RECOVERY_OVERLAY.json",
               "V63_EXACT_CHECKOUT_ACCEPTANCE.json",
+              "V63_ACTIVE_MCP_SURFACE_EVIDENCE.json",
           }
           actual = {path.name for path in root.iterdir() if path.is_file()}
           if actual != expected:
@@ -144,6 +157,11 @@ jobs:
               raise SystemExit("RECOVERY_VALIDATION_NOT_VERIFIED")
           if (acceptance.get("recovery_overlay_validation") or {}).get("verified") is not True:
               raise SystemExit("RECOVERY_OVERLAY_VALIDATION_NOT_VERIFIED")
+          surface = json.loads((root / "V63_ACTIVE_MCP_SURFACE_EVIDENCE.json").read_text(encoding="utf-8"))
+          if surface.get("verified") is not True or surface.get("tools_list_observed") is not True:
+              raise SystemExit("ACTIVE_MCP_SURFACE_EVIDENCE_NOT_VERIFIED")
+          if surface.get("production_source_snapshot_sha256") != acceptance.get("production_source_snapshot_sha256"):
+              raise SystemExit("ACTIVE_MCP_SURFACE_SOURCE_SNAPSHOT_MISMATCH")
           print("EXACT_CHECKOUT_ARTIFACT_INVENTORY_VERIFIED")
           PY
 
@@ -158,6 +176,7 @@ jobs:
             ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_RECOVERY_RECEIPTS.json
             ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_RECOVERY_OVERLAY.json
             ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_EXACT_CHECKOUT_ACCEPTANCE.json
+            ${{ runner.temp }}/v63-exact-checkout-artifacts/V63_ACTIVE_MCP_SURFACE_EVIDENCE.json
 
       - name: Confirm exact-checkout isolation boundary
         run: |
