@@ -1,0 +1,143 @@
+name: CBI v6.4 shadow pre-restart backup capture
+
+on:
+  push:
+    branches:
+      - cbi-v64-shadow-live-pre-20260910
+
+permissions:
+  contents: read
+
+jobs:
+  capture-pre:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SHADOW_SHA: 8eb81621e4d201ce61958170e33883a27016e198
+      PRODUCTION_SHA: 58c3120c534d83f7e119701504c38be58ca9e475
+    steps:
+      - name: Checkout exact shadow runtime
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8eb81621e4d201ce61958170e33883a27016e198
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Verify production baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+
+      - name: Create fresh synthetic mutation and capture sanitized pre-restart evidence
+        env:
+          CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}
+          CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          from unified_runtime.render_r2_acceptance_client_v63 import (
+              RenderR2AcceptanceClient,
+              RenderR2AcceptanceClientConfig,
+          )
+
+          expected = os.environ['SHADOW_SHA']
+          run_id = os.environ['GITHUB_RUN_ID']
+          client = RenderR2AcceptanceClient(
+              RenderR2AcceptanceClientConfig(
+                  base_url=os.environ['CBI_V63_ACCEPTANCE_BASE_URL'],
+                  bearer_token=os.environ['CBI_V63_ACCEPTANCE_BEARER_TOKEN'],
+                  expected_git_sha=expected,
+                  timeout_seconds=30.0,
+              )
+          )
+          public_before = client.read_health()
+          client.call_tool(
+              'start_investigation',
+              {
+                  'account': {
+                      'account_id': f'C-V64-SHADOW-BACKUP-{run_id}',
+                      'country': 'Synthetic',
+                      'name': f'Synthetic v6.4 Backup Shadow {run_id}',
+                  },
+                  'mode': 'EXHAUSTIVE',
+                  'history': {'events': []},
+                  'network_policy': {'closure_strategy': 'DECISION_SATURATION'},
+                  'idempotency_key': f'v64-shadow-backup-start-{run_id}',
+              },
+          )
+          runtime = client.call_tool('get_runtime_health', {})
+          backup = runtime.get('backup_recovery')
+          if not isinstance(backup, dict):
+              raise SystemExit('BACKUP_RECOVERY_HEALTH_MISSING')
+          if backup.get('daily_snapshot_present') is not True:
+              raise SystemExit('PREDEPLOY_DAILY_SNAPSHOT_NOT_PRESENT')
+          if backup.get('external_replication_verified') is not True:
+              raise SystemExit('PREDEPLOY_EXTERNAL_REPLICATION_NOT_VERIFIED')
+          durable = backup.get('durable_latest')
+          if not isinstance(durable, dict) or durable.get('verified') is not True:
+              raise SystemExit('PREDEPLOY_DURABLE_SNAPSHOT_NOT_VERIFIED')
+          locator = str(backup.get('external_snapshot_locator') or '')
+          if not locator:
+              raise SystemExit('PREDEPLOY_EXTERNAL_LOCATOR_MISSING')
+
+          public_after = client.read_health()
+          persistence = public_after.get('object_store_persistence')
+          if not isinstance(persistence, dict):
+              raise SystemExit('OBJECT_STORE_HEALTH_MISSING')
+          fingerprint = str(persistence.get('recovery_fingerprint_sha256') or '').lower()
+          if len(fingerprint) != 64 or any(ch not in '0123456789abcdef' for ch in fingerprint):
+              raise SystemExit('RECOVERY_FINGERPRINT_INVALID')
+          identity = public_after.get('deployment_identity') or {}
+
+          safe_backup = {
+              'schema': backup.get('schema'),
+              'backup_root': backup.get('backup_root'),
+              'durable_latest': backup.get('durable_latest'),
+              'daily_snapshot_present': backup.get('daily_snapshot_present'),
+              'external_replication_configured': backup.get('external_replication_configured'),
+              'external_replication_verified': backup.get('external_replication_verified'),
+              'external_replication_error': backup.get('external_replication_error'),
+              'backup_root_persistence_mode': backup.get('backup_root_persistence_mode'),
+              'restore_overwrites_live_root': backup.get('restore_overwrites_live_root'),
+          }
+          receipt = {
+              'schema': 'cbi.v64-shadow-backup-pre.v1',
+              'authority_scope': 'SHADOW_ONLY',
+              'production_authoritative': False,
+              'candidate_git_sha': expected,
+              'object_state_generation': identity.get('object_state_generation'),
+              'restore_generation': identity.get('restore_generation'),
+              'recovery_fingerprint_sha256': fingerprint,
+              'external_snapshot_locator_sha256': hashlib.sha256(locator.encode('utf-8')).hexdigest(),
+              'health': {'backup_recovery': safe_backup},
+          }
+          out = Path(os.environ['RUNNER_TEMP']) / 'v64-shadow-pre.json'
+          out.write_text(json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'status': 'PRE_CAPTURED',
+              'candidate_git_sha': expected,
+              'snapshot_id': (safe_backup.get('durable_latest') or {}).get('snapshot_id'),
+              'object_state_generation': identity.get('object_state_generation'),
+              'restore_generation': identity.get('restore_generation'),
+              'external_replication_verified': safe_backup.get('external_replication_verified'),
+          }, sort_keys=True))
+          PY
+
+      - name: Upload sanitized pre-restart evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-shadow-pre-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: ${{ runner.temp }}/v64-shadow-pre.json
