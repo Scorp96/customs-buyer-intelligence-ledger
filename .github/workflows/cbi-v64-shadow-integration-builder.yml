@@ -46,6 +46,7 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
+
           current = '58c3120c534d83f7e119701504c38be58ca9e475'
           historical = (
               'a311a2a57ee43a1f1a3b2819bf28946566b05692',
@@ -53,6 +54,7 @@ jobs:
           )
           for raw in (
               '.github/workflows/cbi-v63-render-r2-pvc-acceptance.yml',
+              'scripts/run_v63_render_r2_pvc_acceptance.py',
               'tests/test_v63_render_r2_workflow_contract.py',
           ):
               path = Path(raw)
@@ -60,6 +62,18 @@ jobs:
               for old in historical:
                   text = text.replace(old, current)
               path.write_text(text, encoding='utf-8')
+
+          fixture = Path('tests/test_v63_active_mcp_surface_release_gate.py')
+          text = fixture.read_text(encoding='utf-8')
+          marker = '            "render_r2_pvc_acceptance_verified": True,\n'
+          assert marker in text
+          if '            "backup_retention_verified": True,\n' not in text:
+              text = text.replace(
+                  marker,
+                  marker + '            "backup_retention_verified": True,\n',
+                  1,
+              )
+          fixture.write_text(text, encoding='utf-8')
           PY
 
           git add .
