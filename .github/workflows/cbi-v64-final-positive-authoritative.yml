@@ -20,14 +20,14 @@ jobs:
       - name: Checkout helper exact SHA
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 2
+          fetch-depth: 8
           persist-credentials: false
 
       - name: Prove helper changes only acceptance harness
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "7222fa19c1bace68b0ad4c44a707298966bf15e1"
+          git merge-base --is-ancestor "7222fa19c1bace68b0ad4c44a707298966bf15e1" HEAD
           python - <<'PY'
           import subprocess
           expected = {

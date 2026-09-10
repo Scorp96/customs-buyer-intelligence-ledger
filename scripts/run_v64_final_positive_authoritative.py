@@ -11,6 +11,10 @@ import sys
 import urllib.request
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from scripts.discover_v64_positive_route_candidate import _mcp, sanitize_health
 
 BASE_URL = "https://cbi-v61-preview.onrender.com"
@@ -115,7 +119,7 @@ def main() -> int:
                 "tests.test_v64_c279_full_runtime.V64C279FullRuntimeRegression.test_positive_route_authoritative_case_full_runtime",
                 "-v",
             ],
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=ROOT,
             env=env,
             text=True,
             capture_output=True,
@@ -153,9 +157,8 @@ def main() -> int:
         except Exception:
             after = {}
     finally:
-        for path in (source_root,):
-            if path.exists():
-                shutil.rmtree(path)
+        if source_root.exists():
+            shutil.rmtree(source_root)
         for path in (bridge_path, diagnostics_path, test_log_path):
             path.unlink(missing_ok=True)
 
