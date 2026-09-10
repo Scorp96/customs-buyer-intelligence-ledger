@@ -28,7 +28,7 @@ jobs:
           actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
           test "$actual" = "$PRODUCTION_SHA"
 
-      - name: Enumerate live production MCP tool names read only
+      - name: Enumerate complete live production MCP tool directory read only
         shell: bash
         env:
           CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
@@ -36,10 +36,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/cbi-v64-prod-mcp-surface"
           python - <<'PY'
-          import json
-          import os
-          import urllib.error
-          import urllib.request
+          import json, os, urllib.error, urllib.request
           from pathlib import Path
 
           base = os.environ['PRODUCTION_URL'].rstrip('/')
@@ -47,30 +44,19 @@ jobs:
           token = str(os.environ.get('CBI_V63_ACCEPTANCE_BEARER_TOKEN') or '')
           if not token:
               raise SystemExit('PRODUCTION_MCP_READ_TOKEN_MISSING')
-
           with urllib.request.urlopen(base + '/healthz', timeout=90.0) as response:
               health = json.loads(response.read().decode('utf-8'))
           identity = health.get('deployment_identity') if isinstance(health, dict) else None
           if not isinstance(identity, dict) or identity.get('git_sha') != expected_sha:
               raise SystemExit('PRODUCTION_HEALTH_SHA_MISMATCH')
 
-          body = json.dumps({
-              'jsonrpc': '2.0',
-              'id': 1,
-              'method': 'tools/list',
-              'params': {},
-          }, separators=(',', ':')).encode('utf-8')
-          request = urllib.request.Request(
-              base + '/mcp',
-              data=body,
-              method='POST',
-              headers={
-                  'Authorization': 'Bearer ' + token,
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json',
-                  'MCP-Protocol-Version': '2026-07-28',
-              },
-          )
+          body = json.dumps({'jsonrpc':'2.0','id':1,'method':'tools/list','params':{}}, separators=(',', ':')).encode()
+          request = urllib.request.Request(base + '/mcp', data=body, method='POST', headers={
+              'Authorization':'Bearer ' + token,
+              'Content-Type':'application/json',
+              'Accept':'application/json',
+              'MCP-Protocol-Version':'2026-07-28',
+          })
           try:
               with urllib.request.urlopen(request, timeout=90.0) as response:
                   payload = json.loads(response.read().decode('utf-8'))
@@ -79,28 +65,23 @@ jobs:
           if not isinstance(payload, dict) or payload.get('jsonrpc') != '2.0' or payload.get('id') != 1:
               raise SystemExit('PRODUCTION_MCP_RESPONSE_INVALID')
           if isinstance(payload.get('error'), dict):
-              code = payload['error'].get('code')
-              raise SystemExit(f'PRODUCTION_MCP_JSONRPC_ERROR:{code}')
+              raise SystemExit(f"PRODUCTION_MCP_JSONRPC_ERROR:{payload['error'].get('code')}")
           result = payload.get('result')
           tools = result.get('tools') if isinstance(result, dict) else None
           if not isinstance(tools, list):
               raise SystemExit('PRODUCTION_MCP_TOOLS_LIST_MISSING')
-          names = sorted({
-              str(item.get('name') or '').strip()
-              for item in tools
-              if isinstance(item, dict) and str(item.get('name') or '').strip()
-          })
-          keywords = ('export','snapshot','backup','migration','migrate','state','restore')
-          relevant = [name for name in names if any(k in name.casefold() for k in keywords)]
+          names = sorted({str(x.get('name') or '').strip() for x in tools if isinstance(x,dict) and str(x.get('name') or '').strip()})
+          readish = [n for n in names if any(k in n.casefold() for k in ('get','list','read','find','search','status','health','contract','pending','state','audit','export','snapshot','backup','restore'))]
           receipt = {
-              'schema':'cbi.v64-production-mcp-readonly-surface.v1',
+              'schema':'cbi.v64-production-mcp-readonly-directory.v1',
               'production_write_performed':False,
               'production_git_sha':expected_sha,
               'tool_count':len(names),
-              'export_snapshot_related_tool_names':relevant,
+              'all_tool_names':names,
+              'read_or_enumeration_candidate_names':readish,
               'read_only_surface_probe':True,
           }
-          out=Path(os.environ['RUNNER_TEMP'])/'cbi-v64-prod-mcp-surface'/'CBI_V64_PRODUCTION_MCP_READONLY_SURFACE.json'
+          out=Path(os.environ['RUNNER_TEMP'])/'cbi-v64-prod-mcp-surface'/'CBI_V64_PRODUCTION_MCP_READONLY_DIRECTORY.json'
           out.write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n',encoding='utf-8')
           print(json.dumps(receipt,sort_keys=True))
           PY
@@ -118,7 +99,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: cbi-v64-production-mcp-readonly-surface-${{ github.run_id }}
-          path: ${{ runner.temp }}/cbi-v64-prod-mcp-surface/CBI_V64_PRODUCTION_MCP_READONLY_SURFACE.json
+          name: cbi-v64-production-mcp-readonly-directory-${{ github.run_id }}
+          path: ${{ runner.temp }}/cbi-v64-prod-mcp-surface/CBI_V64_PRODUCTION_MCP_READONLY_DIRECTORY.json
           if-no-files-found: error
           retention-days: 14
