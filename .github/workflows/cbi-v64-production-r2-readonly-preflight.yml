@@ -26,9 +26,23 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/cbi-v64-prod-readonly"
-          curl --fail --silent --show-error --max-time 30 "$PRODUCTION_URL/healthz" > "$RUNNER_TEMP/cbi-v64-prod-readonly/health1.json"
+          fetch_health() {
+            local out="$1"
+            local attempt
+            for attempt in 1 2 3; do
+              if curl --fail --silent --show-error --connect-timeout 10 --max-time 90 "$PRODUCTION_URL/healthz" > "$out"; then
+                test -s "$out"
+                return 0
+              fi
+              rm -f "$out"
+              echo "READONLY_HEALTH_RETRY=$attempt" >&2
+              sleep 5
+            done
+            return 1
+          }
+          fetch_health "$RUNNER_TEMP/cbi-v64-prod-readonly/health1.json"
           sleep 2
-          curl --fail --silent --show-error --max-time 30 "$PRODUCTION_URL/healthz" > "$RUNNER_TEMP/cbi-v64-prod-readonly/health2.json"
+          fetch_health "$RUNNER_TEMP/cbi-v64-prod-readonly/health2.json"
           python - <<'PY'
           import hashlib, json, os
           from pathlib import Path
