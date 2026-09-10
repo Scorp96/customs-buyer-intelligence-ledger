@@ -1,0 +1,164 @@
+name: CBI v6.4 final isolated shadow backup evidence
+
+on:
+  push:
+    branches:
+      - cbi-v64-shadow-live-final-evidence-20260910
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  assemble-shadow-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SHADOW_SHA: 8eb81621e4d201ce61958170e33883a27016e198
+      PRODUCTION_SHA: 58c3120c534d83f7e119701504c38be58ca9e475
+      PRE_ARTIFACT_ID: '10135915945'
+      POSTRESTART_ARTIFACT_ID: '10135977574'
+      POSTDEPLOY_ARTIFACT_ID: '10136019782'
+    steps:
+      - name: Checkout exact shadow runtime
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8eb81621e4d201ce61958170e33883a27016e198
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Verify production baseline before assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+
+      - name: Download prior sanitized evidence and run exact Task 7 evaluator
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import io, json, os, urllib.request, zipfile
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from scripts.run_v64_backup_retention_acceptance import evaluate_backup_retention_acceptance
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_READ_TOKEN']
+          expected_sha = os.environ['SHADOW_SHA']
+
+          def read_artifact(artifact_id: str) -> dict:
+              url = f'https://api.github.com/repos/{repo}/actions/artifacts/{artifact_id}/zip'
+              req = urllib.request.Request(url, headers={
+                  'Authorization': f'Bearer {token}',
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+              })
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  body = response.read()
+              with zipfile.ZipFile(io.BytesIO(body)) as zf:
+                  names = [n for n in zf.namelist() if n.endswith('.json')]
+                  if len(names) != 1:
+                      raise RuntimeError('SANITIZED_ARTIFACT_SHAPE_INVALID')
+                  value = json.loads(zf.read(names[0]).decode('utf-8'))
+              if not isinstance(value, dict):
+                  raise RuntimeError('SANITIZED_ARTIFACT_NOT_OBJECT')
+              if value.get('authority_scope') != 'SHADOW_ONLY' or value.get('production_authoritative') is not False:
+                  raise RuntimeError('ARTIFACT_AUTHORITY_SCOPE_INVALID')
+              if value.get('candidate_git_sha') != expected_sha:
+                  raise RuntimeError('ARTIFACT_SHA_PIN_MISMATCH')
+              return value
+
+          pre = read_artifact(os.environ['PRE_ARTIFACT_ID'])
+          restarted = read_artifact(os.environ['POSTRESTART_ARTIFACT_ID'])
+          deployed = read_artifact(os.environ['POSTDEPLOY_ARTIFACT_ID'])
+
+          pre_backup = pre['health']['backup_recovery']
+          restart_backup = restarted['health']['backup_recovery']
+          deploy_backup = deployed['health']['backup_recovery']
+          ids = [x['durable_latest']['snapshot_id'] for x in (pre_backup, restart_backup, deploy_backup)]
+          archives = [x['durable_latest']['archive_sha256'] for x in (pre_backup, restart_backup, deploy_backup)]
+          fps = [pre['recovery_fingerprint_sha256'], restarted['recovery_fingerprint_sha256'], deployed['recovery_fingerprint_sha256']]
+          if len(set(ids)) != 1:
+              raise RuntimeError('SNAPSHOT_ID_CHANGED_ACROSS_BOUNDARIES')
+          if len(set(archives)) != 1:
+              raise RuntimeError('ARCHIVE_SHA_CHANGED_ACROSS_BOUNDARIES')
+          if len(set(fps)) != 1:
+              raise RuntimeError('RECOVERY_FINGERPRINT_CHANGED_ACROSS_BOUNDARIES')
+          if restarted.get('restore_generation') != pre.get('object_state_generation'):
+              raise RuntimeError('POSTRESTART_RESTORE_GENERATION_MISMATCH')
+          if deployed.get('restore_generation') != pre.get('object_state_generation'):
+              raise RuntimeError('POSTDEPLOY_RESTORE_GENERATION_MISMATCH')
+
+          payload = {
+              'pre_deploy_health': pre['health'],
+              'post_restart_health': restarted['health'],
+              'post_deploy_health': deployed['health'],
+              'production_source_snapshot_sha256': pre['recovery_fingerprint_sha256'],
+              'backup_root_persistence_mode': pre_backup.get('backup_root_persistence_mode'),
+              'external_replication_verified': True,
+              'external_snapshot_locator': 'sha256:' + pre['external_snapshot_locator_sha256'],
+              'observed_at': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+          }
+          evidence = evaluate_backup_retention_acceptance(payload)
+          if evidence.get('verified') is not True:
+              raise RuntimeError('TASK7_SHADOW_EVIDENCE_NOT_VERIFIED:' + ','.join(evidence.get('blockers') or []))
+
+          receipt = {
+              'schema': 'cbi.v64-shadow-backup-retention-live.v1',
+              'authority_scope': 'SHADOW_ONLY',
+              'production_authoritative': False,
+              'candidate_git_sha': expected_sha,
+              'production_baseline_sha': os.environ['PRODUCTION_SHA'],
+              'source_artifact_ids': {
+                  'pre': int(os.environ['PRE_ARTIFACT_ID']),
+                  'post_restart': int(os.environ['POSTRESTART_ARTIFACT_ID']),
+                  'post_deploy': int(os.environ['POSTDEPLOY_ARTIFACT_ID']),
+              },
+              'snapshot_id': ids[0],
+              'archive_sha256': archives[0],
+              'recovery_fingerprint_sha256': fps[0],
+              'pre_object_state_generation': pre.get('object_state_generation'),
+              'post_restart_restore_generation': restarted.get('restore_generation'),
+              'post_deploy_restore_generation': deployed.get('restore_generation'),
+              'external_locator_is_hashed': True,
+              'evidence': evidence,
+          }
+          out = Path(os.environ['RUNNER_TEMP']) / 'V64_SHADOW_BACKUP_RETENTION.json'
+          out.write_text(json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'status': 'VERIFIED',
+              'authority_scope': 'SHADOW_ONLY',
+              'production_authoritative': False,
+              'candidate_git_sha': expected_sha,
+              'snapshot_id': ids[0],
+              'pre_object_state_generation': pre.get('object_state_generation'),
+              'post_restart_restore_generation': restarted.get('restore_generation'),
+              'post_deploy_restore_generation': deployed.get('restore_generation'),
+              'backup_history_preserved_after_restart': evidence.get('backup_history_preserved_after_restart'),
+              'backup_history_preserved_after_deploy': evidence.get('backup_history_preserved_after_deploy'),
+              'blockers': evidence.get('blockers'),
+          }, sort_keys=True))
+          PY
+
+      - name: Verify production baseline after assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+
+      - name: Upload final sanitized shadow evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-shadow-final-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: ${{ runner.temp }}/V64_SHADOW_BACKUP_RETENTION.json
