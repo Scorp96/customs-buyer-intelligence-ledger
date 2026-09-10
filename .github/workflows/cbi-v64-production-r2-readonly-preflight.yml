@@ -1,0 +1,114 @@
+name: CBI v6.4 production R2 readonly preflight
+
+on:
+  push:
+    branches:
+      - cbi-v64-production-r2-readonly-preflight-20260910
+
+permissions:
+  contents: read
+
+jobs:
+  production-r2-readonly-preflight:
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+      PRODUCTION_SHA: 58c3120c534d83f7e119701504c38be58ca9e475
+    steps:
+      - name: Checkout exact candidate helper base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 4812e1d0d27ab2c1e69d885db3b0456d94305ac9
+          persist-credentials: false
+
+      - name: Read production health twice and prove zero-write identity stability
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cbi-v64-prod-readonly"
+          curl --fail --silent --show-error --max-time 30 "$PRODUCTION_URL/healthz" > "$RUNNER_TEMP/cbi-v64-prod-readonly/health1.json"
+          sleep 2
+          curl --fail --silent --show-error --max-time 30 "$PRODUCTION_URL/healthz" > "$RUNNER_TEMP/cbi-v64-prod-readonly/health2.json"
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          root = Path(os.environ['RUNNER_TEMP']) / 'cbi-v64-prod-readonly'
+          h1 = json.loads((root/'health1.json').read_text())
+          h2 = json.loads((root/'health2.json').read_text())
+          expected_sha = os.environ['PRODUCTION_SHA']
+
+          def extract(h):
+              if h.get('status') != 'ok':
+                  raise SystemExit('PRODUCTION_HEALTH_NOT_OK')
+              ident = h.get('deployment_identity')
+              store = h.get('object_store_persistence')
+              if not isinstance(ident, dict) or not isinstance(store, dict):
+                  raise SystemExit('PRODUCTION_PERSISTENCE_IDENTITY_MISSING')
+              if ident.get('git_sha') != expected_sha:
+                  raise SystemExit('PRODUCTION_GIT_SHA_MISMATCH')
+              if ident.get('object_store_mode') != 'r2':
+                  raise SystemExit('PRODUCTION_OBJECT_STORE_NOT_R2')
+              generation = store.get('generation')
+              if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+                  raise SystemExit('PRODUCTION_GENERATION_INVALID')
+              recovery = str(store.get('recovery_fingerprint_sha256') or '').lower()
+              if len(recovery) != 64 or any(c not in '0123456789abcdef' for c in recovery):
+                  raise SystemExit('PRODUCTION_RECOVERY_FINGERPRINT_INVALID')
+              prefix = str(store.get('prefix') or '')
+              if not prefix:
+                  raise SystemExit('PRODUCTION_PREFIX_MISSING')
+              return {
+                  'git_sha': ident.get('git_sha'),
+                  'object_state_schema': ident.get('object_state_schema'),
+                  'object_state_generation': ident.get('object_state_generation'),
+                  'restore_generation': ident.get('restore_generation'),
+                  'restore_source': ident.get('restore_source'),
+                  'prefix': prefix,
+                  'generation': generation,
+                  'archive_format': store.get('archive_format'),
+                  'recovery_fingerprint_sha256': recovery,
+                  'retention_generations': store.get('retention_generations'),
+                  'last_error': store.get('last_error'),
+              }
+
+          a, b = extract(h1), extract(h2)
+          if a != b:
+              raise SystemExit('PRODUCTION_READONLY_OBSERVATIONS_CHANGED')
+          receipt = {
+              'schema': 'cbi.v64-production-r2-readonly-preflight.v1',
+              'production_write_performed': False,
+              'production_git_sha': expected_sha,
+              'observation_stable': True,
+              'object_state_schema': a['object_state_schema'],
+              'object_state_generation': a['object_state_generation'],
+              'restore_generation': a['restore_generation'],
+              'restore_source': a['restore_source'],
+              'object_store_generation': a['generation'],
+              'archive_format': a['archive_format'],
+              'recovery_fingerprint_sha256': a['recovery_fingerprint_sha256'],
+              'prefix': a['prefix'],
+              'prefix_sha256': hashlib.sha256(a['prefix'].encode()).hexdigest(),
+              'retention_generations': a['retention_generations'],
+              'last_error': a['last_error'],
+          }
+          (root/'CBI_V64_PRODUCTION_R2_READONLY_PREFLIGHT.json').write_text(
+              json.dumps(receipt, sort_keys=True, indent=2)+'\n', encoding='utf-8')
+          print(json.dumps(receipt, sort_keys=True))
+          PY
+
+      - name: Prove production branch unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+          echo "PRODUCTION_BRANCH_UNCHANGED=$actual"
+
+      - name: Upload sanitized readonly receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-production-r2-readonly-preflight-${{ github.run_id }}
+          path: ${{ runner.temp }}/cbi-v64-prod-readonly/CBI_V64_PRODUCTION_R2_READONLY_PREFLIGHT.json
+          if-no-files-found: error
+          retention-days: 14
