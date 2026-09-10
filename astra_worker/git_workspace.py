@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 import hashlib
 import os
@@ -111,6 +112,11 @@ class GitWorkspaceManager:
             if child != self.worker_root and self.worker_root not in child.parents:
                 raise GitWorkspaceError("worker-owned Git path escaped worker root")
 
+    def _github_git_auth_header(self) -> str:
+        clear = f"x-access-token:{self._token}".encode("utf-8")
+        encoded = base64.b64encode(clear).decode("ascii")
+        return f"AUTHORIZATION: basic {encoded}"
+
     def _git_env(self) -> dict[str, str]:
         env: dict[str, str] = {}
         for key, value in os.environ.items():
@@ -143,7 +149,7 @@ class GitWorkspaceManager:
         ):
             if not self._token:
                 raise GitWorkspaceError("GitHub HTTPS mirror requires a token")
-            config.append(("http.https://github.com/.extraheader", f"AUTHORIZATION: Bearer {self._token}"))
+            config.append(("http.https://github.com/.extraheader", self._github_git_auth_header()))
 
         env["GIT_CONFIG_COUNT"] = str(len(config))
         for index, (key, value) in enumerate(config):
@@ -154,6 +160,7 @@ class GitWorkspaceManager:
     def _safe_output(self, value: str) -> str:
         if self._token:
             value = value.replace(self._token, "[REDACTED]")
+            value = value.replace(self._github_git_auth_header(), "AUTHORIZATION: basic [REDACTED]")
         return value[:4096]
 
     def _run_git(
