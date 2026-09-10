@@ -1,0 +1,36 @@
+name: CBI v6.4 shadow merge probe
+
+on:
+  push:
+    branches:
+      - cbi-v64-shadow-r2-merge-probe-20260910
+
+permissions:
+  contents: read
+
+jobs:
+  merge-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Probe candidate merge without writing
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="4812e1d0d27ab2c1e69d885db3b0456d94305ac9"
+          git fetch --no-tags origin "$candidate"
+          set +e
+          git -c user.name='CBI Shadow Probe' -c user.email='cbi-shadow-probe@invalid.example' merge --no-commit --no-ff "$candidate"
+          rc=$?
+          set -e
+          echo "MERGE_RC=$rc"
+          echo "UNMERGED_FILES_BEGIN"
+          git diff --name-only --diff-filter=U || true
+          echo "UNMERGED_FILES_END"
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+          git merge --abort || true
