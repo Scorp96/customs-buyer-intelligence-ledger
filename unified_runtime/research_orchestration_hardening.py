@@ -263,6 +263,39 @@ class V61ResearchOrchestrationHardeningMixin:
                 routes.append(route)
         return routes
 
+    def _compiled_named_routes(
+        self,
+        state: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        account_id = state["start"]["account"]["account_id"]
+        routes: list[dict[str, Any]] = []
+        for observation in state.get("observations", {}).values():
+            if not isinstance(observation, dict):
+                continue
+            if observation.get("claim_key") != "contact.named_route":
+                continue
+            if self._compiled_route_rejection_reasons(
+                observation, account_id=account_id
+            ):
+                continue
+            value = observation.get("value")
+            if not isinstance(value, dict):
+                continue
+            person_name = str(value.get("person_name") or "").strip()
+            if not person_name:
+                continue
+            route = self._route_payload(
+                value,
+                account_id=account_id,
+                source_kind="COMPILED_OBSERVATION",
+                evidence_ids=[str(observation["evidence_id"])],
+                observation_id=str(observation.get("observation_id") or "") or None,
+            )
+            if route:
+                route["named_person"] = person_name
+                routes.append(route)
+        return routes
+
     def _information_company_routes(
         self,
         investigation_id: str,
@@ -347,6 +380,7 @@ class V61ResearchOrchestrationHardeningMixin:
         account_id = state["start"]["account"]["account_id"]
 
         routes = self._compiled_company_routes(state)
+        routes.extend(self._compiled_named_routes(state))
         routes.extend(self._information_company_routes(investigation_id, account_id))
 
         # Lower v6.1 hardening remains the authority for legacy Information
@@ -362,6 +396,16 @@ class V61ResearchOrchestrationHardeningMixin:
             str(item)
             for item in (result.get("valid_information_route_ids") or [])
             if str(item).strip()
+        }
+        lower_named_ids = {
+            str(item)
+            for item in (result.get("valid_named_route_observation_ids") or [])
+            if str(item).strip()
+        }
+        reprojected_named_ids = {
+            str(route.get("observation_id") or "")
+            for route in routes
+            if route.get("named_person") and route.get("observation_id")
         }
         lower_sources = {
             str(item)
@@ -386,6 +430,8 @@ class V61ResearchOrchestrationHardeningMixin:
                     information_id in lower_information_ids
                     or observation_id in lower_company_ids
                 )
+                if observation_id in reprojected_named_ids:
+                    continue
                 if explicitly_account_owned or lower_validated:
                     routes.append(dict(route))
         routes = self._dedupe_routes(routes)
@@ -417,6 +463,9 @@ class V61ResearchOrchestrationHardeningMixin:
         )
         result["valid_information_route_ids"] = sorted(
             lower_information_ids | information_ids
+        )
+        result["valid_named_route_observation_ids"] = sorted(
+            lower_named_ids | reprojected_named_ids
         )
 
         current_readiness = str(
