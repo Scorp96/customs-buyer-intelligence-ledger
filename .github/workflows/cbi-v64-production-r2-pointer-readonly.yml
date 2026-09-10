@@ -1,0 +1,125 @@
+name: CBI v6.4 production R2 pointer readonly probe
+
+on:
+  push:
+    branches:
+      - cbi-v64-production-r2-pointer-readonly-20260910
+
+permissions:
+  contents: read
+
+jobs:
+  production-pointer-readonly:
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_SHA: 58c3120c534d83f7e119701504c38be58ca9e475
+      EXPECTED_GENERATION: '1093'
+      EXPECTED_RECOVERY_FP: b4c9806c3e2c840c259d987fc58debd5d742244f1809bec894e41d55bb8b38c2
+      PRODUCTION_PREFIX: cbi-v61
+    steps:
+      - name: Checkout exact candidate helper base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 4812e1d0d27ab2c1e69d885db3b0456d94305ac9
+          persist-credentials: false
+
+      - name: Verify production branch before read
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+
+      - name: Read production R2 current pointer only
+        shell: bash
+        env:
+          CBI_V63_R2_ENDPOINT: ${{ secrets.CBI_V63_R2_ENDPOINT }}
+          CBI_V63_R2_BUCKET: ${{ secrets.CBI_V63_R2_BUCKET }}
+          CBI_V63_R2_ACCESS_KEY_ID: ${{ secrets.CBI_V63_R2_ACCESS_KEY_ID }}
+          CBI_V63_R2_SECRET_ACCESS_KEY: ${{ secrets.CBI_V63_R2_SECRET_ACCESS_KEY }}
+          CBI_V63_R2_REGION: ${{ secrets.CBI_V63_R2_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cbi-v64-prod-pointer"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          from mcp.object_store_persistence import S3CompatibleClient, S3Config
+          from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
+
+          required = [
+              'CBI_V63_R2_ENDPOINT','CBI_V63_R2_BUCKET','CBI_V63_R2_ACCESS_KEY_ID','CBI_V63_R2_SECRET_ACCESS_KEY'
+          ]
+          missing = [name for name in required if not str(os.environ.get(name) or '').strip()]
+          if missing:
+              raise SystemExit('R2_READ_CREDENTIALS_MISSING')
+
+          client = S3CompatibleClient(S3Config(
+              endpoint=os.environ['CBI_V63_R2_ENDPOINT'].strip(),
+              bucket=os.environ['CBI_V63_R2_BUCKET'].strip(),
+              access_key_id=os.environ['CBI_V63_R2_ACCESS_KEY_ID'].strip(),
+              secret_access_key=os.environ['CBI_V63_R2_SECRET_ACCESS_KEY'].strip(),
+              region=(os.environ.get('CBI_V63_R2_REGION') or 'auto').strip() or 'auto',
+          ))
+          manager = RecoveryObjectStoreStateManagerV63(client, prefix=os.environ['PRODUCTION_PREFIX'])
+          pointer = manager.read_pointer(required=True)
+          if pointer is None:
+              raise SystemExit('PRODUCTION_POINTER_MISSING')
+          if int(pointer.generation) != int(os.environ['EXPECTED_GENERATION']):
+              raise SystemExit(f'PRODUCTION_POINTER_GENERATION_MISMATCH:{pointer.generation}')
+          recovery = str(getattr(pointer, 'recovery_fingerprint_sha256', '') or '').lower()
+          if recovery != os.environ['EXPECTED_RECOVERY_FP']:
+              raise SystemExit('PRODUCTION_POINTER_RECOVERY_FINGERPRINT_MISMATCH')
+          archive_sha = str(pointer.archive_sha256 or '').lower()
+          if len(archive_sha) != 64 or any(ch not in '0123456789abcdef' for ch in archive_sha):
+              raise SystemExit('PRODUCTION_POINTER_ARCHIVE_SHA_INVALID')
+          sessions_fp = str(pointer.sessions_fingerprint_sha256 or '').lower()
+          if len(sessions_fp) != 64 or any(ch not in '0123456789abcdef' for ch in sessions_fp):
+              raise SystemExit('PRODUCTION_POINTER_SESSIONS_FP_INVALID')
+          archive_key = str(pointer.archive_key or '')
+          if not archive_key.startswith(os.environ['PRODUCTION_PREFIX'] + '/states/'):
+              raise SystemExit('PRODUCTION_POINTER_ARCHIVE_KEY_OUTSIDE_PREFIX')
+
+          receipt = {
+              'schema': 'cbi.v64-production-r2-pointer-readonly.v1',
+              'production_write_performed': False,
+              'source': 'PRODUCTION_R2_CURRENT_POINTER_READ_ONLY',
+              'production_git_sha': os.environ['PRODUCTION_SHA'],
+              'production_prefix_sha256': hashlib.sha256(os.environ['PRODUCTION_PREFIX'].encode()).hexdigest(),
+              'generation': pointer.generation,
+              'archive_format': pointer.archive_format,
+              'archive_sha256': archive_sha,
+              'sessions_fingerprint_sha256': sessions_fp,
+              'recovery_fingerprint_sha256': recovery,
+              'archive_key_sha256': hashlib.sha256(archive_key.encode()).hexdigest(),
+              'pointer_read_verified': True,
+          }
+          out = Path(os.environ['RUNNER_TEMP'])/'cbi-v64-prod-pointer'/'CBI_V64_PRODUCTION_R2_POINTER_READONLY.json'
+          out.write_text(json.dumps(receipt, sort_keys=True, indent=2)+'\n', encoding='utf-8')
+          print(json.dumps({
+              'status':'PRODUCTION_R2_POINTER_READ_VERIFIED',
+              'generation':pointer.generation,
+              'archive_format':pointer.archive_format,
+              'archive_sha256':archive_sha,
+              'recovery_fingerprint_sha256':recovery,
+          }, sort_keys=True))
+          PY
+
+      - name: Verify production branch after read
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+          echo "PRODUCTION_BRANCH_UNCHANGED=$actual"
+
+      - name: Upload sanitized pointer receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-production-r2-pointer-readonly-${{ github.run_id }}
+          path: ${{ runner.temp }}/cbi-v64-prod-pointer/CBI_V64_PRODUCTION_R2_POINTER_READONLY.json
+          if-no-files-found: error
+          retention-days: 14
