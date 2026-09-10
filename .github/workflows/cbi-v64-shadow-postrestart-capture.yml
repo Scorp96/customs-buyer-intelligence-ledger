@@ -1,0 +1,113 @@
+name: CBI v6.4 shadow post-restart backup capture
+
+on:
+  push:
+    branches:
+      - cbi-v64-shadow-live-postrestart-20260910
+
+permissions:
+  contents: read
+
+jobs:
+  capture-postrestart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SHADOW_SHA: 8eb81621e4d201ce61958170e33883a27016e198
+      PRODUCTION_SHA: 58c3120c534d83f7e119701504c38be58ca9e475
+      EXPECTED_SNAPSHOT_ID: SNAP-20260910T035629Z-7c1050f4ba87
+      EXPECTED_ARCHIVE_SHA: 2c1d402df61ad5c4b1d4e13f2fa4d28fc7ac0165539a09ac483a9b115aba8285
+      EXPECTED_RECOVERY_FP: c5bb48477ff0e4f2361cbc1207d700861cd2cae65c231b4eae2e302fdc332904
+      EXPECTED_RESTORE_GENERATION: '10'
+    steps:
+      - name: Checkout exact shadow runtime
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8eb81621e4d201ce61958170e33883a27016e198
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Verify production baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+
+      - name: Capture and verify post-restart evidence
+        env:
+          CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}
+          CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from unified_runtime.render_r2_acceptance_client_v63 import RenderR2AcceptanceClient, RenderR2AcceptanceClientConfig
+
+          client = RenderR2AcceptanceClient(RenderR2AcceptanceClientConfig(
+              base_url=os.environ['CBI_V63_ACCEPTANCE_BASE_URL'],
+              bearer_token=os.environ['CBI_V63_ACCEPTANCE_BEARER_TOKEN'],
+              expected_git_sha=os.environ['SHADOW_SHA'],
+              timeout_seconds=30.0,
+          ))
+          public = client.read_health()
+          identity = public.get('deployment_identity') or {}
+          persistence = public.get('object_store_persistence') or {}
+          if identity.get('restore_generation') != int(os.environ['EXPECTED_RESTORE_GENERATION']):
+              raise SystemExit(f"RESTORE_GENERATION_MISMATCH:{identity.get('restore_generation')}")
+          fp = str(persistence.get('recovery_fingerprint_sha256') or '').lower()
+          if fp != os.environ['EXPECTED_RECOVERY_FP']:
+              raise SystemExit('RECOVERY_FINGERPRINT_CHANGED_AFTER_RESTART')
+
+          runtime = client.call_tool('get_runtime_health', {})
+          backup = runtime.get('backup_recovery')
+          if not isinstance(backup, dict):
+              raise SystemExit('BACKUP_RECOVERY_HEALTH_MISSING')
+          if backup.get('external_replication_verified') is not True:
+              raise SystemExit('POSTRESTART_EXTERNAL_REPLICATION_NOT_VERIFIED')
+          durable = backup.get('durable_latest')
+          if not isinstance(durable, dict) or durable.get('verified') is not True:
+              raise SystemExit('POSTRESTART_DURABLE_SNAPSHOT_NOT_VERIFIED')
+          if durable.get('snapshot_id') != os.environ['EXPECTED_SNAPSHOT_ID']:
+              raise SystemExit(f"SNAPSHOT_ID_CHANGED_AFTER_RESTART:{durable.get('snapshot_id')}")
+          if durable.get('archive_sha256') != os.environ['EXPECTED_ARCHIVE_SHA']:
+              raise SystemExit('ARCHIVE_SHA_CHANGED_AFTER_RESTART')
+
+          safe_backup = {
+              'schema': backup.get('schema'),
+              'backup_root': backup.get('backup_root'),
+              'durable_latest': backup.get('durable_latest'),
+              'daily_snapshot_present': backup.get('daily_snapshot_present'),
+              'external_replication_configured': backup.get('external_replication_configured'),
+              'external_replication_verified': backup.get('external_replication_verified'),
+              'external_replication_error': backup.get('external_replication_error'),
+              'backup_root_persistence_mode': backup.get('backup_root_persistence_mode'),
+              'restore_overwrites_live_root': backup.get('restore_overwrites_live_root'),
+          }
+          receipt = {
+              'schema':'cbi.v64-shadow-backup-postrestart.v1',
+              'authority_scope':'SHADOW_ONLY',
+              'production_authoritative':False,
+              'candidate_git_sha':os.environ['SHADOW_SHA'],
+              'object_state_generation':identity.get('object_state_generation'),
+              'restore_generation':identity.get('restore_generation'),
+              'recovery_fingerprint_sha256':fp,
+              'health':{'backup_recovery':safe_backup},
+          }
+          out=Path(os.environ['RUNNER_TEMP'])/'v64-shadow-postrestart.json'
+          out.write_text(json.dumps(receipt,sort_keys=True,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps({'status':'POSTRESTART_CAPTURED','snapshot_id':durable.get('snapshot_id'),'object_state_generation':identity.get('object_state_generation'),'restore_generation':identity.get('restore_generation'),'external_replication_verified':backup.get('external_replication_verified')},sort_keys=True))
+          PY
+
+      - name: Upload sanitized post-restart evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-shadow-postrestart-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: ${{ runner.temp }}/v64-shadow-postrestart.json
