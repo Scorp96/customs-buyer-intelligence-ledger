@@ -1,0 +1,222 @@
+name: CBI v6.4 isolated shadow live backup acceptance
+
+on:
+  push:
+    branches:
+      - cbi-v64-shadow-live-gate-runner-20260910
+
+permissions:
+  contents: read
+
+jobs:
+  shadow-live-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SHADOW_SHA: 8eb81621e4d201ce61958170e33883a27016e198
+      PRODUCTION_SHA: 58c3120c534d83f7e119701504c38be58ca9e475
+    steps:
+      - name: Checkout exact shadow runtime
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8eb81621e4d201ce61958170e33883a27016e198
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Install pinned timezone data
+        run: python -m pip install --disable-pip-version-check --no-input tzdata==2026.3
+
+      - name: Verify production baseline before shadow activity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+          echo "PRODUCTION_UNCHANGED_BEFORE=$actual"
+
+      - name: Run existing isolated Render R2 acceptance
+        shell: bash
+        env:
+          CBI_V63_RENDER_DEPLOY_HOOK_URL: ${{ secrets.CBI_V63_RENDER_DEPLOY_HOOK_URL }}
+          CBI_V63_RENDER_RESTART_HOOK_URL: ${{ secrets.CBI_V63_RENDER_RESTART_HOOK_URL }}
+          CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}
+          CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          CBI_V63_R2_ENDPOINT: ${{ secrets.CBI_V63_R2_ENDPOINT }}
+          CBI_V63_R2_BUCKET: ${{ secrets.CBI_V63_R2_BUCKET }}
+          CBI_V63_R2_ACCESS_KEY_ID: ${{ secrets.CBI_V63_R2_ACCESS_KEY_ID }}
+          CBI_V63_R2_SECRET_ACCESS_KEY: ${{ secrets.CBI_V63_R2_SECRET_ACCESS_KEY }}
+          CBI_V63_R2_PREFIX: ${{ secrets.CBI_V63_R2_PREFIX }}
+          CBI_V63_R2_REGION: ${{ secrets.CBI_V63_R2_REGION }}
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/v64-shadow-live"
+          mkdir -p "$RUNNER_TEMP/v64-shadow-live/v63"
+          python scripts/run_v63_render_r2_pvc_acceptance.py \
+            --expected-git-sha "$SHADOW_SHA" \
+            --output-dir "$RUNNER_TEMP/v64-shadow-live/v63"
+
+      - name: Run live v6.4 backup retention sequence
+        shell: bash
+        env:
+          CBI_V63_RENDER_DEPLOY_HOOK_URL: ${{ secrets.CBI_V63_RENDER_DEPLOY_HOOK_URL }}
+          CBI_V63_RENDER_RESTART_HOOK_URL: ${{ secrets.CBI_V63_RENDER_RESTART_HOOK_URL }}
+          CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}
+          CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from scripts.run_v63_render_r2_pvc_acceptance import _poll_pinned_health, _trigger_render_hook
+          from scripts.run_v64_backup_retention_acceptance import evaluate_backup_retention_acceptance
+          from unified_runtime.render_r2_acceptance_client_v63 import (
+              RenderR2AcceptanceClient,
+              RenderR2AcceptanceClientConfig,
+          )
+
+          expected = os.environ['SHADOW_SHA'].strip().lower()
+          run_id = os.environ['GITHUB_RUN_ID'].strip()
+          client = RenderR2AcceptanceClient(
+              RenderR2AcceptanceClientConfig(
+                  base_url=os.environ['CBI_V63_ACCEPTANCE_BASE_URL'],
+                  bearer_token=os.environ['CBI_V63_ACCEPTANCE_BEARER_TOKEN'],
+                  expected_git_sha=expected,
+                  timeout_seconds=30.0,
+              )
+          )
+
+          def backup_health() -> dict:
+              runtime = client.call_tool('get_runtime_health', {})
+              backup = runtime.get('backup_recovery')
+              if not isinstance(backup, dict):
+                  raise RuntimeError('BACKUP_RECOVERY_HEALTH_MISSING')
+              return {'backup_recovery': backup}
+
+          def public_identity() -> tuple[dict, str]:
+              health = client.read_health()
+              persistence = health.get('object_store_persistence')
+              if not isinstance(persistence, dict):
+                  raise RuntimeError('OBJECT_STORE_HEALTH_MISSING')
+              fingerprint = str(persistence.get('recovery_fingerprint_sha256') or '').lower()
+              if len(fingerprint) != 64 or any(ch not in '0123456789abcdef' for ch in fingerprint):
+                  raise RuntimeError('RECOVERY_FINGERPRINT_INVALID')
+              return health, fingerprint
+
+          _poll_pinned_health(client, timeout_seconds=600.0)
+          client.call_tool(
+              'start_investigation',
+              {
+                  'account': {
+                      'account_id': f'C-V64-SHADOW-BACKUP-{run_id}',
+                      'country': 'Synthetic',
+                      'name': f'Synthetic v6.4 Backup Shadow {run_id}',
+                  },
+                  'mode': 'EXHAUSTIVE',
+                  'history': {'events': []},
+                  'network_policy': {'closure_strategy': 'DECISION_SATURATION'},
+                  'idempotency_key': f'v64-shadow-backup-start-{run_id}',
+              },
+          )
+
+          pre = backup_health()
+          public_pre, source_fp = public_identity()
+          pre_status = pre['backup_recovery']
+          if pre_status.get('daily_snapshot_present') is not True:
+              raise RuntimeError('PREDEPLOY_DAILY_SNAPSHOT_NOT_PRESENT')
+          if pre_status.get('external_replication_verified') is not True:
+              raise RuntimeError('PREDEPLOY_EXTERNAL_REPLICATION_NOT_VERIFIED')
+          durable = pre_status.get('durable_latest')
+          if not isinstance(durable, dict) or durable.get('verified') is not True:
+              raise RuntimeError('PREDEPLOY_DURABLE_SNAPSHOT_NOT_VERIFIED')
+          locator = str(pre_status.get('external_snapshot_locator') or '')
+          if not locator:
+              raise RuntimeError('PREDEPLOY_EXTERNAL_LOCATOR_MISSING')
+          locator_binding = 'sha256:' + hashlib.sha256(locator.encode('utf-8')).hexdigest()
+
+          restart_id = _trigger_render_hook(
+              os.environ['CBI_V63_RENDER_RESTART_HOOK_URL'],
+              'V64_SHADOW_RESTART',
+          )
+          _poll_pinned_health(client, timeout_seconds=600.0)
+          restarted = backup_health()
+          _public_restart, restart_fp = public_identity()
+          if restart_fp != source_fp:
+              raise RuntimeError('RECOVERY_FINGERPRINT_CHANGED_AFTER_RESTART')
+
+          deploy_id = _trigger_render_hook(
+              os.environ['CBI_V63_RENDER_DEPLOY_HOOK_URL'],
+              'V64_SHADOW_DEPLOY',
+          )
+          if deploy_id == restart_id:
+              raise RuntimeError('DEPLOYMENT_ID_NOT_CHANGED')
+          _poll_pinned_health(client, timeout_seconds=600.0)
+          deployed = backup_health()
+          _public_deploy, deploy_fp = public_identity()
+          if deploy_fp != source_fp:
+              raise RuntimeError('RECOVERY_FINGERPRINT_CHANGED_AFTER_DEPLOY')
+
+          payload = {
+              'pre_deploy_health': pre,
+              'post_restart_health': restarted,
+              'post_deploy_health': deployed,
+              'production_source_snapshot_sha256': source_fp,
+              'backup_root_persistence_mode': str(pre_status.get('backup_root_persistence_mode') or ''),
+              'external_replication_verified': True,
+              'external_snapshot_locator': locator_binding,
+              'observed_at': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+          }
+          evidence = evaluate_backup_retention_acceptance(payload)
+          receipt = {
+              'schema': 'cbi.v64-shadow-backup-retention-live.v1',
+              'authority_scope': 'SHADOW_ONLY',
+              'production_authoritative': False,
+              'candidate_git_sha': expected,
+              'source_recovery_fingerprint_sha256': source_fp,
+              'restart_deployment_id_sha256': hashlib.sha256(restart_id.encode('utf-8')).hexdigest(),
+              'deploy_deployment_id_sha256': hashlib.sha256(deploy_id.encode('utf-8')).hexdigest(),
+              'external_locator_is_hashed': True,
+              'evidence': evidence,
+          }
+          out = Path(os.environ['RUNNER_TEMP']) / 'v64-shadow-live' / 'V64_SHADOW_BACKUP_RETENTION.json'
+          out.write_text(json.dumps(receipt, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'status': 'VERIFIED' if evidence.get('verified') is True else 'BLOCKED',
+              'authority_scope': 'SHADOW_ONLY',
+              'candidate_git_sha': expected,
+              'snapshot_id_before_deploy': evidence.get('snapshot_id_before_deploy'),
+              'backup_history_preserved_after_restart': evidence.get('backup_history_preserved_after_restart'),
+              'backup_history_preserved_after_deploy': evidence.get('backup_history_preserved_after_deploy'),
+              'blockers': evidence.get('blockers'),
+          }, sort_keys=True))
+          if evidence.get('verified') is not True:
+              raise SystemExit(1)
+          PY
+
+      - name: Verify production baseline after shadow activity
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+          echo "PRODUCTION_UNCHANGED_AFTER=$actual"
+
+      - name: Upload sanitized shadow acceptance receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-shadow-live-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/v64-shadow-live/**/*.json
