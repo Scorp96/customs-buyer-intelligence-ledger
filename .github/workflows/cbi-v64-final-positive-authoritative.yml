@@ -1,0 +1,112 @@
+name: CBI v6.4 final positive authoritative current-head
+
+on:
+  push:
+    branches:
+      - cbi-v64-final-positive-currenthead-20260910
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-final-positive-currenthead
+  cancel-in-progress: false
+
+jobs:
+  positive-authoritative:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout helper exact SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 8
+          persist-credentials: false
+
+      - name: Prove helper changes only acceptance harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "00ab77cb6b3ce569b25f147e0d25192c8d253a5c" HEAD
+          python - <<'PY'
+          import subprocess
+          expected = {
+              ".github/workflows/cbi-v64-final-positive-authoritative.yml",
+              "scripts/discover_v64_positive_route_candidate.py",
+              "scripts/run_v64_final_positive_authoritative.py",
+              "tests/test_v64_c279_full_runtime.py",
+          }
+          changed = set(subprocess.check_output([
+              "git", "diff", "--name-only",
+              "00ab77cb6b3ce569b25f147e0d25192c8d253a5c", "HEAD"
+          ], text=True).splitlines())
+          assert changed == expected, (changed, expected)
+          print("HELPER_RUNTIME_DELTA=NONE")
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Run exact-source isolated positive acceptance
+        id: acceptance
+        continue-on-error: true
+        env:
+          CBI_V64_DISCOVERY_BEARER: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import scripts.run_v64_final_positive_authoritative as runner
+          runner.CANDIDATE_SHA = "00ab77cb6b3ce569b25f147e0d25192c8d253a5c"
+          raise SystemExit(runner.main())
+          PY
+
+      - name: Validate sanitized artifact only
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "cbi-v64-final-positive"
+          artifact = root / "artifact"
+          files = {p.name for p in artifact.iterdir()} if artifact.is_dir() else set()
+          assert files == {"positive-authoritative-receipt.json"}, files
+          receipt = json.loads((artifact / "positive-authoritative-receipt.json").read_text(encoding="utf-8"))
+          assert receipt["candidate_runtime_sha"] == "00ab77cb6b3ce569b25f147e0d25192c8d253a5c"
+          assert receipt["plaintext_artifact_retained"] is False
+          assert receipt["source_runtime_mutation_detected"] is False
+          assert receipt["sends_message"] is False
+          assert receipt["production_before"] == receipt["production_after"]
+          serialized = json.dumps(receipt, sort_keys=True).lower()
+          for forbidden in ("payload_base64", "authorization", "bearer ", "maripaz@", "castellexport.com"):
+              assert forbidden not in serialized
+          print("POSITIVE_AUTHORITATIVE_ARTIFACT_PRIVACY=PASS")
+          PY
+
+      - name: Upload sanitized receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-final-positive-currenthead-${{ github.sha }}
+          path: ${{ runner.temp }}/cbi-v64-final-positive/artifact/positive-authoritative-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail closed unless authoritative positive passed
+        if: always()
+        shell: bash
+        env:
+          ACCEPTANCE_OUTCOME: ${{ steps.acceptance.outcome }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "cbi-v64-final-positive/artifact/positive-authoritative-receipt.json"
+          receipt = json.loads(path.read_text(encoding="utf-8"))
+          if os.environ.get("ACCEPTANCE_OUTCOME") != "success" or receipt.get("verified") is not True:
+              print("POSITIVE_AUTHORITATIVE_GATE=FAIL_CLOSED")
+              raise SystemExit(1)
+          print("POSITIVE_AUTHORITATIVE_GATE=GREEN")
+          PY
