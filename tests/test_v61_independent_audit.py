@@ -81,6 +81,13 @@ class V61IndependentAuditTests(unittest.TestCase):
             "bundle": bundle,
         })
 
+    def support_root_identity_for_promotion(self) -> None:
+        result = self.compile([
+            self.observation("identity.legal_entity", suffix="root-legal-entity-for-promotion", value={"legal_name": "Synthetic Audit Buyer"}),
+            self.observation("identity.ultimate_buyer", suffix="root-ultimate-buyer-for-promotion", value={"ultimate_buyer": "Synthetic Audit Buyer"}),
+        ], "BUNDLE-V64-ROOT-IDENTITY-FOR-PROMOTION")
+        self.assertEqual(result["rejected_count"], 0)
+
     def resolve_every_claim(self) -> tuple[dict, dict]:
         rows: list[dict] = []
         for index, claim_key in enumerate(DEFAULT_CLAIM_CATALOG):
@@ -244,6 +251,7 @@ class V61IndependentAuditTests(unittest.TestCase):
             "assessment": self.eligible_assessment(evidence),
         })
         self.assertEqual(eligible["stage"], "ANCHOR_ELIGIBLE")
+        self.support_root_identity_for_promotion()
         promoted = self.runtime.promote_anchor({
             "investigation_id": self.investigation_id,
             "peer_id": peer["peer_id"],
@@ -645,6 +653,7 @@ class V61IndependentAuditTests(unittest.TestCase):
             )
             for index, branch in enumerate(NETWORK_BRANCHES_V6)
         ], "BUNDLE-V61-PREMATURE-BRANCHES")
+        self.support_root_identity_for_promotion()
         self.runtime.promote_anchor({
             "investigation_id": self.investigation_id,
             "peer_id": peer["peer_id"],

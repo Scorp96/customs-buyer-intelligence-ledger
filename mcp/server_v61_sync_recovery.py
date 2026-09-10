@@ -213,6 +213,56 @@ _v61._server.TOOL_HANDLERS["get_runtime_contract"] = _contract_with_complete_inv
 _v61._server.TOOL_HANDLERS["get_runtime_health"] = _health_with_complete_inventory
 
 
+from mcp import server_v61_production as _production
+from unified_runtime.recovery_semantics_v63 import recover_prepared_v63_mutation
+from unified_runtime.wal_contract_v63 import V63_WAL_BINDINGS as _V63_WAL_BINDINGS
+
+_BASE_V63_RECONCILE_PREPARED = _v61._reconcile_prepared
+
+def _v63_normalized_durable_events(arguments, stored):
+    investigation_id = str(arguments.get("investigation_id") or "").strip()
+    if not investigation_id:
+        return []
+    try:
+        before = int(stored.get("state_version_before") or 0)
+        events = _RUNTIME.store.read(investigation_id)
+    except Exception:
+        return []
+    normalized = []
+    for event in events:
+        seq = int(event.get("seq") or 0)
+        if seq <= before:
+            continue
+        correlation = event.get("mutation_correlation")
+        payload = event.get("payload")
+        if not isinstance(correlation, dict) or not isinstance(payload, dict):
+            continue
+        row = dict(payload)
+        row["event_type"] = str(event.get("event_type") or "")
+        row["correlation_id"] = str(correlation.get("correlation_id") or "")
+        row["seq"] = seq
+        normalized.append(row)
+    return normalized
+
+def _v63_reconcile_prepared(tool_name, args, stored, request_hash, path):
+    if tool_name not in _V63_WAL_BINDINGS:
+        return _BASE_V63_RECONCILE_PREPARED(tool_name, args, stored, request_hash, path)
+    correlation_id = str(stored.get("mutation_correlation_id") or "").strip()
+    if not correlation_id:
+        return None
+    recovered = recover_prepared_v63_mutation(tool_name, args, expected_correlation_id=correlation_id, durable_events=_v63_normalized_durable_events(args, stored))
+    if recovered.get("status") != "RECOVERED":
+        return None
+    event_seq = int(recovered.get("event_seq") or 0)
+    raw_result = recovered.get("result")
+    if event_seq <= int(stored.get("state_version_before") or 0) or not isinstance(raw_result, dict):
+        return None
+    return _production._finish_reconciliation(tool_name, stored, request_hash, path, raw_result, event_seq, str(recovered.get("proof") or "V63_EXACT_CORRELATED_DURABLE_EVENT"))
+
+_v61._reconcile_prepared = _v63_reconcile_prepared
+_v61._AUTOMATIC_RECONCILIATION_TOOLS.update(_V63_WAL_BINDINGS)
+
+
 def main() -> int:
     return _base.main()
 

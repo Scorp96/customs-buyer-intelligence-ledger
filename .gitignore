@@ -23,6 +23,10 @@ env/
 private-golden/
 private-acceptance/
 
+# Private cloud-runtime migration bundles
+CBI_Cloud_Runtime_Export_*.tar.gz
+cbi-cloud-runtime/
+
 # Logs / temporary files
 *.log
 *.tmp

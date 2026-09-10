@@ -1,0 +1,24 @@
+{$CBI_MCP_DOMAIN} {
+    encode zstd gzip
+
+    @mcp path /mcp
+    reverse_proxy @mcp cbi:8787
+
+    # Health stays on the loopback-only container port. Do not expose Runtime
+    # diagnostics through the public TLS endpoint.
+    respond /healthz 404
+    respond /readyz 404
+    respond 404
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}

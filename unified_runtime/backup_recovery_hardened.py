@@ -123,6 +123,7 @@ class ProductionBackupRecoveryManager:
         pending_root: str | Path,
         host_root: str | Path,
         backup_root: str | Path | None = None,
+        external_replica: Any | None = None,
     ):
         self.source_session_root = Path(session_root).expanduser().resolve()
         self.canonical_root = Path(canonical_root).expanduser().resolve()
@@ -137,12 +138,14 @@ class ProductionBackupRecoveryManager:
         self.source_fingerprint = hashlib.sha256(
             str(self.source_session_root).encode("utf-8")
         ).hexdigest()[:12]
+        self.external_replica = external_replica
 
     @classmethod
     def from_runtime(
         cls,
         runtime: Any,
         backup_root: str | Path | None = None,
+        external_replica: Any | None = None,
     ) -> "ProductionBackupRecoveryManager":
         return cls(
             session_root=runtime.store.root,
@@ -150,6 +153,7 @@ class ProductionBackupRecoveryManager:
             pending_root=runtime.pending_journal.root,
             host_root=runtime._v6_queue().root,
             backup_root=backup_root,
+            external_replica=external_replica,
         )
 
     @classmethod
@@ -157,6 +161,7 @@ class ProductionBackupRecoveryManager:
         cls,
         session_root: str | Path,
         backup_root: str | Path | None = None,
+        external_replica: Any | None = None,
     ) -> "ProductionBackupRecoveryManager":
         root = Path(session_root).expanduser().resolve()
         explicit = root / ".runtime"
@@ -170,7 +175,39 @@ class ProductionBackupRecoveryManager:
             pending_root=pending,
             host_root=host,
             backup_root=backup_root,
+            external_replica=external_replica,
         )
+
+    def _replicate_snapshot_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        if self.external_replica is None:
+            return {
+                **result,
+                "external_replication_configured": False,
+                "external_replicated": False,
+                "external_snapshot_id": None,
+                "external_archive_sha256": None,
+                "external_snapshot_locator": None,
+                "backup_root_persistence_mode": "LOCAL_ONLY",
+            }
+        external = self.external_replica.replicate_snapshot(
+            Path(str(result.get("path") or "")),
+            str(result.get("snapshot_id") or ""),
+        )
+        if (
+            not isinstance(external, dict)
+            or external.get("verified") is not True
+            or external.get("snapshot_id") != result.get("snapshot_id")
+        ):
+            raise ValidationError("external backup replication verification failed")
+        return {
+            **result,
+            "external_replication_configured": True,
+            "external_replicated": True,
+            "external_snapshot_id": external.get("snapshot_id"),
+            "external_archive_sha256": external.get("archive_sha256"),
+            "external_snapshot_locator": external.get("manifest_key"),
+            "backup_root_persistence_mode": "OBJECT_STORE_REPLICATED",
+        }
 
     def _snapshot_dirs(self) -> list[Path]:
         if not self.backup_root.is_dir():
@@ -406,7 +443,8 @@ class ProductionBackupRecoveryManager:
         normalized = _normalize_reasons(reasons)
         self.backup_root.mkdir(parents=True, exist_ok=True)
         with exclusive_file_lock(self.backup_root / ".backup.lock", timeout_seconds=120.0):
-            return self._create_locked(normalized)
+            result = self._create_locked(normalized)
+        return self._replicate_snapshot_result(result)
 
     def _marker(self, prefix: str, key: str) -> Path:
         token = hashlib.sha256(
@@ -436,10 +474,12 @@ class ProductionBackupRecoveryManager:
         with exclusive_file_lock(self.backup_root / ".backup.lock", timeout_seconds=120.0):
             existing = self._marker_snapshot(marker)
             if existing is not None:
-                return existing
-            result = self._create_locked(["DAILY"])
-            _atomic_json(marker, {"snapshot_id": result["snapshot_id"], "created_at": result["created_at"], "utc_date": date})
-            return {**result, "marker": str(marker)}
+                local = existing
+            else:
+                result = self._create_locked(["DAILY"])
+                _atomic_json(marker, {"snapshot_id": result["snapshot_id"], "created_at": result["created_at"], "utc_date": date})
+                local = {**result, "marker": str(marker)}
+        return self._replicate_snapshot_result(local)
 
     def ensure_guard_snapshot(
         self,
@@ -455,15 +495,17 @@ class ProductionBackupRecoveryManager:
         with exclusive_file_lock(self.backup_root / ".backup.lock", timeout_seconds=120.0):
             existing = self._marker_snapshot(marker)
             if existing is not None:
-                return existing
-            result = self._create_locked(normalized)
-            _atomic_json(marker, {
-                "snapshot_id": result["snapshot_id"],
-                "created_at": result["created_at"],
-                "reasons": normalized,
-                "guard_key_sha256": hashlib.sha256(str(guard_key).encode("utf-8")).hexdigest(),
-            })
-            return {**result, "marker": str(marker)}
+                local = existing
+            else:
+                result = self._create_locked(normalized)
+                _atomic_json(marker, {
+                    "snapshot_id": result["snapshot_id"],
+                    "created_at": result["created_at"],
+                    "reasons": normalized,
+                    "guard_key_sha256": hashlib.sha256(str(guard_key).encode("utf-8")).hexdigest(),
+                })
+                local = {**result, "marker": str(marker)}
+        return self._replicate_snapshot_result(local)
 
     def status(self, *, validate_latest: bool = True) -> dict[str, Any]:
         latest = self.latest_valid_snapshot() if validate_latest else None
@@ -483,13 +525,49 @@ class ProductionBackupRecoveryManager:
                     latest = {"snapshot_id": dirs[0].name, "path": str(dirs[0]), "manifest_readable": False}
         date = datetime.now(timezone.utc).date().isoformat()
         daily = self._marker_snapshot(self._marker("daily", date)) if validate_latest else None
+        durable_latest = None
+        external_replication_verified = False
+        external_replication_error = None
+        if self.external_replica is not None:
+            try:
+                candidate = self.external_replica.latest_snapshot()
+                if isinstance(candidate, dict) and candidate.get("verified") is True:
+                    durable_latest = {
+                        "snapshot_id": candidate.get("snapshot_id"),
+                        "created_at": candidate.get("created_at"),
+                        "reasons": list(candidate.get("reasons") or []),
+                        "verified": True,
+                        "archive_sha256": candidate.get("archive_sha256"),
+                        "persistence_mode": candidate.get("persistence_mode") or "OBJECT_STORE_REPLICATED",
+                    }
+                    external_replication_verified = bool(durable_latest.get("snapshot_id"))
+                    external_snapshot_locator = candidate.get("manifest_key")
+                else:
+                    external_snapshot_locator = None
+            except Exception as exc:
+                external_snapshot_locator = None
+                external_replication_error = type(exc).__name__
+        else:
+            external_snapshot_locator = None
         return {
             "schema": "cbi.backup-status.v6.1",
             "source_session_root": str(self.source_session_root),
             "backup_root": str(self.backup_root),
             "latest": latest,
+            "durable_latest": durable_latest,
             "daily_snapshot_present": daily is not None if validate_latest else self._marker("daily", date).is_file(),
             "daily_snapshot": daily,
+            "external_replication_configured": self.external_replica is not None,
+            "external_replication_verified": external_replication_verified,
+            "external_snapshot_locator": external_snapshot_locator,
+            "external_replication_error": external_replication_error,
+            "backup_root_persistence_mode": (
+                "OBJECT_STORE_REPLICATED"
+                if external_replication_verified
+                else "LOCAL_ONLY_WITH_EXTERNAL_REPLICA_PENDING"
+                if self.external_replica is not None
+                else "LOCAL_ONLY"
+            ),
             "restore_overwrites_live_root": False,
         }
 

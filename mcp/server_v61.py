@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 
 from mcp import server as _server  # noqa: E402
 from unified_runtime import ValidationError  # noqa: E402
+from unified_runtime.production_tool_surface_v64 import MUTATION_WAL_AUDIT_TOOL_NAME  # noqa: E402
 from unified_runtime.resilience import exclusive_file_lock  # noqa: E402
 
 
@@ -196,6 +197,119 @@ def _journal_status() -> dict[str, Any]:
         "prepared_intents": prepared,
         "automatic_reexecution_of_unproven_prepared": False,
         "automatic_reconciliation_tools": sorted(_AUTOMATIC_RECONCILIATION_TOOLS),
+    }
+
+
+_WAL_AUDIT_ALLOWED_STATUSES = {"COMMITTED_ERROR", "COMMITTED"}
+_WAL_AUDIT_EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
+_WAL_AUDIT_PHONE_RE = re.compile(r"(?<!\w)\+?\d[\d\s().-]{6,}\d(?!\w)")
+_WAL_AUDIT_BEARER_RE = re.compile(r"(?i)\bBearer\s+[^\s,;]+")
+_WAL_AUDIT_SECRET_RE = re.compile(
+    r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password)\s*[:=]\s*[^\s,;]+"
+)
+_WAL_AUDIT_ERROR_CODE_RE = re.compile(r"^([A-Z][A-Z0-9_]{2,63})(?=[:\s]|$)")
+
+
+def _sanitize_wal_error_message(value: Any) -> str:
+    message = str(value or "").replace("\r", " ").replace("\n", " ")
+    message = _WAL_AUDIT_EMAIL_RE.sub("[REDACTED_EMAIL]", message)
+    message = _WAL_AUDIT_PHONE_RE.sub("[REDACTED_PHONE]", message)
+    message = _WAL_AUDIT_BEARER_RE.sub("Bearer [REDACTED]", message)
+    message = _WAL_AUDIT_SECRET_RE.sub(lambda match: f"{match.group(1)}=[REDACTED]", message)
+    message = " ".join(message.split())
+    return message[:240]
+
+
+def _wal_terminal_status(row: dict[str, Any]) -> str:
+    status = str(row.get("status") or "").upper()
+    if not status and isinstance(row.get("result"), dict):
+        return "COMMITTED"
+    return status
+
+
+def _mutation_wal_audit(arguments: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(arguments, dict):
+        raise ValidationError("mutation WAL audit arguments must be an object")
+    status_filter = str(arguments.get("status") or "COMMITTED_ERROR").strip().upper()
+    if status_filter not in _WAL_AUDIT_ALLOWED_STATUSES:
+        raise ValidationError("status must be COMMITTED_ERROR or COMMITTED")
+    limit = arguments.get("limit", 100)
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+        raise ValidationError("limit must be an integer from 1 to 500")
+
+    root = _journal_path()
+    invalid_record_count = 0
+    projected: list[dict[str, Any]] = []
+    if root.is_dir():
+        for path in sorted(root.glob("*.json")):
+            try:
+                row = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                invalid_record_count += 1
+                continue
+            if not isinstance(row, dict) or row.get("schema") != _WAL_SCHEMA:
+                invalid_record_count += 1
+                continue
+            terminal_status = _wal_terminal_status(row)
+            if terminal_status not in _WAL_AUDIT_ALLOWED_STATUSES:
+                if terminal_status not in {"PREPARED"}:
+                    invalid_record_count += 1
+                continue
+            if terminal_status != status_filter:
+                continue
+
+            error = row.get("error") if isinstance(row.get("error"), dict) else {}
+            raw_message = str(error.get("message") or "") if terminal_status == "COMMITTED_ERROR" else ""
+            safe_message = _sanitize_wal_error_message(raw_message)
+            code_match = _WAL_AUDIT_ERROR_CODE_RE.match(raw_message.strip())
+            raw_before = row.get("state_version_before")
+            state_before = (
+                int(raw_before)
+                if isinstance(raw_before, int) and not isinstance(raw_before, bool)
+                else None
+            )
+            projected.append(
+                {
+                    "tool": str(row.get("tool") or ""),
+                    "request_sha256": str(row.get("request_sha256") or ""),
+                    "state_version_before": state_before,
+                    "prepared_at": str(row.get("prepared_at") or ""),
+                    "completed_at": str(row.get("completed_at") or ""),
+                    "terminal_status": terminal_status,
+                    "error_type": (
+                        (str(error.get("type") or "") or None)
+                        if terminal_status == "COMMITTED_ERROR"
+                        else None
+                    ),
+                    "error_code": code_match.group(1) if code_match else None,
+                    "error_message": safe_message if terminal_status == "COMMITTED_ERROR" else "",
+                }
+            )
+
+    projected.sort(
+        key=lambda row: (
+            str(row.get("completed_at") or ""),
+            str(row.get("prepared_at") or ""),
+            str(row.get("tool") or ""),
+            str(row.get("request_sha256") or ""),
+        ),
+        reverse=True,
+    )
+    matched_count = len(projected)
+    rows = projected[:limit]
+    return {
+        "schema": "cbi.mutation-wal-audit.v6.4",
+        "read_only": True,
+        "status_filter": status_filter,
+        "limit": limit,
+        "count": len(rows),
+        "matched_count": matched_count,
+        "invalid_record_count": invalid_record_count,
+        "rows": rows,
+        "contains_raw_arguments": False,
+        "contains_idempotency_keys": False,
+        "contains_raw_results": False,
+        "contains_resource_snapshots": False,
     }
 
 
@@ -822,6 +936,36 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
             tool["description"] = "[LEGACY_COMPATIBILITY_ONLY] " + str(
                 tool.get("description") or ""
             )
+
+    tools.append(
+        {
+            "name": MUTATION_WAL_AUDIT_TOOL_NAME,
+            "description": (
+                "Read-only sanitized audit of terminal production mutation WAL records. "
+                "Returns allowlisted metadata only; never raw arguments, idempotency keys, "
+                "resource snapshots, or result payloads."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["COMMITTED_ERROR", "COMMITTED"],
+                        "default": "COMMITTED_ERROR",
+                        "description": "Terminal WAL status to audit; defaults to committed errors.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 500,
+                        "default": 100,
+                        "description": "Maximum number of latest matching sanitized rows to return.",
+                    },
+                },
+            },
+        }
+    )
     return tools
 
 
@@ -830,12 +974,126 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
 _server.tool_descriptors = hardened_tool_descriptors
 _server.TOOL_HANDLERS["get_runtime_contract"] = _contract_with_adapter_wal
 _server.TOOL_HANDLERS["get_runtime_health"] = _health_with_adapter_wal
+_server.TOOL_HANDLERS[MUTATION_WAL_AUDIT_TOOL_NAME] = _mutation_wal_audit
 for _name in _MUTATING_TOOLS:
     if _name in _ORIGINAL_HANDLERS:
         _server.TOOL_HANDLERS[_name] = _wrap_handler(
             _name,
             _ORIGINAL_HANDLERS[_name],
         )
+
+
+from unified_runtime.mcp_schema_v63 import build_v63_tool_descriptors as _build_v63_tool_descriptors
+from unified_runtime.existing_production_store_backend_v63 import ExistingProductionStoreBackend
+from unified_runtime.runtime_durable_backend_v63 import bind_v63_runtime_durable_backend
+
+_BASE_V63_TOOL_DESCRIPTORS = _server.tool_descriptors
+
+def _v63_tool_descriptors():
+    tools = _BASE_V63_TOOL_DESCRIPTORS()
+    names = {str(item.get('name') or '') for item in tools if isinstance(item, dict)}
+    for item in _build_v63_tool_descriptors():
+        if str(item.get('name') or '') not in names:
+            tools.append(item)
+    return tools
+
+_V63_DURABLE_BACKEND = ExistingProductionStoreBackend()
+bind_v63_runtime_durable_backend(_server.RUNTIME, _V63_DURABLE_BACKEND)
+
+def _v63_get_product_profiles_handler(arguments):
+    return _server.RUNTIME.get_product_profiles(arguments)
+
+def _v63_get_capability_profile_handler(arguments):
+    return _server.RUNTIME.get_capability_profile(arguments)
+
+def _v63_evaluate_capability_fit_handler(arguments):
+    return _server.RUNTIME.evaluate_capability_fit(arguments)
+
+def _v63_assess_candidate_researchability_handler(arguments):
+    return _server.RUNTIME.assess_candidate_researchability(arguments)
+
+def _v63_rank_candidate_research_queue_handler(arguments):
+    return _server.RUNTIME.rank_candidate_research_queue(arguments)
+
+def _v63_preview_customs_seed_expansion_handler(arguments):
+    return _server.RUNTIME.preview_customs_seed_expansion(arguments)
+
+def _v63_plan_candidate_expansion_handler(arguments):
+    return _server.RUNTIME.plan_candidate_expansion(arguments)
+
+def _v63_evaluate_relative_opportunity_handler(arguments):
+    return _server.RUNTIME.evaluate_relative_opportunity(arguments)
+
+def _v63_plan_contact_exhaustion_handler(arguments):
+    return _server.RUNTIME.plan_contact_exhaustion(arguments)
+
+def _v63_evaluate_expansion_saturation_handler(arguments):
+    return _server.RUNTIME.evaluate_expansion_saturation(arguments)
+
+def _v63_project_legacy_peer_receipt_handler(arguments):
+    return _server.RUNTIME.project_legacy_peer_receipt(arguments)
+
+def _v63_preview_recursive_anchor_expansion_handler(arguments):
+    return _server.RUNTIME.preview_recursive_anchor_expansion(arguments)
+
+def _v63_evaluate_route_reuse_handler(arguments):
+    return _server.RUNTIME.evaluate_route_reuse(arguments)
+
+def _v63_get_portfolio_metrics_handler(arguments):
+    return _server.RUNTIME.get_portfolio_metrics(arguments)
+
+def _v63_schedule_expansion_research_handler(arguments):
+    return _server.RUNTIME.schedule_expansion_research(arguments)
+
+def _v63_plan_local_outreach_handler(arguments):
+    return _server.RUNTIME.plan_local_outreach(arguments)
+
+def _v63_plan_local_context_resolution_handler(arguments):
+    return _server.RUNTIME.plan_local_context_resolution(arguments)
+
+def _v63_evaluate_sales_readiness_handler(arguments):
+    return _server.RUNTIME.evaluate_sales_readiness(arguments)
+
+def _v63_derive_demand_anchor_handler(arguments):
+    return _server.RUNTIME.derive_demand_anchor(arguments)
+
+def _v63_evaluate_product_opportunity_handler(arguments):
+    return _server.RUNTIME.evaluate_product_opportunity(arguments)
+
+def _v63_append_candidate_discovery_handler(arguments):
+    return _invoke_mutation('append_candidate_discovery', _server.RUNTIME.append_candidate_discovery, arguments)
+
+def _v63_create_product_opportunity_handler(arguments):
+    return _invoke_mutation('create_product_opportunity', _server.RUNTIME.create_product_opportunity, arguments)
+
+def _v63_promote_opportunity_anchor_handler(arguments):
+    return _invoke_mutation('promote_opportunity_anchor', _server.RUNTIME.promote_opportunity_anchor, arguments)
+
+_MUTATING_TOOLS.update({'append_candidate_discovery', 'promote_opportunity_anchor', 'create_product_opportunity'})
+_server.tool_descriptors = _v63_tool_descriptors
+_server.TOOL_HANDLERS['get_product_profiles'] = _v63_get_product_profiles_handler
+_server.TOOL_HANDLERS['get_capability_profile'] = _v63_get_capability_profile_handler
+_server.TOOL_HANDLERS['evaluate_capability_fit'] = _v63_evaluate_capability_fit_handler
+_server.TOOL_HANDLERS['assess_candidate_researchability'] = _v63_assess_candidate_researchability_handler
+_server.TOOL_HANDLERS['rank_candidate_research_queue'] = _v63_rank_candidate_research_queue_handler
+_server.TOOL_HANDLERS['preview_customs_seed_expansion'] = _v63_preview_customs_seed_expansion_handler
+_server.TOOL_HANDLERS['plan_candidate_expansion'] = _v63_plan_candidate_expansion_handler
+_server.TOOL_HANDLERS['evaluate_relative_opportunity'] = _v63_evaluate_relative_opportunity_handler
+_server.TOOL_HANDLERS['plan_contact_exhaustion'] = _v63_plan_contact_exhaustion_handler
+_server.TOOL_HANDLERS['evaluate_expansion_saturation'] = _v63_evaluate_expansion_saturation_handler
+_server.TOOL_HANDLERS['project_legacy_peer_receipt'] = _v63_project_legacy_peer_receipt_handler
+_server.TOOL_HANDLERS['preview_recursive_anchor_expansion'] = _v63_preview_recursive_anchor_expansion_handler
+_server.TOOL_HANDLERS['evaluate_route_reuse'] = _v63_evaluate_route_reuse_handler
+_server.TOOL_HANDLERS['get_portfolio_metrics'] = _v63_get_portfolio_metrics_handler
+_server.TOOL_HANDLERS['schedule_expansion_research'] = _v63_schedule_expansion_research_handler
+_server.TOOL_HANDLERS['plan_local_outreach'] = _v63_plan_local_outreach_handler
+_server.TOOL_HANDLERS['plan_local_context_resolution'] = _v63_plan_local_context_resolution_handler
+_server.TOOL_HANDLERS['evaluate_sales_readiness'] = _v63_evaluate_sales_readiness_handler
+_server.TOOL_HANDLERS['derive_demand_anchor'] = _v63_derive_demand_anchor_handler
+_server.TOOL_HANDLERS['evaluate_product_opportunity'] = _v63_evaluate_product_opportunity_handler
+_server.TOOL_HANDLERS['append_candidate_discovery'] = _v63_append_candidate_discovery_handler
+_server.TOOL_HANDLERS['create_product_opportunity'] = _v63_create_product_opportunity_handler
+_server.TOOL_HANDLERS['promote_opportunity_anchor'] = _v63_promote_opportunity_anchor_handler
 
 
 def main() -> int:
