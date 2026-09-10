@@ -90,6 +90,8 @@ def build_recovery_self_restore_proof(
     the process.
     """
 
+    if persistence is None:
+        raise AuthoritativeSourceEvidenceError("production object store is not bound")
     if isinstance(expected_generation, bool) or not isinstance(expected_generation, int) or expected_generation < 0:
         raise AuthoritativeSourceEvidenceError("expected generation must be a non-negative integer")
     expected_fp = _require_sha256(
