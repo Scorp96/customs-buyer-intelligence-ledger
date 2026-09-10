@@ -88,6 +88,9 @@ _LIVE_ROOT = _EXPECTED_ROOT.parent
 # production module creates the UnifiedRuntime at import time and therefore must
 # observe CBI_SESSION_ROOT; acceptance pin failures must occur before it starts.
 from mcp import server_v61_backup_recovery as _production  # noqa: E402
+from mcp.authoritative_source_evidence_v64 import (  # noqa: E402
+    install_remote_authoritative_source_evidence_tool,
+)
 from mcp.chatgpt_oauth_transport import main as _remote_transport_main  # noqa: E402
 from mcp.object_store_recovery_v63 import (  # noqa: E402
     RecoveryObjectStoreStateManagerV63,
@@ -102,6 +105,13 @@ _BASE_DISPATCH = _production._v61._server.handle
 _PERSISTENCE = RecoveryObjectStoreStateManagerV63.from_env()
 if _PERSISTENCE is not None:
     _PERSISTENCE.attach_existing(_LIVE_ROOT)
+
+install_remote_authoritative_source_evidence_tool(
+    server_module=_production._v61._server,
+    persistence=_PERSISTENCE,
+    runtime=_RUNTIME,
+    live_root=_LIVE_ROOT,
+)
 
 
 def _sync_after_handler() -> None:
