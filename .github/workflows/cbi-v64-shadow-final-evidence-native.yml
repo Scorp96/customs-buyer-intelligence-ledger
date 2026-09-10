@@ -1,0 +1,237 @@
+name: CBI v6.4 final isolated shadow backup evidence native
+
+on:
+  push:
+    branches:
+      - cbi-v64-shadow-final-evidence-native-artifacts-20260910
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  assemble-shadow-evidence:
+    runs-on: ubuntu-latest
+    env:
+      SHADOW_SHA: 8eb81621e4d201ce61958170e33883a27016e198
+      PRODUCTION_SHA: 58c3120c534d83f7e119701504c38be58ca9e475
+    steps:
+      - name: Checkout exact shadow runtime
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8eb81621e4d201ce61958170e33883a27016e198
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Verify production baseline before assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+          echo "PRODUCTION_UNCHANGED_BEFORE=$actual"
+
+      - name: Download pre-restart evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cbi-v64-shadow-pre-34435228054
+          path: ${{ runner.temp }}/v64-shadow-final/pre
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: '34435228054'
+
+      - name: Download post-restart evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cbi-v64-shadow-postrestart-34435405582
+          path: ${{ runner.temp }}/v64-shadow-final/postrestart
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: '34435405582'
+
+      - name: Download post-deploy evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cbi-v64-shadow-postdeploy-34435539445
+          path: ${{ runner.temp }}/v64-shadow-final/postdeploy
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: '34435539445'
+
+      - name: Assemble and evaluate exact Task 7 evidence
+        shell: bash
+        env:
+          CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}
+          CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from copy import deepcopy
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from scripts.run_v64_backup_retention_acceptance import evaluate_backup_retention_acceptance
+          from unified_runtime.render_r2_acceptance_client_v63 import (
+              RenderR2AcceptanceClient,
+              RenderR2AcceptanceClientConfig,
+          )
+
+          root = Path(os.environ['RUNNER_TEMP']) / 'v64-shadow-final'
+
+          def one_json(folder: str) -> dict:
+              files = sorted((root / folder).rglob('*.json'))
+              if len(files) != 1:
+                  raise SystemExit(f'ARTIFACT_JSON_CARDINALITY_INVALID:{folder}:{len(files)}')
+              value = json.loads(files[0].read_text(encoding='utf-8'))
+              if not isinstance(value, dict):
+                  raise SystemExit(f'ARTIFACT_JSON_NOT_OBJECT:{folder}')
+              return value
+
+          pre = one_json('pre')
+          restarted = one_json('postrestart')
+          deployed = one_json('postdeploy')
+          expected = os.environ['SHADOW_SHA']
+
+          expected_schemas = {
+              'pre': 'cbi.v64-shadow-backup-pre.v1',
+              'postrestart': 'cbi.v64-shadow-backup-postrestart.v1',
+              'postdeploy': 'cbi.v64-shadow-backup-postdeploy.v1',
+          }
+          for label, row in (('pre', pre), ('postrestart', restarted), ('postdeploy', deployed)):
+              if row.get('schema') != expected_schemas[label]:
+                  raise SystemExit(f'ARTIFACT_SCHEMA_MISMATCH:{label}')
+              if row.get('authority_scope') != 'SHADOW_ONLY' or row.get('production_authoritative') is not False:
+                  raise SystemExit(f'AUTHORITY_SCOPE_INVALID:{label}')
+              if row.get('candidate_git_sha') != expected:
+                  raise SystemExit(f'CANDIDATE_SHA_MISMATCH:{label}')
+
+          def backup(row: dict) -> dict:
+              health = row.get('health')
+              status = health.get('backup_recovery') if isinstance(health, dict) else None
+              if not isinstance(status, dict):
+                  raise SystemExit('BACKUP_STATUS_MISSING')
+              return status
+
+          pre_b = backup(pre)
+          restart_b = backup(restarted)
+          deploy_b = backup(deployed)
+          pre_d = pre_b.get('durable_latest') or {}
+          restart_d = restart_b.get('durable_latest') or {}
+          deploy_d = deploy_b.get('durable_latest') or {}
+
+          snapshot_id = str(pre_d.get('snapshot_id') or '')
+          archive_sha = str(pre_d.get('archive_sha256') or '').lower()
+          recovery_fp = str(pre.get('recovery_fingerprint_sha256') or '').lower()
+          locator_sha = str(pre.get('external_snapshot_locator_sha256') or '').lower()
+          if not snapshot_id:
+              raise SystemExit('PRE_SNAPSHOT_ID_MISSING')
+          for label, value in (('archive', archive_sha), ('recovery', recovery_fp), ('locator', locator_sha)):
+              if len(value) != 64 or any(ch not in '0123456789abcdef' for ch in value):
+                  raise SystemExit(f'{label.upper()}_SHA_INVALID')
+          if restart_d.get('snapshot_id') != snapshot_id or deploy_d.get('snapshot_id') != snapshot_id:
+              raise SystemExit('SNAPSHOT_ID_NOT_STABLE')
+          if str(restart_d.get('archive_sha256') or '').lower() != archive_sha or str(deploy_d.get('archive_sha256') or '').lower() != archive_sha:
+              raise SystemExit('ARCHIVE_SHA_NOT_STABLE')
+          if restarted.get('recovery_fingerprint_sha256') != recovery_fp or deployed.get('recovery_fingerprint_sha256') != recovery_fp:
+              raise SystemExit('RECOVERY_FINGERPRINT_NOT_STABLE')
+          generation = pre.get('object_state_generation')
+          if restarted.get('restore_generation') != generation or deployed.get('restore_generation') != generation:
+              raise SystemExit('RESTORE_GENERATION_NOT_BOUND_TO_PRE_STATE')
+
+          # Read current shadow health only to recover the actual locator in memory.
+          # The locator itself is never persisted in the final artifact.
+          client = RenderR2AcceptanceClient(
+              RenderR2AcceptanceClientConfig(
+                  base_url=os.environ['CBI_V63_ACCEPTANCE_BASE_URL'],
+                  bearer_token=os.environ['CBI_V63_ACCEPTANCE_BEARER_TOKEN'],
+                  expected_git_sha=expected,
+                  timeout_seconds=30.0,
+              )
+          )
+          client.read_health()
+          current = client.call_tool('get_runtime_health', {})
+          current_backup = current.get('backup_recovery')
+          if not isinstance(current_backup, dict):
+              raise SystemExit('CURRENT_BACKUP_HEALTH_MISSING')
+          locator = str(current_backup.get('external_snapshot_locator') or '')
+          if not locator:
+              raise SystemExit('CURRENT_EXTERNAL_LOCATOR_MISSING')
+          if hashlib.sha256(locator.encode('utf-8')).hexdigest() != locator_sha:
+              raise SystemExit('EXTERNAL_LOCATOR_BINDING_CHANGED')
+
+          mode = str(pre_b.get('backup_root_persistence_mode') or '')
+          payload = {
+              'pre_deploy_health': pre['health'],
+              'post_restart_health': restarted['health'],
+              'post_deploy_health': deployed['health'],
+              # Shadow-only source binding: the actually observed immutable backup archive.
+              # This field name is inherited from the canonical evaluator; authority is
+              # explicitly constrained by the outer SHADOW_ONLY receipt below.
+              'production_source_snapshot_sha256': archive_sha,
+              'backup_root_persistence_mode': mode,
+              'external_snapshot_locator': locator,
+              'observed_at': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+          }
+          evidence = evaluate_backup_retention_acceptance(payload)
+          if evidence.get('verified') is not True:
+              raise SystemExit('TASK7_NOT_VERIFIED:' + ','.join(evidence.get('blockers') or []))
+
+          safe_evidence = deepcopy(evidence)
+          safe_evidence.pop('external_snapshot_locator', None)
+          safe_evidence['external_snapshot_locator_sha256'] = locator_sha
+          final = {
+              'schema': 'cbi.v64-shadow-live-backup-retention-evidence.v1',
+              'authority_scope': 'SHADOW_ONLY',
+              'production_authoritative': False,
+              'candidate_git_sha': expected,
+              'production_branch_sha_observed_before': os.environ['PRODUCTION_SHA'],
+              'task7_verified': True,
+              'source_binding_semantics': 'SHADOW_IMMUTABLE_DURABLE_ARCHIVE_SHA256',
+              'snapshot_id': snapshot_id,
+              'archive_sha256': archive_sha,
+              'recovery_fingerprint_sha256': recovery_fp,
+              'object_state_generation': generation,
+              'post_restart_restore_generation': restarted.get('restore_generation'),
+              'post_deploy_restore_generation': deployed.get('restore_generation'),
+              'stage_runs': {
+                  'pre': 34435228054,
+                  'post_restart': 34435405582,
+                  'post_deploy': 34435539445,
+              },
+              'task7_evidence': safe_evidence,
+          }
+          out = root / 'CBI_V64_SHADOW_LIVE_BACKUP_RETENTION_EVIDENCE.json'
+          out.write_text(json.dumps(final, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'status': 'SHADOW_TASK7_VERIFIED',
+              'task7_verified': True,
+              'snapshot_id': snapshot_id,
+              'object_state_generation': generation,
+              'post_restart_restore_generation': restarted.get('restore_generation'),
+              'post_deploy_restore_generation': deployed.get('restore_generation'),
+          }, sort_keys=True))
+          PY
+
+      - name: Verify production baseline after assembly
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test "$actual" = "$PRODUCTION_SHA"
+          echo "PRODUCTION_UNCHANGED_AFTER=$actual"
+
+      - name: Upload final sanitized shadow evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v64-shadow-live-backup-final-${{ github.run_id }}
+          path: ${{ runner.temp }}/v64-shadow-final/CBI_V64_SHADOW_LIVE_BACKUP_RETENTION_EVIDENCE.json
+          if-no-files-found: error
+          retention-days: 14
