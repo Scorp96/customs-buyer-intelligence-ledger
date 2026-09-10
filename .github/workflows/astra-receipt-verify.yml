@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: Scorp96/customs-buyer-intelligence-ledger
-          ref: 44f99801f3df1045d1008bd9581b6d238751bfb3
+          ref: 4808bfefb79ff4a87b0934aedad73a6ebba00ce3
           persist-credentials: false
 
       - name: Set up Python
