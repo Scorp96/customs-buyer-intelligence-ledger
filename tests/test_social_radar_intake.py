@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "investigate-customs-buyers" / "scripts"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "social_radar"
 sys.path.insert(0, str(SCRIPTS))
 
 from social_radar_intake import (  # noqa: E402
@@ -82,6 +83,10 @@ def _base_bundle(stage: str = "SOCIAL", platform: str = "INSTAGRAM") -> dict:
     }
 
 
+def _fixture(name: str) -> dict:
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
 class SocialRadarIntakeTests(unittest.TestCase):
     def test_instagram_only_bundle_normalizes(self) -> None:
         result = validate_and_normalize_social_radar_candidate(_base_bundle())
@@ -126,6 +131,27 @@ class SocialRadarIntakeTests(unittest.TestCase):
         before = copy.deepcopy(bundle)
         validate_and_normalize_social_radar_candidate(bundle)
         self.assertEqual(bundle, before)
+
+    def test_all_cross_project_fixtures_normalize(self) -> None:
+        expected = {
+            "instagram_candidate.json": "SOCIAL",
+            "tiktok_candidate.json": "SOCIAL",
+            "radar_candidate.json": "GLOBAL_RADAR",
+            "mixed_candidate.json": "SOCIAL_AND_RADAR",
+        }
+        for name, stage in expected.items():
+            with self.subTest(name=name):
+                result = validate_and_normalize_social_radar_candidate(_fixture(name))
+                self.assertEqual(result["source_stage"], stage)
+                self.assertGreaterEqual(len(result["evidence"]), 1)
+                self.assertRegex(result["candidate_fingerprint"], r"^[0-9a-f]{64}$")
+
+    def test_tiktok_use_case_inference_is_not_promoted_to_direct_evidence(self) -> None:
+        result = validate_and_normalize_social_radar_candidate(_fixture("tiktok_candidate.json"))
+        inferred_claims = {row["claim"] for row in result["inferences"]}
+        direct_values = {str(row["value"]) for row in result["evidence"]}
+        self.assertTrue(any("purchase history is not verified" in claim for claim in inferred_claims))
+        self.assertFalse(any("purchase history" in value.lower() for value in direct_values))
 
 
 if __name__ == "__main__":
