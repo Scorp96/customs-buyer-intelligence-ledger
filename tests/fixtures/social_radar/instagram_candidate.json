@@ -7,7 +7,7 @@
   "profiles": [{"platform": "INSTAGRAM", "profile_id": "demo-sign", "url": "https://instagram.example/demo-sign"}],
   "evidence": [{"evidence_id": "ig-ev-1", "evidence_type": "BIO_TEXT", "value": "PVC sheet and advertising material distributor", "source_url": "https://instagram.example/demo-sign", "source_platform": "INSTAGRAM", "observed_at": "2026-09-11T06:45:00Z", "confidence": 1.0}],
   "inferences": [{"inference_id": "ig-inf-1", "claim": "Likely recurring consumer of printable PVC sheet", "confidence": 0.78, "basis_evidence_ids": ["ig-ev-1"], "reason_code": "SIGN_SUPPLY_USE_CASE"}],
-  "routes": [{"route_type": "EMAIL", "route_value": "sales@example.test", "source": "https://instagram.example/demo-sign", "confidence": 1.0, "purpose": "SALES", "validation_status": "PUBLIC_OBSERVED"}],
+  "routes": [{"route_type": "EMAIL", "route_value": "sales@example.invalid", "source": "https://instagram.example/demo-sign", "confidence": 1.0, "purpose": "SALES", "validation_status": "PUBLIC_OBSERVED"}],
   "discovery": {"market": "Brazil", "language": "pt-BR", "keyword": "comunicacao visual pvc", "semantic_cluster": "SIGN_DISPLAY", "source_platform": "INSTAGRAM", "graph_depth": 1},
   "source_score": {"grade": "B+", "score": 81.0, "components": {"buyer_fit": 24.0, "product_relevance": 19.0}},
   "recommended_cbi_priority": "HIGH"
