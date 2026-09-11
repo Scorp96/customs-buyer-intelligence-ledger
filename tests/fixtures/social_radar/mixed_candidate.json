@@ -14,7 +14,7 @@
   ],
   "inferences": [{"inference_id": "mix-inf-1", "claim": "High-priority recurring sign-material buyer candidate; trade purchase history remains unverified", "confidence": 0.82, "basis_evidence_ids": ["mix-ev-1", "mix-ev-2"], "reason_code": "SOCIAL_PLUS_RADAR_CONVERGENCE"}],
   "routes": [
-    {"route_type": "EMAIL", "route_value": "commercial@example.test", "source": "https://instagram.example/demo-visual", "confidence": 1.0, "purpose": "COMMERCIAL", "validation_status": "PUBLIC_OBSERVED"},
+    {"route_type": "EMAIL", "route_value": "commercial@example.invalid", "source": "https://instagram.example/demo-visual", "confidence": 1.0, "purpose": "COMMERCIAL", "validation_status": "PUBLIC_OBSERVED"},
     {"route_type": "WHATSAPP", "route_value": "+5500000000000", "source": "https://instagram.example/demo-visual", "confidence": 1.0, "purpose": "COMMERCIAL", "validation_status": "PUBLIC_OBSERVED"}
   ],
   "discovery": {"market": "Brazil", "language": "pt-BR", "keyword": "placa pvc impressao uv", "semantic_cluster": "SIGN_DISPLAY", "source_platform": "SEARCH_TREND", "graph_depth": 1, "trend_window": "30d"},
