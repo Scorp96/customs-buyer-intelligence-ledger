@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cbi.social-radar-candidate.v1",
+  "title": "CBI Social and Global Radar Candidate Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "observed_at",
+    "source_stage",
+    "canonical_identity",
+    "profiles",
+    "evidence",
+    "inferences",
+    "routes",
+    "discovery",
+    "source_score",
+    "recommended_cbi_priority"
+  ],
+  "properties": {
+    "schema_version": {"const": "cbi.social-radar-candidate.v1"},
+    "candidate_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "source_stage": {"enum": ["SOCIAL", "GLOBAL_RADAR", "SOCIAL_AND_RADAR"]},
+    "canonical_identity": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["display_name", "normalized_name", "entity_type", "confidence"],
+      "properties": {
+        "display_name": {"type": "string", "minLength": 1},
+        "normalized_name": {"type": "string", "minLength": 1},
+        "entity_type": {"enum": ["COMPANY", "PERSON", "CREATOR", "UNKNOWN"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["platform", "profile_id", "url"],
+        "properties": {
+          "platform": {"enum": ["INSTAGRAM", "TIKTOK", "WEB", "B2B", "INDUSTRY_MEDIA", "SEARCH_TREND"]},
+          "profile_id": {"type": "string"},
+          "url": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["evidence_id", "evidence_type", "value", "source_url", "source_platform", "observed_at", "confidence"],
+        "properties": {
+          "evidence_id": {"type": "string", "minLength": 1},
+          "evidence_type": {"type": "string", "minLength": 1},
+          "value": {},
+          "source_url": {"type": "string", "minLength": 1},
+          "source_platform": {"enum": ["INSTAGRAM", "TIKTOK", "WEB", "B2B", "INDUSTRY_MEDIA", "SEARCH_TREND"]},
+          "observed_at": {"type": "string", "format": "date-time"},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "inferences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["inference_id", "claim", "confidence", "basis_evidence_ids", "reason_code"],
+        "properties": {
+          "inference_id": {"type": "string", "minLength": 1},
+          "claim": {"type": "string", "minLength": 1},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "basis_evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "reason_code": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "routes": {"type": "array", "items": {"type": "object"}},
+    "discovery": {"type": "object"},
+    "source_score": {"type": "object"},
+    "recommended_cbi_priority": {"enum": ["LOW", "MEDIUM", "HIGH", "URGENT_RESEARCH"]}
+  }
+}
