@@ -1,0 +1,14 @@
+{
+  "schema_version": "cbi.social-radar-candidate.v1",
+  "candidate_id": "fixture-radar-wpc",
+  "observed_at": "2026-09-11T06:47:00Z",
+  "source_stage": "GLOBAL_RADAR",
+  "canonical_identity": {"display_name": "Demo WPC Distributor", "normalized_name": "demo wpc distributor", "entity_type": "COMPANY", "confidence": 0.71},
+  "profiles": [],
+  "evidence": [{"evidence_id": "radar-ev-1", "evidence_type": "RISING_QUERY", "value": "painel ripado externo wpc distributor", "source_url": "https://search-trend.example/query", "source_platform": "SEARCH_TREND", "observed_at": "2026-09-11T06:47:00Z", "confidence": 0.9}],
+  "inferences": [{"inference_id": "radar-inf-1", "claim": "Commercial demand signal merits company-level verification", "confidence": 0.63, "basis_evidence_ids": ["radar-ev-1"], "reason_code": "LOCAL_LANGUAGE_RISING_TERM"}],
+  "routes": [{"route_type": "WEBSITE", "route_value": "https://wpc.example", "source": "https://search-trend.example/query", "confidence": 0.8, "purpose": "GENERAL_BUSINESS", "validation_status": "DISCOVERED"}],
+  "discovery": {"market": "Brazil", "language": "pt-BR", "keyword": "painel ripado externo wpc", "semantic_cluster": "WPC_CLADDING", "source_platform": "SEARCH_TREND", "graph_depth": null, "trend_window": "30d"},
+  "source_score": {"grade": "B", "score": 62.0, "components": {"product_relevance": 18.0, "commercial_intent": 11.0}},
+  "recommended_cbi_priority": "MEDIUM"
+}

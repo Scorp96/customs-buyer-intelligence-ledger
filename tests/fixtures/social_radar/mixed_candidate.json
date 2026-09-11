@@ -1,0 +1,23 @@
+{
+  "schema_version": "cbi.social-radar-candidate.v1",
+  "candidate_id": "fixture-mixed-signage",
+  "observed_at": "2026-09-11T06:48:00Z",
+  "source_stage": "SOCIAL_AND_RADAR",
+  "canonical_identity": {"display_name": "Demo Visual Communication", "normalized_name": "demo visual communication", "entity_type": "COMPANY", "confidence": 0.9},
+  "profiles": [
+    {"platform": "INSTAGRAM", "profile_id": "demo-visual", "url": "https://instagram.example/demo-visual"},
+    {"platform": "TIKTOK", "profile_id": "demo-visual", "url": "https://tiktok.example/@demo-visual"}
+  ],
+  "evidence": [
+    {"evidence_id": "mix-ev-1", "evidence_type": "BIO_TEXT", "value": "Visual communication materials, UV printing and signage boards", "source_url": "https://instagram.example/demo-visual", "source_platform": "INSTAGRAM", "observed_at": "2026-09-11T06:48:00Z", "confidence": 1.0},
+    {"evidence_id": "mix-ev-2", "evidence_type": "RISING_QUERY", "value": "placa pvc impressao uv", "source_url": "https://search-trend.example/query2", "source_platform": "SEARCH_TREND", "observed_at": "2026-09-11T06:48:00Z", "confidence": 0.88}
+  ],
+  "inferences": [{"inference_id": "mix-inf-1", "claim": "High-priority recurring sign-material buyer candidate; trade purchase history remains unverified", "confidence": 0.82, "basis_evidence_ids": ["mix-ev-1", "mix-ev-2"], "reason_code": "SOCIAL_PLUS_RADAR_CONVERGENCE"}],
+  "routes": [
+    {"route_type": "EMAIL", "route_value": "commercial@example.test", "source": "https://instagram.example/demo-visual", "confidence": 1.0, "purpose": "COMMERCIAL", "validation_status": "PUBLIC_OBSERVED"},
+    {"route_type": "WHATSAPP", "route_value": "+5500000000000", "source": "https://instagram.example/demo-visual", "confidence": 1.0, "purpose": "COMMERCIAL", "validation_status": "PUBLIC_OBSERVED"}
+  ],
+  "discovery": {"market": "Brazil", "language": "pt-BR", "keyword": "placa pvc impressao uv", "semantic_cluster": "SIGN_DISPLAY", "source_platform": "SEARCH_TREND", "graph_depth": 1, "trend_window": "30d"},
+  "source_score": {"grade": "A-CANDIDATE", "score": 89.0, "components": {"buyer_fit": 25.0, "product_relevance": 20.0, "commercial_intent": 14.0}},
+  "recommended_cbi_priority": "URGENT_RESEARCH"
+}

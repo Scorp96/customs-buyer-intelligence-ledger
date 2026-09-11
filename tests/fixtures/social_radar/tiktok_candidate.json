@@ -1,0 +1,14 @@
+{
+  "schema_version": "cbi.social-radar-candidate.v1",
+  "candidate_id": "fixture-tiktok-cabinet",
+  "observed_at": "2026-09-11T06:46:00Z",
+  "source_stage": "SOCIAL",
+  "canonical_identity": {"display_name": "Demo Cabinet Works", "normalized_name": "demo cabinet works", "entity_type": "COMPANY", "confidence": 0.79},
+  "profiles": [{"platform": "TIKTOK", "profile_id": "demo-cabinet", "url": "https://tiktok.example/@demo-cabinet"}],
+  "evidence": [{"evidence_id": "tt-ev-1", "evidence_type": "PROFILE_TEXT", "value": "Cabinet production, CNC cutting and laminated panels", "source_url": "https://tiktok.example/@demo-cabinet", "source_platform": "TIKTOK", "observed_at": "2026-09-11T06:46:00Z", "confidence": 1.0}],
+  "inferences": [{"inference_id": "tt-inf-1", "claim": "May consume PVC/WPC furniture board; purchase history is not verified", "confidence": 0.66, "basis_evidence_ids": ["tt-ev-1"], "reason_code": "CABINET_FACTORY_USE_CASE"}],
+  "routes": [{"route_type": "WEBSITE", "route_value": "https://cabinet.example", "source": "https://tiktok.example/@demo-cabinet", "confidence": 1.0, "purpose": "GENERAL_BUSINESS", "validation_status": "PUBLIC_OBSERVED"}],
+  "discovery": {"market": "Vietnam", "language": "vi", "keyword": "tam pvc noi that", "semantic_cluster": "FURNITURE_BOARD", "source_platform": "TIKTOK", "graph_depth": 2},
+  "source_score": {"grade": "B+", "score": 75.0, "components": {"buyer_fit": 21.0, "product_relevance": 18.0}},
+  "recommended_cbi_priority": "HIGH"
+}
