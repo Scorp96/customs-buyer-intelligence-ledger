@@ -5,6 +5,12 @@ description: "Investigate customs buyers with an answer-first default and an exp
 
 # Customs Buyer Intelligence v6.1
 
+## More-specific one-shot customs handoff
+
+When the user supplies a customs/import/export/shipment/B/L record, or asks for real-Buyer qualification plus 深度调查, 穷尽搜索, 完整调查, 裂变 or equivalent, and has **not** explicitly requested formal Runtime persistence/CRM/Closure, use `$customs-buyer-one-shot`. That more-specific route takes precedence over `ANSWER_FIRST` and completes the material customs investigation in one Host/cloud job.
+
+Keep `ANSWER_FIRST` for genuinely narrow company/contact/email/phone/current-fact lookups. Keep the persistent `FULL_AUDIT` route below for explicit formal audit, CRM, Closure or outreach-preparation requests.
+
 ## Default mode: `ANSWER_FIRST`
 
 Unless the user explicitly requests persistence, formal audit, CRM synchronization, Closure evaluation or outreach preparation, ordinary single-Buyer and sequential contact lookups use `ANSWER_FIRST`.
