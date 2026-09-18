@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import heapq
 import re
@@ -7,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Protocol
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
+
+from .public_network_guard import is_public_http_url, validate_public_http_url
 
 
 EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?![A-Z0-9._%+-])", re.I)
@@ -90,7 +93,14 @@ class Crawl4AIBackend:
 
     name = "crawl4ai-local"
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        public_network_only: bool = False,
+        block_heavy_resources: bool = False,
+    ) -> None:
+        self.public_network_only = bool(public_network_only)
+        self.block_heavy_resources = bool(block_heavy_resources)
         self._crawler: Any | None = None
 
     async def __aenter__(self) -> "Crawl4AIBackend":
@@ -102,6 +112,65 @@ class Crawl4AIBackend:
                 "and run crawl4ai-setup before using the crawler bridge."
             ) from exc
         self._crawler = AsyncWebCrawler()
+
+        if self.public_network_only:
+            async def on_page_context_created(page: Any, context: Any, **kwargs: Any) -> Any:
+                async def guard_route(route: Any, request: Any) -> None:
+                    if self.block_heavy_resources and str(getattr(request, "resource_type", "")) in {
+                        "image", "media", "font",
+                    }:
+                        await route.abort()
+                        return
+                    request_url = str(getattr(request, "url", "") or "")
+                    scheme = urlsplit(request_url).scheme.lower()
+                    if scheme in {"data", "blob", "about"}:
+                        await route.continue_()
+                        return
+                    if scheme not in {"http", "https"}:
+                        await route.abort()
+                        return
+                    allowed, _reason = await asyncio.to_thread(
+                        is_public_http_url,
+                        request_url,
+                        resolve_dns=True,
+                    )
+                    if allowed:
+                        await route.continue_()
+                    else:
+                        await route.abort()
+
+                await page.route("**/*", guard_route)
+                return page
+
+            async def before_goto(page: Any, context: Any, url: str, **kwargs: Any) -> Any:
+                await asyncio.to_thread(
+                    validate_public_http_url,
+                    url,
+                    resolve_dns=True,
+                )
+                return page
+
+            async def after_goto(
+                page: Any,
+                context: Any,
+                url: str,
+                response: Any,
+                **kwargs: Any,
+            ) -> Any:
+                await asyncio.to_thread(
+                    validate_public_http_url,
+                    str(getattr(page, "url", "") or url),
+                    resolve_dns=True,
+                )
+                return page
+
+            self._crawler.crawler_strategy.set_hook(
+                "on_page_context_created",
+                on_page_context_created,
+            )
+            self._crawler.crawler_strategy.set_hook("before_goto", before_goto)
+            self._crawler.crawler_strategy.set_hook("after_goto", after_goto)
+
         await self._crawler.__aenter__()
         return self
 
@@ -116,6 +185,23 @@ class Crawl4AIBackend:
             async with self:
                 return await self.fetch(url)
 
+        if self.public_network_only:
+            try:
+                await asyncio.to_thread(
+                    validate_public_http_url,
+                    url,
+                    resolve_dns=True,
+                )
+            except ValueError as exc:
+                return CrawlPage(
+                    url=url,
+                    text="",
+                    links=(),
+                    link_hints=(),
+                    success=False,
+                    error=f"public_network_guard:{exc}",
+                )
+
         try:
             result = await self._crawler.arun(url=url)
         except Exception as exc:  # pragma: no cover - exercised by live crawl
@@ -126,6 +212,22 @@ class Crawl4AIBackend:
         markdown = _markdown_text(getattr(result, "markdown", ""))
         links, link_hints = _result_link_data(getattr(result, "links", None), url)
         final_url = str(getattr(result, "url", None) or url)
+        if self.public_network_only:
+            try:
+                await asyncio.to_thread(
+                    validate_public_http_url,
+                    final_url,
+                    resolve_dns=True,
+                )
+            except ValueError as exc:
+                return CrawlPage(
+                    url=final_url,
+                    text="",
+                    links=(),
+                    link_hints=(),
+                    success=False,
+                    error=f"public_network_redirect_guard:{exc}",
+                )
         return CrawlPage(
             url=final_url,
             text=markdown,
