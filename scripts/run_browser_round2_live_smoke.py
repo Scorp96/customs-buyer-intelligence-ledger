@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from unified_runtime.browser_escalation import PlaywrightBrowserBackend
 
