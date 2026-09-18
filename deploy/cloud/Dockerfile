@@ -27,7 +27,8 @@ ENV CBI_SESSION_ROOT=/var/lib/cbi/sessions \
     CBI_BACKUP_ROOT=/var/lib/cbi/backups-v61 \
     CBI_REMOTE_HOST=0.0.0.0 \
     CBI_REMOTE_AUTH_MODE=bearer \
-    CBI_CRAWLER_ENABLED=1
+    CBI_CRAWLER_ENABLED=1 \
+    CRAWL4_AI_BASE_DIRECTORY=/tmp/cbi-crawl4ai
 
 EXPOSE 8787
 VOLUME ["/var/lib/cbi"]
