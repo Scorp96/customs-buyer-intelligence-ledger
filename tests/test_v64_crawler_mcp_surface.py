@@ -67,6 +67,44 @@ class CrawlerMcpSurfaceTests(unittest.TestCase):
         self.assertFalse(status["paid_api_required"])
         self.assertTrue(status["public_network_only"])
 
+    def test_runtime_status_exposes_resource_and_ssrf_guards(self) -> None:
+        status = crawler_tool_v64.crawler_runtime_status()
+        self.assertTrue(status["request_interception_guard"])
+        self.assertTrue(status["redirect_revalidation"])
+        self.assertEqual(status["max_pages_per_call"], 12)
+        self.assertGreaterEqual(status["max_concurrency"], 1)
+
+        descriptors = {
+            str(item.get("name") or ""): item
+            for item in adapter._server.tool_descriptors()
+            if isinstance(item, dict)
+        }
+        maximum = descriptors[CRAWLER_EXECUTION_TOOL_NAME]["inputSchema"]["properties"]["max_pages"]["maximum"]
+        self.assertEqual(maximum, 12)
+
+    def test_busy_runtime_fails_closed_without_execution(self) -> None:
+        class BusySemaphore:
+            def acquire(self, timeout=None):
+                return False
+
+            def release(self):
+                raise AssertionError("release must not be called when acquire failed")
+
+        with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False), patch.object(
+            crawler_tool_v64,
+            "_CRAWLER_SEMAPHORE",
+            BusySemaphore(),
+        ):
+            result = crawler_tool_v64.execute_public_crawl_handler(
+                {
+                    "task": {"call_id": "V64-CRAWL-BUSY"},
+                    "seed_url": "https://8.8.8.8/",
+                }
+            )
+        self.assertEqual(result["status"], "CRAWLER_BUSY")
+        self.assertTrue(result["retryable"])
+        self.assertFalse(result["paid_api_required"])
+
 
 if __name__ == "__main__":
     unittest.main()
