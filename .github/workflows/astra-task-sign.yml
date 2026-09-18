@@ -1,0 +1,43 @@
+name: ASTRA task signing gate
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: astra-task-sign-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: contains(github.event.issue.labels.*.name, 'astra-task/proposed')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted gate code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+
+      - name: Sign eligible ASTRA task
+        run: python scripts/astra_task_gate.py --event "$GITHUB_EVENT_PATH"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ASTRA_TASK_HMAC_KEY_B64: ${{ secrets.ASTRA_TASK_HMAC_KEY_B64 }}
+          ASTRA_ALLOWED_PROPOSERS: Scorp96
+          ASTRA_WORKER_ID: scorp-windows-01
+          ASTRA_REPOSITORY_ID: cbi-primary
+          ASTRA_ALLOWED_BASE_REFS_EXACT: cbi-v6-3-demand-expansion
+          ASTRA_ALLOWED_BASE_REF_PREFIXES: astra-
+          ASTRA_MAX_TASK_AGE_SECONDS: '1800'
+
+# Operational note: GitHub only fires issues workflows that exist on the default branch.
+# Phase 2A activation therefore uses the separately reviewed main-branch shim that checks
+# out an immutable, CI-green Phase 2A release commit before running this gate code.

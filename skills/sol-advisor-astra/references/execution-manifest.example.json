@@ -1,0 +1,23 @@
+{
+  "task_id": "example-local-fallback",
+  "repository_root": "C:/work/customs-buyer-intelligence-ledger",
+  "expected_branch": "astra-example-branch",
+  "operations": [
+    {
+      "kind": "write_text",
+      "path": "scratch/astra_example.py",
+      "content": "VALUE = 42\n"
+    },
+    {
+      "kind": "run",
+      "argv": [
+        "python",
+        "-m",
+        "unittest",
+        "tests.test_astra_supervisor",
+        "-v"
+      ],
+      "cwd": "."
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+<service>
+  <id>ASTRAWorker</id>
+  <name>ASTRA Worker</name>
+  <description>ASTRA-worker Phase 2A outbound-only engineering worker</description>
+  <executable>@@PYTHON_EXE@@</executable>
+  <arguments>"@@REPOSITORY_ROOT@@\scripts\astra_worker.py" run --state-root "@@STATE_ROOT@@" --service-sid "@@SERVICE_SID@@"</arguments>
+  <workingdirectory>@@REPOSITORY_ROOT@@</workingdirectory>
+  <logpath>@@LOG_ROOT@@</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>4</keepFiles>
+  </log>
+  <stoptimeout>30sec</stoptimeout>
+  <onfailure action="restart" delay="30 sec" />
+</service>
