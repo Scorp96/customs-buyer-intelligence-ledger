@@ -86,6 +86,12 @@ from .country_identity_hardening import (
 
 from .demand_expansion import V63DemandExpansionMixin
 from .research_orchestration_hardening import V61ResearchOrchestrationHardeningMixin
+from .crawler_execution_bridge import (
+    Crawl4AIBackend,
+    CrawlExecutionBridge,
+    CrawlPage,
+    CrawlerBackend,
+)
 
 RUNTIME_VERSION = V6_RUNTIME_VERSION
 BUILD_ID = V6_BUILD_ID
@@ -173,4 +179,8 @@ __all__ = [
     "COUNTRY_RELATION_CONFLICT",
     "COUNTRY_RELATION_MISSING",
     "COUNTRY_RELATION_UNRESOLVED",
+    "Crawl4AIBackend",
+    "CrawlExecutionBridge",
+    "CrawlPage",
+    "CrawlerBackend",
 ]
