@@ -7,6 +7,7 @@ from mcp.remote_transport import (
     RemoteAuthConfig,
     RemoteMcpApplication,
     RemoteTransportError,
+    _health_http_status,
 )
 
 
@@ -147,6 +148,14 @@ class RemoteMcpTransportTests(unittest.TestCase):
         self.assertEqual(403, ctx.exception.http_status)
         status, _ = app.dispatch_jsonrpc(request, {"Origin": "https://chatgpt.com"})
         self.assertEqual(200, status)
+
+    def test_health_status_separates_liveness_from_readiness(self) -> None:
+        self.assertEqual(200, _health_http_status({"status": "ok"}, readiness=False))
+        self.assertEqual(200, _health_http_status({"status": "degraded"}, readiness=False))
+        self.assertEqual(200, _health_http_status({"status": "ok"}, readiness=True))
+        self.assertEqual(503, _health_http_status({"status": "degraded"}, readiness=True))
+        self.assertEqual(503, _health_http_status({"status": "bootstrap_required"}, readiness=True))
+        self.assertEqual(503, _health_http_status({}, readiness=True))
 
 
 if __name__ == "__main__":
