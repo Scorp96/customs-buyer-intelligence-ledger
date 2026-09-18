@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
-import ipaddress
 import os
-import socket
 import threading
 from typing import Any
-from urllib.parse import urlsplit
 
 from unified_runtime.browser_escalation import (
     EscalatingCrawlerBackend,
@@ -15,22 +12,13 @@ from unified_runtime.browser_escalation import (
     ResilientCrawlerBackend,
 )
 from unified_runtime.crawler_execution_bridge import Crawl4AIBackend, CrawlExecutionBridge
+from unified_runtime.public_network_guard import validate_public_http_url
 
 
 CRAWLER_TOOL_NAME = "execute_public_crawl"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off", ""}
-_BLOCKED_HOSTS = {
-    "localhost",
-    "localhost.localdomain",
-    "metadata.google.internal",
-    "instance-data",
-}
-_BLOCKED_SUFFIXES = (
-    ".localhost",
-    ".local",
-    ".internal",
-)
+_MAX_PRODUCTION_PAGES = 12
 
 
 def _env_enabled() -> bool:
@@ -42,60 +30,52 @@ def _env_enabled() -> bool:
     return False
 
 
-def _public_host_check(host: str) -> tuple[bool, str | None]:
-    normalized = str(host or "").strip().rstrip(".").lower()
-    if not normalized:
-        return False, "missing_host"
-    if normalized in _BLOCKED_HOSTS or any(normalized.endswith(suffix) for suffix in _BLOCKED_SUFFIXES):
-        return False, "blocked_hostname"
-
+def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    raw = str(os.environ.get(name) or "").strip()
+    if not raw:
+        return default
     try:
-        literal = ipaddress.ip_address(normalized.strip("[]"))
+        value = int(raw)
     except ValueError:
-        literal = None
+        return default
+    return max(minimum, min(maximum, value))
 
-    if literal is not None:
-        if not literal.is_global:
-            return False, "non_public_ip"
-        return True, None
 
+def _env_float(name: str, default: float, minimum: float, maximum: float) -> float:
+    raw = str(os.environ.get(name) or "").strip()
+    if not raw:
+        return default
     try:
-        rows = socket.getaddrinfo(normalized, None, type=socket.SOCK_STREAM)
-    except OSError as exc:
-        return False, f"dns_resolution_failed:{type(exc).__name__}"
+        value = float(raw)
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
 
-    addresses: set[str] = set()
-    for row in rows:
-        sockaddr = row[4]
-        if not sockaddr:
-            continue
-        addresses.add(str(sockaddr[0]))
 
-    if not addresses:
-        return False, "dns_resolution_empty"
+def _crawler_max_concurrency() -> int:
+    return _env_int("CBI_CRAWLER_MAX_CONCURRENCY", 1, 1, 4)
 
-    for address in sorted(addresses):
-        try:
-            parsed = ipaddress.ip_address(address)
-        except ValueError:
-            return False, "dns_resolution_invalid_ip"
-        if not parsed.is_global:
-            return False, f"dns_non_public_ip:{address}"
-    return True, None
+
+def _crawler_acquire_timeout() -> float:
+    return _env_float("CBI_CRAWLER_ACQUIRE_TIMEOUT_SECONDS", 2.0, 0.0, 15.0)
+
+
+_CRAWLER_CONCURRENCY_LIMIT = _crawler_max_concurrency()
+_CRAWLER_SEMAPHORE = threading.BoundedSemaphore(_CRAWLER_CONCURRENCY_LIMIT)
 
 
 def validate_public_seed_url(url: str) -> str:
-    value = str(url or "").strip()
-    split = urlsplit(value)
-    if split.scheme.lower() not in {"http", "https"}:
-        raise ValueError("seed_url must use http or https")
-    if split.username or split.password:
-        raise ValueError("seed_url must not contain URL credentials")
-    host = split.hostname or ""
-    ok, reason = _public_host_check(host)
-    if not ok:
-        raise ValueError(f"seed_url is not an allowed public-network target: {reason}")
-    return value
+    try:
+        return validate_public_http_url(
+            str(url or "").strip(),
+            resolve_dns=True,
+            allow_url_credentials=False,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith("URL "):
+            message = "seed_" + message[4:]
+        raise ValueError(message) from exc
 
 
 def crawler_runtime_status() -> dict[str, Any]:
@@ -110,6 +90,11 @@ def crawler_runtime_status() -> dict[str, Any]:
         "browser_escalation_supported": enabled and playwright_present,
         "paid_api_required": False,
         "public_network_only": True,
+        "request_interception_guard": True,
+        "redirect_revalidation": True,
+        "max_pages_per_call": _MAX_PRODUCTION_PAGES,
+        "max_concurrency": _CRAWLER_CONCURRENCY_LIMIT,
+        "acquire_timeout_seconds": _crawler_acquire_timeout(),
     }
 
 
@@ -140,7 +125,7 @@ def crawler_tool_descriptor() -> dict[str, Any]:
                 "max_pages": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 20,
+                    "maximum": _MAX_PRODUCTION_PAGES,
                     "default": 8,
                 },
                 "browser_escalation": {
@@ -177,6 +162,8 @@ def crawler_tool_descriptor() -> dict[str, Any]:
             "paid_api_required": False,
             "public_network_only": True,
             "route_ownership_promoted": False,
+            "bounded_concurrency": True,
+            "bounded_pages": True,
         },
     }
 
@@ -197,8 +184,8 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
 
     seed_url = validate_public_seed_url(str(arguments.get("seed_url") or ""))
     max_pages = int(arguments.get("max_pages", 8))
-    if max_pages < 1 or max_pages > 20:
-        raise ValueError("max_pages must be between 1 and 20")
+    if max_pages < 1 or max_pages > _MAX_PRODUCTION_PAGES:
+        raise ValueError(f"max_pages must be between 1 and {_MAX_PRODUCTION_PAGES}")
 
     timeout_seconds = float(arguments.get("timeout_seconds", 20.0))
     if timeout_seconds < 2 or timeout_seconds > 30:
@@ -210,13 +197,18 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
 
     browser_escalation = arguments.get("browser_escalation", True) is not False
 
-    async with Crawl4AIBackend() as primary:
+    async with Crawl4AIBackend(
+        public_network_only=True,
+        block_heavy_resources=True,
+    ) as primary:
         if browser_escalation:
             async with PlaywrightBrowserBackend(
                 navigation_timeout_ms=min(int(timeout_seconds * 1000), 30_000),
                 settle_ms=500,
                 scroll_steps=3,
                 click_budget=6,
+                public_network_only=True,
+                block_heavy_resources=True,
             ) as browser:
                 escalated = EscalatingCrawlerBackend(
                     primary,
@@ -281,7 +273,21 @@ def _run_coroutine_sync(arguments: dict[str, Any]) -> dict[str, Any]:
 def execute_public_crawl_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(arguments, dict):
         raise ValueError("arguments must be an object")
-    return _run_coroutine_sync(arguments)
+    if not _env_enabled():
+        return _run_coroutine_sync(arguments)
+
+    acquired = _CRAWLER_SEMAPHORE.acquire(timeout=_crawler_acquire_timeout())
+    if not acquired:
+        return {
+            "status": "CRAWLER_BUSY",
+            "runtime": crawler_runtime_status(),
+            "retryable": True,
+            "paid_api_required": False,
+        }
+    try:
+        return _run_coroutine_sync(arguments)
+    finally:
+        _CRAWLER_SEMAPHORE.release()
 
 
 __all__ = [
