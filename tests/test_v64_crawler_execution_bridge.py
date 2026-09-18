@@ -166,6 +166,27 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
         self.assertTrue(receipt["evidence_ids"])
         self.assertEqual(receipt["route_evidence_ids"], [])
 
+    def test_date_like_digits_are_not_promoted_as_phone(self) -> None:
+        pages = {
+            "https://example.com/": CrawlPage(
+                url="https://example.com/",
+                text="Updated 2026-09-18. Board size 1220 x 2440 mm.",
+                links=(),
+            )
+        }
+        backend = FakeBackend(pages)
+        bridge = CrawlExecutionBridge(backend)
+        receipt = run(
+            bridge.execute(
+                {"task_id": "V63CONTACT-NOISE", "source_family": "official_contact"},
+                seed_url="https://example.com/",
+                official_domain_verified=True,
+            )
+        )
+
+        self.assertEqual(receipt["result"], "NEGATIVE_EXHAUSTED")
+        self.assertEqual(receipt["route_candidates"], [])
+
     def test_failed_seed_is_blocked_not_negative(self) -> None:
         backend = FakeBackend({})
         bridge = CrawlExecutionBridge(backend)
