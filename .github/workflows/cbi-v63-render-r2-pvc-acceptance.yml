@@ -78,7 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected='ba3bffdae13cef186b20b50335c3207fb3390ec6'
+          expected='c912000e2cf000eb3806714dde0552335634da4f'
           actual="$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)"
           if [ "$actual" != "$expected" ]; then
             echo "PRODUCTION_BRANCH_CHANGED expected=$expected actual=$actual" >&2
