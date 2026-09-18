@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - cbi-v64-backup-wal-hardening-20260909
+      - "cbi-v64-main-release-candidate-*"
   pull_request:
 
 permissions:

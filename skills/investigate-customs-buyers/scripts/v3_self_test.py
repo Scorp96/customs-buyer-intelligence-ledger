@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 import json
 import tempfile
 import zipfile
@@ -56,10 +57,11 @@ def main() -> int:
     check(accessory["normalized_category"] == "WALL_PANEL_TRIM_ACCESSORY" and accessory["match_level"] == "RELATED", "trim_accessory_not_foam_board", passed)
 
     base_row = {"数据源": "Synthetic Customs", "日期": "2026-06-17", "主单号": "TESTBILL001", "供应商": "Synthetic Supplier Ltd", "采购商": "Synthetic Buyer One Inc", "采购商地址": "100 Test Road, Manila, Philippines", "产品": "PVC Foam Board 1220x2440 17mm 0.65g", "重量（kg）": 394, "N O P A C K A G E S": 6, "T Y P E P K G S": "BG", "目的地": "Philippines"}
+    current_checked_at = (date.today() - timedelta(days=1)).isoformat()
     enrichment = {
         "sources": [
-            {"source_id": "src-web", "url": "https://example.invalid/contact", "source_type": "official_domain", "evidence_grade": "A2", "official": True, "checked_at": "2026-08-03", "quoted_or_visible_text": "General enquiries: info@synthetic.invalid"},
-            {"source_id": "src-dir", "url": "https://www.dnb.com/company/synthetic", "source_type": "third_party_directory", "evidence_grade": "C2", "checked_at": "2026-08-03"},
+            {"source_id": "src-web", "url": "https://example.invalid/contact", "source_type": "official_domain", "evidence_grade": "A2", "official": True, "checked_at": current_checked_at, "quoted_or_visible_text": "General enquiries: info@synthetic.invalid"},
+            {"source_id": "src-dir", "url": "https://www.dnb.com/company/synthetic", "source_type": "third_party_directory", "evidence_grade": "C2", "checked_at": current_checked_at},
         ],
         "contacts": [
             {"email": "info@synthetic.invalid", "source_ids": ["src-web"], "source_type": "official_domain", "verification_status": "official_current", "role": "general company channel"},
@@ -89,6 +91,20 @@ def main() -> int:
     check(result["schema_version"] == "4.2.0", "schema_v42", passed)
     check(result["scores"]["conversion_probability"]["point_estimate"] is None, "fake_conversion_probability_withheld", passed)
     check(result["decision_layers"]["final_crm"]["export_allowed"] is False, "unreviewed_crm_export_blocked", passed)
+    if result["outreach"]["outreach_status"] != "DRAFT_READY":
+        print(json.dumps({
+            "v3_outreach_diagnostic": {
+                "outreach_status": result["outreach"].get("outreach_status"),
+                "eligibility_gate": result["outreach"].get("eligibility_gate"),
+                "contact": result["outreach"].get("contact"),
+                "email_routing": result["outreach"].get("email_routing"),
+                "risk": result["outreach"].get("risk"),
+                "quality": result["outreach"].get("quality"),
+                "completion": result["outreach"].get("completion"),
+                "enterprise_intelligence_grade": result.get("scores", {}).get("enterprise_intelligence_grade"),
+                "product_match_level": result.get("normalized_shipment", {}).get("product", {}).get("match_level"),
+            }
+        }, sort_keys=True))
     check(result["outreach"]["outreach_status"] == "DRAFT_READY", "official_general_contact_allows_draft", passed)
     check(result["outreach"]["completion"]["terminal_state"] == "SENDABLE_DRAFT", "mandatory_outreach_terminal_state", passed)
     check(result["outreach"]["completion"]["action"]["enabled"] is True, "mandatory_draft_action_enabled", passed)
