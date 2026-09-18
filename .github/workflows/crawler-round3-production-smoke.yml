@@ -1,0 +1,129 @@
+name: CBI crawler round3 production smoke
+
+on:
+  push:
+    branches:
+      - cbi-v64-crawler-bridge-round3
+      - cbi-v64-release-candidate-crawler-round3-*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-surface:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Run crawler MCP surface tests
+        run: >-
+          python -m unittest
+          tests.test_v64_crawler_mcp_surface
+          tests.test_v64_production_tool_surface_declaration
+          tests.test_v64_crawler_execution_bridge
+          tests.test_v64_browser_escalation
+          -v
+
+      - name: Compile production crawler integration
+        run: >-
+          python -m py_compile
+          mcp/crawler_tool_v64.py
+          mcp/server_v61.py
+          mcp/server_v61_remote.py
+          unified_runtime/crawler_execution_bridge.py
+          unified_runtime/browser_escalation.py
+
+      - name: Build crawler-enabled production image
+        run: docker build -f deploy/cloud/Dockerfile -t cbi-crawler-round3:${GITHUB_SHA} .
+
+      - name: Verify real Chromium inside production image
+        run: >-
+          docker run --rm
+          --network none
+          --entrypoint python
+          cbi-crawler-round3:${GITHUB_SHA}
+          scripts/run_browser_round2_live_smoke.py
+
+      - name: Verify remote MCP advertises crawler tool and readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="cbi-crawler-round3:${GITHUB_SHA}"
+          name="cbi-crawler-mcp-${GITHUB_RUN_ID}"
+          cleanup() {
+            docker logs "$name" 2>/dev/null || true
+            docker rm -f "$name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d             --name "$name"             -e CBI_REMOTE_AUTH_MODE=none             -e CBI_CRAWLER_ENABLED=1             -e PORT=8788             -p 127.0.0.1:18787:8788             "$image"
+
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          base = "http://127.0.0.1:18787"
+          last = None
+          for _ in range(120):
+              try:
+                  with urllib.request.urlopen(base + "/healthz", timeout=1) as response:
+                      health = json.load(response)
+                  if health.get("status") == "ok":
+                      break
+              except Exception as exc:
+                  last = exc
+              time.sleep(0.25)
+          else:
+              raise SystemExit(f"crawler MCP health did not become ready: {last}")
+
+          crawler = health.get("crawler_runtime") or {}
+          assert crawler.get("enabled") is True, crawler
+          assert crawler.get("crawl4ai_present") is True, crawler
+          assert crawler.get("playwright_present") is True, crawler
+          assert crawler.get("paid_api_required") is False, crawler
+
+          def post(method, request_id, params, extra_headers=None):
+              body = json.dumps({
+                  "jsonrpc": "2.0",
+                  "id": request_id,
+                  "method": method,
+                  "params": params,
+              }).encode("utf-8")
+              headers = {
+                  "Content-Type": "application/json",
+                  "Accept": "application/json, text/event-stream",
+                  "MCP-Protocol-Version": "2026-07-28",
+                  "Mcp-Method": method,
+              }
+              headers.update(extra_headers or {})
+              request = urllib.request.Request(base + "/mcp", data=body, headers=headers, method="POST")
+              with urllib.request.urlopen(request, timeout=5) as response:
+                  payload = json.load(response)
+              if "error" in payload:
+                  raise SystemExit(f"{method} returned error: {payload['error']}")
+              return payload["result"]
+
+          tools = post(
+              "tools/list",
+              "tools-1",
+              {"_meta": {
+                  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                  "io.modelcontextprotocol/clientCapabilities": {},
+              }},
+          )
+          rows = {
+              row.get("name"): row
+              for row in tools.get("tools", [])
+              if isinstance(row, dict)
+          }
+          assert "execute_public_crawl" in rows, sorted(rows)
+          crawler_tool = rows["execute_public_crawl"]
+          assert crawler_tool.get("annotations", {}).get("readOnlyHint") is True, crawler_tool
+          print("Round3 remote MCP crawler surface: PASS")
+          PY
