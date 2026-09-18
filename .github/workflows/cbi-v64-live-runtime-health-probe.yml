@@ -1,0 +1,162 @@
+name: CBI v6.4 live runtime health probe
+
+on:
+  push:
+    branches:
+      - cbi-v6-3-demand-expansion
+    paths:
+      - .github/workflows/cbi-v64-live-runtime-health-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-live-runtime-health-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Probe live production Runtime and mutation WAL
+        env:
+          CBI_V63_ACCEPTANCE_BASE_URL: https://cbi-v61-preview.onrender.com
+          CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import urllib.error
+          import urllib.request
+
+          base = str(os.environ.get("CBI_V63_ACCEPTANCE_BASE_URL") or "").strip().rstrip("/")
+          token = str(os.environ.get("CBI_V63_ACCEPTANCE_BEARER_TOKEN") or "")
+          if not token:
+              raise SystemExit("BLOCKED_EXTERNAL: live acceptance bearer token secret is missing")
+
+          expected = subprocess.check_output(
+              ["git", "ls-remote", "origin", "refs/heads/cbi-v6-cloud-runtime-20260901"],
+              text=True,
+          ).split()[0].strip().lower()
+
+          def open_json(request, timeout=90):
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      return json.loads(response.read().decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  detail = exc.read().decode("utf-8", errors="replace")[:500]
+                  raise SystemExit(f"REMOTE_HTTP_ERROR:{exc.code}:{detail}") from exc
+
+          health = open_json(urllib.request.Request(
+              base + "/healthz",
+              method="GET",
+              headers={"Accept": "application/json"},
+          ))
+          identity = health.get("deployment_identity") or {}
+          if health.get("status") != "ok":
+              raise SystemExit(f"LIVE_HEALTH_NOT_OK:{health.get('status')}")
+          if str(identity.get("git_sha") or "").lower() != expected:
+              raise SystemExit(
+                  f"LIVE_DEPLOYMENT_SHA_MISMATCH:expected={expected}:observed={identity.get('git_sha')}"
+              )
+
+          next_id = 1
+          def rpc(method, params, timeout=90):
+              global next_id
+              request_id = next_id
+              next_id += 1
+              body = json.dumps({
+                  "jsonrpc": "2.0",
+                  "id": request_id,
+                  "method": method,
+                  "params": params,
+              }).encode("utf-8")
+              payload = open_json(urllib.request.Request(
+                  base + "/mcp",
+                  data=body,
+                  method="POST",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                      "MCP-Protocol-Version": "2026-07-28",
+                  },
+              ), timeout=timeout)
+              if payload.get("id") != request_id:
+                  raise SystemExit(f"REMOTE_JSONRPC_ID_MISMATCH:{payload}")
+              if isinstance(payload.get("error"), dict):
+                  raise SystemExit(f"REMOTE_JSONRPC_ERROR:{payload['error']}")
+              result = payload.get("result")
+              if not isinstance(result, dict):
+                  raise SystemExit(f"REMOTE_JSONRPC_RESULT_INVALID:{payload}")
+              return result
+
+          listed = rpc("tools/list", {})
+          names = {
+              row.get("name")
+              for row in listed.get("tools", [])
+              if isinstance(row, dict)
+          }
+          if "get_runtime_health" not in names:
+              raise SystemExit("LIVE_RUNTIME_HEALTH_TOOL_MISSING")
+
+          call = rpc("tools/call", {
+              "name": "get_runtime_health",
+              "arguments": {},
+          }, timeout=120)
+          runtime = call.get("structuredContent") or {}
+          wal = runtime.get("mutation_wal") or {}
+          backup = runtime.get("backup_recovery") or {}
+
+          if runtime.get("status") != "READY":
+              raise SystemExit(f"LIVE_RUNTIME_NOT_READY:{runtime.get('status')}")
+          if runtime.get("errors"):
+              raise SystemExit("LIVE_RUNTIME_ERRORS_PRESENT")
+          if int(wal.get("prepared_count") or 0) != 0:
+              raise SystemExit(f"LIVE_WAL_PREPARED:{wal.get('prepared_count')}")
+          if int(wal.get("invalid_count") or 0) != 0:
+              raise SystemExit(f"LIVE_WAL_INVALID:{wal.get('invalid_count')}")
+          if wal.get("reconciliation_required") is not False:
+              raise SystemExit("LIVE_WAL_RECONCILIATION_REQUIRED")
+          if wal.get("exact_automatic_reconciliation_complete") is not True:
+              raise SystemExit("LIVE_WAL_INVENTORY_INCOMPLETE")
+
+          print(json.dumps({
+              "status": "PASS",
+              "deployment_git_sha": expected,
+              "runtime_status": runtime.get("status"),
+              "runtime_version": runtime.get("runtime_version"),
+              "build_id": runtime.get("build_id"),
+              "checked_sessions": runtime.get("checked_sessions"),
+              "canonical_accounts": runtime.get("canonical_accounts"),
+              "pending_receipt_counts": runtime.get("pending_receipt_counts") or {},
+              "errors_count": len(runtime.get("errors") or []),
+              "mutation_wal": {
+                  "prepared_count": wal.get("prepared_count"),
+                  "committed_count": wal.get("committed_count"),
+                  "committed_error_count": wal.get("committed_error_count"),
+                  "invalid_count": wal.get("invalid_count"),
+                  "reconciliation_required": wal.get("reconciliation_required"),
+                  "exact_automatic_reconciliation_complete": wal.get("exact_automatic_reconciliation_complete"),
+                  "unreconciled_mutation_tools": wal.get("unreconciled_mutation_tools") or [],
+              },
+              "backup_recovery": {
+                  "activation_ready": backup.get("activation_ready"),
+                  "latest_snapshot_valid": backup.get("latest_snapshot_valid"),
+                  "snapshot_count": backup.get("snapshot_count"),
+              },
+              "r2_generation": identity.get("object_state_generation"),
+              "restore_generation": identity.get("restore_generation"),
+          }, sort_keys=True))
+          PY
