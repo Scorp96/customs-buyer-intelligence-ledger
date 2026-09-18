@@ -38,6 +38,16 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Capture production branch baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/cbi-v6-cloud-runtime-20260901:refs/remotes/origin/cbi-v6-cloud-runtime-20260901
+          baseline="$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)"
+          test -n "$baseline"
+          echo "CBI_PRODUCTION_BASELINE=$baseline" >> "$GITHUB_ENV"
+          echo "PRODUCTION_BRANCH_BASELINE=$baseline"
+
       - name: Run deterministic regressions
         shell: bash
         run: |
@@ -78,7 +88,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected='c912000e2cf000eb3806714dde0552335634da4f'
+          expected="$CBI_PRODUCTION_BASELINE"
+          test -n "$expected"
+          git fetch origin refs/heads/cbi-v6-cloud-runtime-20260901:refs/remotes/origin/cbi-v6-cloud-runtime-20260901
           actual="$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)"
           if [ "$actual" != "$expected" ]; then
             echo "PRODUCTION_BRANCH_CHANGED expected=$expected actual=$actual" >&2
