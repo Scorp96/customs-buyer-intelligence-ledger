@@ -61,6 +61,14 @@ def _state(root: Path) -> str:
     return "invalid"
 
 
+def _bootstrap_http_status(path: str) -> int:
+    if path in {"/", "/healthz"}:
+        return HTTPStatus.OK
+    if path == "/readyz":
+        return HTTPStatus.SERVICE_UNAVAILABLE
+    return HTTPStatus.NOT_FOUND
+
+
 class BootstrapHandler(BaseHTTPRequestHandler):
     server_version = "CBIRenderBootstrap/1.1"
     protocol_version = "HTTP/1.1"
@@ -82,20 +90,16 @@ class BootstrapHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_HEAD(self) -> None:  # noqa: N802
-        if self._path() in {"/", "/healthz", "/readyz"}:
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Length", "0")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            return
-        self.send_response(HTTPStatus.NOT_FOUND)
+        status = _bootstrap_http_status(self._path())
+        self.send_response(status)
         self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
         if self._path() in {"/healthz", "/readyz"}:
             self._json(
-                HTTPStatus.OK,
+                _bootstrap_http_status(self._path()),
                 {
                     "status": "bootstrap_required",
                     "service": "customs-buyer-intelligence",
