@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?![A-Z0-9._%+-])", re.I)
 PHONE_RE = re.compile(r"(?<!\w)(\+?\d[\d\s().\-/]{7,}\d)(?!\w)")
-PHONE_CONTEXT_RE = re.compile(r"\\b(?:phone|tel|telephone|mobile|cell|call|telefono|teléfono|telefone|celular|whatsapp)\\b", re.I)
+PHONE_CONTEXT_RE = re.compile(r"\b(?:phone|tel|telephone|mobile|cell|call|telefono|teléfono|telefone|celular|whatsapp)\b", re.I)
 
 # Round 1 intentionally stays deterministic and local. These terms only rank
 # same-site links; they are not evidence by themselves.
@@ -193,7 +193,7 @@ def _same_site(candidate: str, root_host: str) -> bool:
 
 def _score_link(url: str, source_family: str = "") -> int:
     split = urlsplit(url)
-    haystack = f"{split.path} {split.query} {source_family}".lower().replace("_", "-")
+    haystack = f"{split.path} {split.query}".lower().replace("_", "-")
     score = 0
     for term, weight in LINK_PRIORITY_TERMS.items():
         if term in haystack:
