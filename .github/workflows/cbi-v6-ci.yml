@@ -93,7 +93,8 @@ jobs:
             -e CBI_REMOTE_AUTH_MODE=none \
             -e PORT=8788 \
             -p 127.0.0.1:18787:8788 \
-            "$image"             python -B -Xutf8 mcp/server_v61_remote.py
+            "$image" \
+            python -B -Xutf8 mcp/server_v61_remote.py
 
           python - <<'PY'
           import json
