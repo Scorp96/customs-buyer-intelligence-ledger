@@ -42,7 +42,7 @@ class V63RenderR2WorkflowContractTests(unittest.TestCase):
         self.assertIn("Run Render R2 PVC acceptance", text)
         self.assertIn("Upload sanitized Render R2 PVC acceptance receipts", text)
         self.assertIn("Verify production branch baseline is unchanged", text)
-        self.assertIn("1f920c2db63b1e17b4b12da8af73cbb1f1474b8c", text)
+        self.assertIn("c912000e2cf000eb3806714dde0552335634da4f", text)
         self.assertIn("BLOCKED_EXTERNAL", text)
         self.assertNotIn("git push", text)
         self.assertNotIn("gh pr merge", text)
