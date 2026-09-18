@@ -6,7 +6,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "cbi-v63-live-acceptance-ci.yml"
-PRODUCTION_BASELINE = "c912000e2cf000eb3806714dde0552335634da4f"
 UPLOAD_ARTIFACT_SHA = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 
 
@@ -45,8 +44,11 @@ class V63ExactCheckoutReleaseCiContractTests(unittest.TestCase):
         self.assertIn("recovery_overlay_validation", text)
 
         self.assertIn("cbi-v6-cloud-runtime-20260901", text)
-        self.assertIn(PRODUCTION_BASELINE, text)
+        self.assertIn("Capture production branch baseline", text)
+        self.assertIn("CBI_PRODUCTION_BASELINE", text)
+        self.assertIn('expected="$CBI_PRODUCTION_BASELINE"', text)
         self.assertIn("PRODUCTION_BRANCH_UNCHANGED", text)
+        self.assertNotIn("c912000e2cf000eb3806714dde0552335634da4f", text)
 
         for forbidden in (
             "git push",
