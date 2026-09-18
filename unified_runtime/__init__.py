@@ -92,6 +92,11 @@ from .crawler_execution_bridge import (
     CrawlPage,
     CrawlerBackend,
 )
+from .browser_escalation import (
+    EscalatingCrawlerBackend,
+    PlaywrightBrowserBackend,
+    ResilientCrawlerBackend,
+)
 
 RUNTIME_VERSION = V6_RUNTIME_VERSION
 BUILD_ID = V6_BUILD_ID
@@ -183,4 +188,7 @@ __all__ = [
     "CrawlExecutionBridge",
     "CrawlPage",
     "CrawlerBackend",
+    "EscalatingCrawlerBackend",
+    "PlaywrightBrowserBackend",
+    "ResilientCrawlerBackend",
 ]
