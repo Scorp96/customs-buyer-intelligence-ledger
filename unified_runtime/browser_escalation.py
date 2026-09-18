@@ -222,10 +222,6 @@ class PlaywrightBrowserBackend:
                 return
 
     async def fetch(self, url: str) -> CrawlPage:
-        owned_session = await self._ensure_started()
-        assert self._context is not None
-        page = await self._context.new_page()
-        self._session_page_count += 1
         if self.public_network_only:
             try:
                 await asyncio.to_thread(
@@ -234,9 +230,6 @@ class PlaywrightBrowserBackend:
                     resolve_dns=True,
                 )
             except ValueError as exc:
-                await page.close()
-                if owned_session:
-                    await self.__aexit__(None, None, None)
                 return CrawlPage(
                     url=url,
                     text="",
@@ -246,6 +239,11 @@ class PlaywrightBrowserBackend:
                     error=f"public_network_guard:{exc}",
                 )
 
+        owned_session = await self._ensure_started()
+        assert self._context is not None
+        page = await self._context.new_page()
+        self._session_page_count += 1
+        if self.public_network_only:
             async def guard_route(route: Any, request: Any) -> None:
                 if self.block_heavy_resources and str(getattr(request, "resource_type", "")) in {
                     "image", "media", "font",
