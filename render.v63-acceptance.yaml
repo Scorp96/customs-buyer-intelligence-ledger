@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: cbi-v63-r2-acceptance-20260903-r01
+    runtime: docker
+    repo: https://github.com/Scorp96/customs-buyer-intelligence-ledger
+    branch: cbi-v6-3-demand-expansion
+    region: singapore
+    plan: free
+    dockerfilePath: ./deploy/cloud/Dockerfile
+    dockerContext: .
+    dockerCommand: python -B -Xutf8 mcp/render_bootstrap.py
+    autoDeployTrigger: off
+    healthCheckPath: /healthz
+    renderSubdomainPolicy: enabled
+    envVars:
+      - key: CBI_RENDER_LIVE_ROOT
+        value: /var/lib/cbi/live
+      - key: CBI_SESSION_ROOT
+        value: /var/lib/cbi/live/sessions
+      - key: CBI_BACKUP_ROOT
+        value: /var/lib/cbi/live/backups-v61
+      - key: CBI_REMOTE_HOST
+        value: 0.0.0.0
+      - key: CBI_REMOTE_PUBLIC_BASE_URL
+        value: https://cbi-v63-r2-acceptance-20260903-r01.onrender.com
+      - key: CBI_REMOTE_AUTH_MODE
+        value: bearer
+      - key: CBI_REMOTE_BEARER_TOKEN
+        sync: false
+      - key: CBI_REMOTE_MAX_BODY_BYTES
+        value: "8388608"
+      - key: CBI_OBJECT_STORE_MODE
+        value: r2
+      - key: CBI_OBJECT_STORE_ENDPOINT
+        sync: false
+      - key: CBI_OBJECT_STORE_BUCKET
+        sync: false
+      - key: CBI_OBJECT_STORE_ACCESS_KEY_ID
+        sync: false
+      - key: CBI_OBJECT_STORE_SECRET_ACCESS_KEY
+        sync: false
+      - key: CBI_OBJECT_STORE_REGION
+        value: auto
+      - key: CBI_OBJECT_STORE_PREFIX
+        value: cbi-v63-acceptance-20260903-r01
+      - key: CBI_OBJECT_STORE_RETENTION
+        value: "20"
+      - key: CBI_V63_ACCEPTANCE_PIN_DEPLOYMENT_SHA
+        value: "true"

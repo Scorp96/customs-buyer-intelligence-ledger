@@ -80,7 +80,7 @@ def main() -> int:
         )
         try:
             initialized = rpc(process, 1, "initialize", {"protocolVersion": "2025-06-18"})["result"]
-            assert initialized["serverInfo"]["version"] == "6.1.0"
+            assert initialized["serverInfo"]["version"] == "6.4.0"
             listed = rpc(process, 2, "tools/list")["result"]["tools"]
             assert len(listed) == 42
             passed.extend(["initialize_v6", "tools_list_42"])
@@ -338,7 +338,7 @@ def main() -> int:
                 process.stdin.close()
             process.terminate()
             process.wait(timeout=5)
-    print(json.dumps({"runtime_version": "6.1.0", "passed": len(passed), "tests": passed}, ensure_ascii=False, indent=2))
+    print(json.dumps({"runtime_version": "6.4.0", "passed": len(passed), "tests": passed}, ensure_ascii=False, indent=2))
     return 0
 
 

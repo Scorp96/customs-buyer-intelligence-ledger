@@ -1,0 +1,93 @@
+name: CBI v6.3 exact feature bootstrap
+
+on:
+  push:
+    branches:
+      - cbi-v6-3-demand-expansion
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cbi-v63-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  expand-test-commit:
+    if: contains(github.event.head_commit.message, '[v63-bootstrap]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout bootstrap feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Run permanent v6.3 bootstrap
+        shell: bash
+        run: |
+          set +e
+          python -B -Xutf8 tools/v63_bootstrap_expand.py > /tmp/v63-bootstrap.txt 2>&1
+          rc=$?
+          set -e
+          cat /tmp/v63-bootstrap.txt
+
+          if [ "$rc" -ne 0 ]; then
+            {
+              echo '=== V63 PHASE-A DIAGNOSTICS ==='
+              python -B -Xutf8 - <<'PY'
+          import json
+          import tempfile
+          from pathlib import Path
+
+          from release_ops_v63.exact_checkout_candidate_builder import build_static_candidate_on_export
+          from unified_runtime.production_integration_runner import apply_v63_runtime_phase
+          from unified_runtime.production_checkout_probe import probe_production_checkout
+          from tests.test_v63_exact_checkout_candidate_builder import V63ExactCheckoutStaticPipelineTests
+          from tests.test_v63_production_integration_runner import V63ProductionIntegrationRunnerTests
+
+          with tempfile.TemporaryDirectory() as td:
+              repo = V63ProductionIntegrationRunnerTests()._repo(Path(td))
+              probe = probe_production_checkout(repo)
+              phase = apply_v63_runtime_phase(repo, dry_run=True)
+              print('INTEGRATION_PROBE=' + json.dumps({
+                  'safe_to_apply': probe.get('safe_to_apply_v63_adapter_patch'),
+                  'blockers': probe.get('blockers'),
+                  'missing_v63': probe.get('missing_v63_mutation_names'),
+                  'status': phase.get('status'),
+                  'phase_blockers': phase.get('blockers'),
+                  'plan_status': (phase.get('binding_plan') or {}).get('status'),
+              }, sort_keys=True))
+
+          with tempfile.TemporaryDirectory() as td:
+              repo = V63ExactCheckoutStaticPipelineTests()._production_export(Path(td))
+              result = build_static_candidate_on_export(repo)
+              phase_a = result.get('phase_a') or {}
+              plan = phase_a.get('binding_plan') or phase_a.get('production_binding_plan') or {}
+              print('STATIC_PIPELINE=' + json.dumps({
+                  'status': result.get('status'),
+                  'remaining_gates': result.get('remaining_gates'),
+                  'phase_a_status': phase_a.get('status'),
+                  'phase_a_blockers': phase_a.get('blockers'),
+                  'plan_status': plan.get('status'),
+                  'plan_blockers': plan.get('blockers'),
+                  'preflight': (plan.get('preflight') or {}).get('blockers'),
+              }, sort_keys=True))
+          PY
+            } >> /tmp/v63-bootstrap.txt 2>&1 || true
+
+            cat /tmp/v63-bootstrap.txt
+            cp /tmp/v63-bootstrap.txt V63_BOOTSTRAP_FAILURE.txt
+            git reset
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -f V63_BOOTSTRAP_FAILURE.txt
+            git commit -m 'chore(v63): capture bootstrap failure [skip ci]'
+            git push origin HEAD:cbi-v6-3-demand-expansion
+            exit "$rc"
+          fi

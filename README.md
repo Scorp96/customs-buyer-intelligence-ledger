@@ -1,6 +1,6 @@
-# Customs Buyer Intelligence v6.1
+# Customs Buyer Intelligence v6.4
 
-Personal Codex plugin for answer-first public buyer research plus explicit, batch-only CRM persistence. Ordinary company/contact lookups now search and answer immediately without creating Runtime history, audit documents, Closure records or workbook writes. The current task acts as the temporary review queue. Only an explicit user instruction such as `新增到表格`, `批量写回`, `正式入库`, `合并到最新CRM`, `生成审核文档`, `评估Closure` or `准备外联` activates the corresponding persistent workflow.
+Personal Codex plugin for answer-first public buyer research, self-hosted public-web execution, and explicit batch-only CRM persistence. Ordinary company/contact lookups now search and answer immediately without creating Runtime history, audit documents, Closure records or workbook writes. The current task acts as the temporary review queue. Only an explicit user instruction such as `新增到表格`, `批量写回`, `正式入库`, `合并到最新CRM`, `生成审核文档`, `评估Closure` or `准备外联` activates the corresponding persistent workflow.
 
 The explicit full-audit route is now the v6 production architecture: Host Research Agent → batch Evidence Compiler → claim-driven Governance Runtime → Artifact Tool transaction, with a Portfolio Scheduler/Budget Controller and a process-independent host recovery queue. Completion is Decision Saturation, not a mandatory Source Family checklist. Commercial Value, Research Confidence, Outreach Readiness and CRM state are independent. Public sources remain the default; connected providers stay opt-in and separately authorized. The 4.2.1 parser, formulas, entity/product analysis, Fast Scan, Deep Dive report, Chinese review and draft-only `mailto:` experience remain compatible.
 
@@ -28,7 +28,7 @@ Core enforcement:
 - strict valid-Unicode-scalar rejection and NFC normalization before validation, query, hashing and persistence;
 - independent `research_complete`, `network_complete`, `crm_sync_complete`, `outreach_prerequisites_complete` and `outreach_ready` states;
 - self-describing MCP schemas plus `get_runtime_contract` so agents do not guess enums or nested fields;
-- `plan_public_source_calls` exposes missing public work but explicitly performs no search and creates no Evidence; the host executes visible web/browser/registry/maps tools and appends real receipts;
+- `plan_public_source_calls` exposes missing public work and remains planning-only; `execute_public_crawl` can execute bounded public website tasks through the self-hosted Crawl4AI/Playwright runtime, while registry/maps/provider work remains host-orchestrated and all resulting Evidence stays receipt-bound;
 - conditional Evidence references: public Claims require concrete `http(s)` URLs, while user/customs/legacy/provider/local/calculation facts require their matching exact non-URL locators and may not carry fabricated URLs;
 - fixed Claim Type, Freshness and A1-D Evidence Grade enums, plus `claim_key -> evidence_id -> URL/locator` binding for public positive Information;
 - Commercial Value (`A+`–`NQ`), Research Confidence (`R0`–`R5`), Outreach Readiness and CRM state are independent; contact/CRM gaps do not cap Commercial Value;
@@ -39,6 +39,7 @@ Core enforcement:
 - information ingestion and outreach eligibility are separate: an ineligible Route remains available as a lead with its real Owner and relationship;
 - explicit `PUBLIC_ONLY`, optional-provider and required-provider modes with provider allowlists, permission and paid-credit gates;
 - Codex-level cross-plugin orchestration through `plan_provider_calls` and `append_provider_receipt`; the local MCP never impersonates or directly invokes another provider;
+- self-hosted crawler execution requires no TinyFish, Firecrawl Hosted, Apify Cloud or other paid crawling API; private/local network targets, unsafe redirects and guarded browser subrequests fail closed, with bounded pages, retries and concurrency;
 - same-Owner/same-Module/source-compatible Evidence binding;
 - later, independent Pivot consumption; a material Pivot cannot be dismissed without a measured below-threshold remaining EIV, and terminal Pivot states cannot regress;
 - no completion from a first positive, A/A+ grade, fixed time, query count, page count, depth or Anchor count;

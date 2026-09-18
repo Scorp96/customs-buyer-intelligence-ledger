@@ -105,7 +105,7 @@ def main() -> int:
         )
         try:
             initialized = call(process, 1, "initialize", {"protocolVersion": "2025-06-18"})["result"]
-            check(initialized["serverInfo"]["version"] == "6.1.0", "initialize_v610", passed)
+            check(initialized["serverInfo"]["version"] == "6.4.0", "initialize_v640", passed)
             check(
                 "Default to ANSWER_FIRST" in initialized["instructions"]
                 and "Do not call any Customs Buyer Intelligence MCP tool" in initialized["instructions"]
@@ -129,7 +129,7 @@ def main() -> int:
             check("历史和新发现都会保留并入" in resource["text"] and "永不发送" in resource["text"], "history_preserving_ui_resource", passed)
             contract = call(process, 4, "tools/call", {"name": "get_runtime_contract", "arguments": {}})["result"]["structuredContent"]
             check(
-                contract["runtime_version"] == "6.1.0"
+                contract["runtime_version"] == "6.4.0"
                 and "NEGATIVE_EXHAUSTED" in contract["enums"]["source_family_terminal_result"]
                 and contract["public_source_execution_boundary"]["embedded_search_engine"] is False
                 and contract["commercial_dimensions"]["contact_or_crm_caps_commercial_value"] is False
@@ -361,7 +361,7 @@ def main() -> int:
                 process.stdin.close()
             process.terminate()
             process.wait(timeout=5)
-    print(json.dumps({"runtime_version": "6.1.0", "passed": len(passed), "tests": passed}, ensure_ascii=False, indent=2))
+    print(json.dumps({"runtime_version": "6.4.0", "passed": len(passed), "tests": passed}, ensure_ascii=False, indent=2))
     return 0
 
 

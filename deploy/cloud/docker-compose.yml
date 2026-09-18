@@ -1,0 +1,60 @@
+services:
+  cbi:
+    build:
+      context: ../..
+      dockerfile: deploy/cloud/Dockerfile
+    restart: unless-stopped
+    environment:
+      CBI_SESSION_ROOT: /var/lib/cbi/sessions
+      CBI_BACKUP_ROOT: /var/lib/cbi/backups-v61
+      CBI_REMOTE_HOST: 0.0.0.0
+      CBI_REMOTE_PORT: 8787
+      CBI_REMOTE_AUTH_MODE: ${CBI_REMOTE_AUTH_MODE:-bearer}
+      CBI_REMOTE_BEARER_TOKEN: ${CBI_REMOTE_BEARER_TOKEN:-}
+      CBI_REMOTE_ALLOWED_ORIGINS: ${CBI_REMOTE_ALLOWED_ORIGINS:-}
+    volumes:
+      - ${CBI_DATA_DIR:-/srv/cbi-data}:/var/lib/cbi
+    expose:
+      - "8787"
+    ports:
+      - "127.0.0.1:${CBI_LOOPBACK_PORT:-8787}:8787"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8787/healthz',timeout=3); d=json.load(r); raise SystemExit(0 if r.status==200 and d.get('status')=='ok' else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["public-https"]
+    restart: unless-stopped
+    depends_on:
+      cbi:
+        condition: service_healthy
+    environment:
+      CBI_MCP_DOMAIN: ${CBI_MCP_DOMAIN:?set CBI_MCP_DOMAIN before enabling public-https profile}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  caddy_data:
+  caddy_config:

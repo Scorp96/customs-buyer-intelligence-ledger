@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Render-specific bootstrap gate for CBI v6.1/v6.3 recovery state.
+
+A brand-new Render instance is intentionally *not* treated as a new empty
+production Runtime. In paid-disk mode an operator imports a validated migration
+bundle into CBI_RENDER_LIVE_ROOT. In ephemeral/free mode an optional
+S3-compatible object-store mirror restores the authoritative pointed generation
+before production MCP is imported. The v6.3 recovery manager preserves backward
+compatibility with migration/object-state v1 while also restoring recovery-state
+v2 generations that contain both sessions and mutation WAL.
+
+Until one of those durable sources is available this process exposes only a
+minimal health endpoint and returns 503 for MCP traffic.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
+
+
+def _live_root() -> Path:
+    raw = str(os.environ.get("CBI_RENDER_LIVE_ROOT") or "/var/lib/cbi/live").strip()
+    root = Path(raw).expanduser()
+    if not root.is_absolute():
+        raise RuntimeError("CBI_RENDER_LIVE_ROOT must be absolute")
+    return root.resolve()
+
+
+def _port() -> int:
+    raw = os.environ.get("CBI_REMOTE_PORT") or os.environ.get("PORT") or "8787"
+    value = int(raw)
+    if value < 1 or value > 65535:
+        raise RuntimeError("bootstrap port must be between 1 and 65535")
+    return value
+
+
+def _state(root: Path) -> str:
+    if not root.exists():
+        return "bootstrap"
+    if not root.is_dir():
+        return "invalid"
+    entries = list(root.iterdir())
+    if not entries:
+        return "bootstrap"
+    manifest = root / "export-manifest.json"
+    sessions = root / "sessions"
+    if manifest.is_file() and sessions.is_dir():
+        return "live"
+    return "invalid"
+
+
+class BootstrapHandler(BaseHTTPRequestHandler):
+    server_version = "CBIRenderBootstrap/1.1"
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+        super().log_message(format, *args)
+
+    def _path(self) -> str:
+        return urlsplit(self.path).path
+
+    def _json(self, status: int, payload: dict[str, object]) -> None:
+        body = json.dumps(payload, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+        self.send_response(int(status))
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_HEAD(self) -> None:  # noqa: N802
+        if self._path() in {"/", "/healthz", "/readyz"}:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+        self.send_response(HTTPStatus.NOT_FOUND)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self._path() in {"/healthz", "/readyz"}:
+            self._json(
+                HTTPStatus.OK,
+                {
+                    "status": "bootstrap_required",
+                    "service": "customs-buyer-intelligence",
+                    "durable_state_loaded": False,
+                    "mcp_enabled": False,
+                    "object_store_configured": RecoveryObjectStoreStateManagerV63.from_env() is not None,
+                },
+            )
+            return
+        if self._path() == "/":
+            self._json(
+                HTTPStatus.OK,
+                {
+                    "status": "bootstrap_required",
+                    "service": "customs-buyer-intelligence",
+                    "health": "/healthz",
+                    "mcp": "/mcp",
+                },
+            )
+            return
+        self._json(HTTPStatus.NOT_FOUND, {"status": "not_found"})
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self._path() == "/mcp":
+            self._json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {
+                        "code": -32004,
+                        "message": "CBI durable state has not been restored/imported; MCP is disabled",
+                    },
+                },
+            )
+            return
+        self._json(HTTPStatus.NOT_FOUND, {"status": "not_found"})
+
+
+def _serve_bootstrap() -> int:
+    host = str(os.environ.get("CBI_REMOTE_HOST") or "0.0.0.0")
+    server = ThreadingHTTPServer((host, _port()), BootstrapHandler)
+    server.daemon_threads = True
+    try:
+        server.serve_forever(poll_interval=0.25)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+def main() -> int:
+    live = _live_root()
+    state = _state(live)
+
+    # Ephemeral hosts restore their pointed recovery generation before importing
+    # the production stack. Missing current.json is not treated as a new empty
+    # production ledger; we remain in bootstrap-only mode instead.
+    persistence = RecoveryObjectStoreStateManagerV63.from_env()
+    if state == "bootstrap" and persistence is not None:
+        restored = persistence.restore_into(live)
+        if restored:
+            state = _state(live)
+
+    if state == "invalid":
+        raise RuntimeError(
+            f"Render live root exists but is not a complete imported/restored CBI bundle: {live}"
+        )
+    if state == "bootstrap":
+        return _serve_bootstrap()
+
+    expected_sessions = (live / "sessions").resolve()
+    expected_backups = (live / "backups-v61").resolve()
+    configured_sessions = Path(
+        str(os.environ.get("CBI_SESSION_ROOT") or expected_sessions)
+    ).expanduser().resolve()
+    configured_backups = Path(
+        str(os.environ.get("CBI_BACKUP_ROOT") or expected_backups)
+    ).expanduser().resolve()
+    if configured_sessions != expected_sessions:
+        raise RuntimeError("CBI_SESSION_ROOT does not match imported/restored Render live root")
+    if configured_backups != expected_backups:
+        raise RuntimeError("CBI_BACKUP_ROOT does not match imported/restored Render live root")
+    os.environ["CBI_SESSION_ROOT"] = str(expected_sessions)
+    os.environ["CBI_BACKUP_ROOT"] = str(expected_backups)
+
+    from mcp.server_v61_remote import main as production_remote_main
+
+    return production_remote_main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
