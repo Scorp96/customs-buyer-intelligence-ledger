@@ -2,9 +2,16 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONUTF8=1
+    PYTHONUTF8=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /app
+
+COPY requirements-crawler.txt /tmp/requirements-crawler.txt
+
+RUN python -m pip install --no-cache-dir --disable-pip-version-check -r /tmp/requirements-crawler.txt \
+    && python -m playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright
 
 RUN groupadd --gid 10001 cbi \
     && useradd --uid 10001 --gid 10001 --create-home --shell /bin/bash cbi \
@@ -19,7 +26,8 @@ USER cbi
 ENV CBI_SESSION_ROOT=/var/lib/cbi/sessions \
     CBI_BACKUP_ROOT=/var/lib/cbi/backups-v61 \
     CBI_REMOTE_HOST=0.0.0.0 \
-    CBI_REMOTE_AUTH_MODE=bearer
+    CBI_REMOTE_AUTH_MODE=bearer \
+    CBI_CRAWLER_ENABLED=1
 
 EXPOSE 8787
 VOLUME ["/var/lib/cbi"]
