@@ -18,7 +18,7 @@ HTML = b"""<!doctype html>
 <h1>Example Company</h1>
 <button onclick="document.getElementById('contact').hidden=false">Show contact details</button>
 <div id="contact" hidden>
-  <p>Email: purchasing@example.test</p>
+  <p>Email: purchasing@example.invalid</p>
   <p>Phone: +51 983 752 162</p>
   <a href="https://wa.me/51983752162">WhatsApp purchasing</a>
 </div>
@@ -49,7 +49,7 @@ async def _run(port: int) -> None:
     ) as browser:
         page = await browser.fetch(f"http://127.0.0.1:{port}/")
         assert page.success, page.error
-        assert "purchasing@example.test" in page.text
+        assert "purchasing@example.invalid" in page.text
         assert "+51 983 752 162" in page.text
         assert any(link.startswith("https://wa.me/51983752162") for link in page.links)
         assert any(label == "Procurement Team" for _, label in page.link_hints)
