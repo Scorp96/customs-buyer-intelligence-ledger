@@ -176,6 +176,26 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
             "paid_api_required": False,
         }
 
+    runtime = crawler_runtime_status()
+    if not runtime["crawl4ai_present"]:
+        return {
+            "status": "CRAWLER_RUNTIME_MISSING",
+            "runtime": runtime,
+            "missing": ["crawl4ai"],
+            "retryable": False,
+            "paid_api_required": False,
+        }
+
+    browser_requested = arguments.get("browser_escalation", True) is not False
+    if browser_requested and not runtime["playwright_present"]:
+        return {
+            "status": "CRAWLER_RUNTIME_MISSING",
+            "runtime": runtime,
+            "missing": ["playwright"],
+            "retryable": False,
+            "paid_api_required": False,
+        }
+
     task = arguments.get("task")
     if not isinstance(task, dict):
         raise ValueError("task must be an object")
@@ -195,7 +215,7 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
     if max_retries < 0 or max_retries > 2:
         raise ValueError("max_retries must be between 0 and 2")
 
-    browser_escalation = arguments.get("browser_escalation", True) is not False
+    browser_escalation = browser_requested
 
     async with Crawl4AIBackend(
         public_network_only=True,
