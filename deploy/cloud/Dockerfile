@@ -34,6 +34,6 @@ EXPOSE 8787
 VOLUME ["/var/lib/cbi"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD ["python", "-c", "import json,os,urllib.request; p=os.environ.get('CBI_REMOTE_PORT') or os.environ.get('PORT') or '8787'; r=urllib.request.urlopen('http://127.0.0.1:'+p+'/healthz',timeout=3); d=json.load(r); raise SystemExit(0 if r.status==200 and d.get('status') in {'ok','bootstrap_required'} else 1)"]
+  CMD ["python", "-c", "import json,os,urllib.request; p=os.environ.get('CBI_REMOTE_PORT') or os.environ.get('PORT') or '8787'; r=urllib.request.urlopen('http://127.0.0.1:'+p+'/readyz',timeout=3); d=json.load(r); raise SystemExit(0 if r.status==200 and d.get('status') == 'ok' else 1)"]
 
-CMD ["python", "-B", "-Xutf8", "mcp/server_v61_remote.py"]
+CMD ["python", "-B", "-Xutf8", "mcp/render_bootstrap.py"]

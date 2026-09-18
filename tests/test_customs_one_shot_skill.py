@@ -8,13 +8,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / ".codex-plugin" / "plugin.json"
 SKILL = ROOT / "skills" / "customs-buyer-one-shot" / "SKILL.md"
+MCP_CONFIG = ROOT / ".mcp.json"
+LOCAL_MCP_CONFIG = ROOT / "deploy" / "local" / "mcp.windows.json"
 
 
 class CustomsBuyerOneShotSkillTests(unittest.TestCase):
     def test_manifest_routes_customs_tasks_to_one_shot_skill(self) -> None:
         manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
         prompts = manifest["interface"]["defaultPrompt"]
-        self.assertEqual(manifest["version"], "6.4.0+codex.20260918")
+        self.assertEqual(manifest["version"], "6.4.1+codex.20260918")
         self.assertIn("$investigate-customs-buyers", prompts[0])
         self.assertIn("批量写回", prompts[1])
         self.assertTrue(
@@ -58,6 +60,25 @@ class CustomsBuyerOneShotSkillTests(unittest.TestCase):
             text,
         )
 
+
+    def test_plugin_mcp_is_cloud_first_and_local_windows_is_engineering_only(self) -> None:
+        config = json.loads(MCP_CONFIG.read_text(encoding="utf-8"))
+        server = config["mcpServers"]["buyer-outreach-actions"]
+        self.assertEqual("http", server["type"])
+        self.assertEqual("https://cbi-v61-preview.onrender.com/mcp", server["url"])
+        self.assertEqual("oauth", server["auth"])
+        self.assertEqual("CBI_REMOTE_BEARER_TOKEN", server["bearer_token_env_var"])
+        self.assertNotIn("command", server)
+        self.assertNotIn("args", server)
+        self.assertTrue(LOCAL_MCP_CONFIG.is_file())
+        local = json.loads(LOCAL_MCP_CONFIG.read_text(encoding="utf-8"))
+        local_server = local["mcpServers"]["buyer-outreach-actions"]
+        self.assertEqual("powershell.exe", local_server["command"])
+
+    def test_one_shot_documents_remote_mcp_as_canonical_plugin_path(self) -> None:
+        text = SKILL.read_text(encoding="utf-8")
+        self.assertIn("The plugin `.mcp.json` is the cloud production MCP route", text)
+        self.assertIn("deploy/local/mcp.windows.json", text)
 
 if __name__ == "__main__":
     unittest.main()

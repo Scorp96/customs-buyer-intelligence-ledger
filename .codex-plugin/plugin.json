@@ -1,6 +1,6 @@
 {
   "name": "customs-buyer-intelligence",
-  "version": "6.4.0+codex.20260918",
+  "version": "6.4.1+codex.20260918",
   "description": "One-shot customs buyer intelligence with historical backfill, validated six-branch network fission and cloud new-record monitoring, plus answer-first public buyer research and the v6.4 self-hosted Crawl4AI/Playwright claim-driven Runtime with crash-safe durability, safe CRM writeback and guarded draft-only actions.",
   "author": {
     "name": "Xinghuai Sales Intelligence"
