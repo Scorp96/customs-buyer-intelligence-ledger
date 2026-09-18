@@ -1,0 +1,145 @@
+name: CBI v6.4 live crawler acceptance
+
+on:
+  push:
+    branches:
+      - cbi-v6-3-demand-expansion
+    paths:
+      - mcp/crawler_tool_v64.py
+      - mcp/server_v61_remote.py
+      - unified_runtime/browser_escalation.py
+      - unified_runtime/crawler_execution_bridge.py
+      - unified_runtime/public_network_guard.py
+      - deploy/cloud/Dockerfile
+      - render.yaml
+      - .github/workflows/cbi-v64-live-crawler-acceptance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v64-live-crawler-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-crawler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+
+      - name: Resolve promoted cloud-preview SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git ls-remote origin refs/heads/cbi-v6-cloud-runtime-20260901 | awk '{print $1}')"
+          test -n "$sha"
+          echo "CBI_EXPECTED_DEPLOY_SHA=$sha" >> "$GITHUB_ENV"
+
+      - name: Run live remote crawler acceptance
+        env:
+          CBI_V63_ACCEPTANCE_BASE_URL: ${{ secrets.CBI_V63_ACCEPTANCE_BASE_URL }}
+          CBI_V63_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from unified_runtime.render_r2_acceptance_client_v63 import (
+              RenderR2AcceptanceClient,
+              RenderR2AcceptanceClientConfig,
+          )
+
+          base = str(os.environ.get("CBI_V63_ACCEPTANCE_BASE_URL") or "").strip()
+          token = str(os.environ.get("CBI_V63_ACCEPTANCE_BEARER_TOKEN") or "")
+          expected = str(os.environ.get("CBI_EXPECTED_DEPLOY_SHA") or "").strip()
+
+          if not base or not token:
+              raise SystemExit("BLOCKED_EXTERNAL: live acceptance URL/token secrets are missing")
+
+          client = RenderR2AcceptanceClient(
+              RenderR2AcceptanceClientConfig(
+                  base_url=base,
+                  bearer_token=token,
+                  expected_git_sha=expected,
+                  timeout_seconds=45,
+              )
+          )
+
+          health = client.read_health()
+          crawler = health.get("crawler_runtime") or {}
+          required_true = (
+              "enabled",
+              "crawl4ai_present",
+              "playwright_present",
+              "browser_escalation_supported",
+              "public_network_only",
+              "request_interception_guard",
+              "redirect_revalidation",
+          )
+          for key in required_true:
+              if crawler.get(key) is not True:
+                  raise SystemExit(f"LIVE_CRAWLER_HEALTH_NOT_READY:{key}:{crawler}")
+          if crawler.get("paid_api_required") is not False:
+              raise SystemExit("LIVE_CRAWLER_MUST_NOT_REQUIRE_PAID_API")
+
+          tools = client.list_tool_names()
+          if "execute_public_crawl" not in tools:
+              raise SystemExit("LIVE_CRAWLER_TOOL_MISSING")
+
+          result = client.call_tool(
+              "execute_public_crawl",
+              {
+                  "task": {
+                      "call_id": "LIVE-V64-CRAWLER-ACCEPTANCE",
+                      "source_family": "official_home",
+                      "query": "public company contact",
+                  },
+                  "seed_url": "https://example.com/",
+                  "max_pages": 1,
+                  "browser_escalation": True,
+                  "timeout_seconds": 25,
+                  "max_retries": 1,
+              },
+          )
+
+          if result.get("status") != "CRAWL_EXECUTED":
+              raise SystemExit(f"LIVE_CRAWL_NOT_EXECUTED:{result.get('status')}")
+          if int(result.get("pages_crawled") or 0) < 1:
+              raise SystemExit("LIVE_CRAWL_NO_PAGE")
+          if result.get("production_route_ownership_promoted") is not False:
+              raise SystemExit("LIVE_CRAWL_ROUTE_OWNERSHIP_MUST_STAY_UNVERIFIED")
+          if result.get("owner_scope") != "UNVERIFIED":
+              raise SystemExit("LIVE_CRAWL_OWNER_SCOPE_MUST_BE_UNVERIFIED")
+
+          diagnostics = result.get("backend_diagnostics") or {}
+          nested = diagnostics.get("nested") or {}
+          if int(nested.get("browser_escalation_count") or 0) < 1:
+              raise SystemExit(f"LIVE_BROWSER_ESCALATION_NOT_OBSERVED:{diagnostics}")
+          events = nested.get("events") or []
+          if not any(event.get("browser_success") is True for event in events if isinstance(event, dict)):
+              raise SystemExit(f"LIVE_BROWSER_SUCCESS_NOT_OBSERVED:{diagnostics}")
+
+          print(json.dumps({
+              "status": "PASS",
+              "deployment_git_sha": expected,
+              "crawler_status": {
+                  "enabled": crawler.get("enabled"),
+                  "crawl4ai_present": crawler.get("crawl4ai_present"),
+                  "playwright_present": crawler.get("playwright_present"),
+                  "browser_escalation_supported": crawler.get("browser_escalation_supported"),
+                  "paid_api_required": crawler.get("paid_api_required"),
+                  "public_network_only": crawler.get("public_network_only"),
+              },
+              "tool_present": True,
+              "pages_crawled": result.get("pages_crawled"),
+              "browser_escalation_count": nested.get("browser_escalation_count"),
+              "owner_scope": result.get("owner_scope"),
+          }, sort_keys=True))
+          PY
