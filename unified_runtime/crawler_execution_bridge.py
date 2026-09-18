@@ -68,6 +68,7 @@ class CrawlPage:
     url: str
     text: str
     links: tuple[str, ...] = ()
+    link_hints: tuple[tuple[str, str], ...] = ()
     success: bool = True
     error: str | None = None
 
@@ -123,12 +124,13 @@ class Crawl4AIBackend:
         success = bool(getattr(result, "success", True))
         error = getattr(result, "error_message", None) or getattr(result, "error", None)
         markdown = _markdown_text(getattr(result, "markdown", ""))
-        links = tuple(_result_links(getattr(result, "links", None), url))
+        links, link_hints = _result_link_data(getattr(result, "links", None), url)
         final_url = str(getattr(result, "url", None) or url)
         return CrawlPage(
             url=final_url,
             text=markdown,
-            links=links,
+            links=tuple(links),
+            link_hints=tuple(link_hints),
             success=success,
             error=str(error) if error else None,
         )
@@ -146,9 +148,9 @@ def _markdown_text(value: Any) -> str:
     return str(value)
 
 
-def _result_links(value: Any, base_url: str) -> Iterable[str]:
+def _result_link_data(value: Any, base_url: str) -> tuple[list[str], list[tuple[str, str]]]:
     if value is None:
-        return ()
+        return [], []
 
     rows: list[Any] = []
     if isinstance(value, dict):
@@ -159,17 +161,30 @@ def _result_links(value: Any, base_url: str) -> Iterable[str]:
         rows.extend(value)
 
     links: list[str] = []
+    hints: list[tuple[str, str]] = []
     for row in rows:
         href = ""
+        label = ""
         if isinstance(row, str):
             href = row
         elif isinstance(row, dict):
             href = str(row.get("href") or row.get("url") or "")
+            label = str(row.get("text") or row.get("title") or row.get("label") or "")
         else:
             href = str(getattr(row, "href", "") or getattr(row, "url", "") or "")
+            label = str(
+                getattr(row, "text", "")
+                or getattr(row, "title", "")
+                or getattr(row, "label", "")
+                or ""
+            )
         if href:
-            links.append(urljoin(base_url, href))
-    return links
+            absolute = urljoin(base_url, href)
+            links.append(absolute)
+            cleaned_label = " ".join(label.split())[:240]
+            if cleaned_label:
+                hints.append((absolute, cleaned_label))
+    return list(dict.fromkeys(links)), hints
 
 
 def _clean_url(url: str) -> str | None:
@@ -191,13 +206,56 @@ def _same_site(candidate: str, root_host: str) -> bool:
     return host == root or host.endswith("." + root) or root.endswith("." + host)
 
 
-def _score_link(url: str, source_family: str = "") -> int:
+def _tokenize_goal_text(value: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-zA-ZÀ-ÿ0-9][a-zA-ZÀ-ÿ0-9_-]{1,}", str(value or "").lower())
+        if len(token) >= 3
+    }
+
+
+def _task_goal_terms(task: dict[str, Any]) -> set[str]:
+    terms: set[str] = set()
+    for key in ("query", "source_family", "route_target", "branch", "branch_group"):
+        terms.update(_tokenize_goal_text(str(task.get(key) or "")))
+
+    route_target = str(task.get("route_target") or "").upper()
+    source_family = str(task.get("source_family") or "").lower()
+    if route_target in {"COMPANY", "NAMED"} or "contact" in source_family:
+        terms.update({
+            "contact", "contacto", "contato", "whatsapp", "email", "phone",
+            "team", "equipo", "equipe", "procurement", "purchasing",
+            "sourcing", "compras", "importaciones", "suprimentos",
+        })
+    if "product" in source_family or "catalog" in source_family:
+        terms.update({"product", "products", "producto", "productos", "produto", "produtos", "catalog", "catalogo"})
+    return terms
+
+
+def _score_link(
+    url: str,
+    source_family: str = "",
+    *,
+    label: str = "",
+    goal_terms: set[str] | None = None,
+) -> int:
     split = urlsplit(url)
-    haystack = f"{split.path} {split.query}".lower().replace("_", "-")
+    haystack = f"{split.path} {split.query} {label}".lower().replace("_", "-")
     score = 0
     for term, weight in LINK_PRIORITY_TERMS.items():
         if term in haystack:
             score += weight
+
+    if goal_terms:
+        haystack_tokens = _tokenize_goal_text(haystack)
+        exact_overlap = haystack_tokens & goal_terms
+        score += min(len(exact_overlap), 8) * 12
+        # Partial multilingual/path overlap helps localized URLs without making
+        # every task term a blanket score boost.
+        for term in sorted(goal_terms):
+            if len(term) >= 5 and term in haystack and term not in exact_overlap:
+                score += 4
+
     depth = len([part for part in split.path.split("/") if part])
     score -= max(0, depth - 3)
     return score
@@ -335,6 +393,7 @@ class CrawlExecutionBridge:
         pages: list[CrawlPage] = []
         failed_urls: list[dict[str, str]] = []
         source_family = str(task.get("source_family") or "")
+        goal_terms = _task_goal_terms(task)
 
         while queue and len(pages) < self.max_pages:
             neg_score, depth, url = heapq.heappop(queue)
@@ -352,19 +411,34 @@ class CrawlExecutionBridge:
                 url=canonical,
                 text=page.text or "",
                 links=tuple(page.links or ()),
+                link_hints=tuple(page.link_hints or ()),
                 success=True,
                 error=None,
             )
             pages.append(page)
 
             ranked: list[tuple[int, str]] = []
+            hint_by_url: dict[str, str] = {}
+            for hint_url, hint_label in page.link_hints:
+                cleaned_hint_url = _clean_url(hint_url)
+                if cleaned_hint_url and hint_label:
+                    hint_by_url.setdefault(cleaned_hint_url, hint_label)
+
             for raw_link in page.links:
                 candidate = _clean_url(raw_link)
                 if not candidate or candidate in visited or candidate in enqueued:
                     continue
                 if not _same_site(candidate, root_host):
                     continue
-                ranked.append((_score_link(candidate, source_family), candidate))
+                ranked.append((
+                    _score_link(
+                        candidate,
+                        source_family,
+                        label=hint_by_url.get(candidate, ""),
+                        goal_terms=goal_terms,
+                    ),
+                    candidate,
+                ))
 
             # High-value links first, but retain a small exploration tail so an
             # unusual localized contact path can still be reached.
@@ -416,5 +490,9 @@ class CrawlExecutionBridge:
             "guessed": False,
             "owner_scope": "ACCOUNT" if verified_route else "UNVERIFIED",
             "current_company_association": False,
+            "goal_terms": sorted(goal_terms),
         }
+        diagnostics = getattr(self.backend, "diagnostics", None)
+        if callable(diagnostics):
+            receipt["backend_diagnostics"] = diagnostics()
         return receipt
