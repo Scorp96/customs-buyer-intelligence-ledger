@@ -125,5 +125,32 @@ jobs:
           assert "execute_public_crawl" in rows, sorted(rows)
           crawler_tool = rows["execute_public_crawl"]
           assert crawler_tool.get("annotations", {}).get("readOnlyHint") is True, crawler_tool
+
+          crawl_call = post(
+              "tools/call",
+              "crawl-1",
+              {
+                  "name": "execute_public_crawl",
+                  "arguments": {
+                      "task": {
+                          "call_id": "CI-ROUND3-EXAMPLE",
+                          "source_family": "official_home",
+                          "query": "example public company website",
+                      },
+                      "seed_url": "https://example.com/",
+                      "max_pages": 1,
+                      "browser_escalation": False,
+                      "timeout_seconds": 20,
+                      "max_retries": 1,
+                  },
+              },
+              {"Mcp-Name": "execute_public_crawl"},
+          )
+          structured = crawl_call.get("structuredContent") or {}
+          assert structured.get("status") == "CRAWL_EXECUTED", structured
+          assert structured.get("pages_crawled", 0) >= 1, structured
+          assert structured.get("production_route_ownership_promoted") is False, structured
+          assert structured.get("owner_scope") == "UNVERIFIED", structured
           print("Round3 remote MCP crawler surface: PASS")
+          print("Round3 remote MCP live crawl: PASS")
           PY
