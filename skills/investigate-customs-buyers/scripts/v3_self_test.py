@@ -91,6 +91,20 @@ def main() -> int:
     check(result["schema_version"] == "4.2.0", "schema_v42", passed)
     check(result["scores"]["conversion_probability"]["point_estimate"] is None, "fake_conversion_probability_withheld", passed)
     check(result["decision_layers"]["final_crm"]["export_allowed"] is False, "unreviewed_crm_export_blocked", passed)
+    if result["outreach"]["outreach_status"] != "DRAFT_READY":
+        print(json.dumps({
+            "v3_outreach_diagnostic": {
+                "outreach_status": result["outreach"].get("outreach_status"),
+                "eligibility_gate": result["outreach"].get("eligibility_gate"),
+                "contact": result["outreach"].get("contact"),
+                "email_routing": result["outreach"].get("email_routing"),
+                "risk": result["outreach"].get("risk"),
+                "quality": result["outreach"].get("quality"),
+                "completion": result["outreach"].get("completion"),
+                "enterprise_intelligence_grade": result.get("scores", {}).get("enterprise_intelligence_grade"),
+                "product_match_level": result.get("normalized_shipment", {}).get("product", {}).get("match_level"),
+            }
+        }, sort_keys=True))
     check(result["outreach"]["outreach_status"] == "DRAFT_READY", "official_general_contact_allows_draft", passed)
     check(result["outreach"]["completion"]["terminal_state"] == "SENDABLE_DRAFT", "mandatory_outreach_terminal_state", passed)
     check(result["outreach"]["completion"]["action"]["enabled"] is True, "mandatory_draft_action_enabled", passed)
