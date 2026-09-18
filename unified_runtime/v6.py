@@ -32,8 +32,8 @@ from .errors import ValidationError
 from .resilience import HashChainLog, canonical_json, digest, exclusive_file_lock, iso_utc
 
 
-V6_RUNTIME_VERSION = "6.1.0"
-V6_BUILD_ID = "CBI-V6.1-INDEPENDENT-AUDIT-EVIDENCE-ATOMICITY-V1"
+V6_RUNTIME_VERSION = "6.4.0"
+V6_BUILD_ID = "CBI-V6.4-SELF-HOSTED-CRAWLER-PRODUCTION-V1"
 
 V6_CBI_MCP_TOOL_NAMES = (
     "get_runtime_contract", "get_runtime_health", "get_investigation_health",

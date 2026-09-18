@@ -96,7 +96,7 @@ class V6WindowsPortabilityTests(unittest.TestCase):
             if line.lstrip("\ufeff").startswith("{")
         ]
         by_id = {row.get("id"): row for row in responses}
-        self.assertEqual(by_id[1]["result"]["serverInfo"]["version"], "6.1.0")
+        self.assertEqual(by_id[1]["result"]["serverInfo"]["version"], "6.4.0")
         self._assert_tool_surface(by_id[2]["result"]["tools"], _declared_production_tool_names())
 
     def test_cold_copy_runs_from_utf8_chinese_and_space_path(self) -> None:
@@ -129,7 +129,7 @@ class V6WindowsPortabilityTests(unittest.TestCase):
                 }) + "\n")
                 process.stdin.flush()
                 response = json.loads(process.stdout.readline())
-                self.assertEqual(response["result"]["serverInfo"]["version"], "6.1.0")
+                self.assertEqual(response["result"]["serverInfo"]["version"], "6.4.0")
                 process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n")
                 process.stdin.flush()
                 tools = json.loads(process.stdout.readline())["result"]["tools"]

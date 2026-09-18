@@ -1,0 +1,47 @@
+name: CBI crawler round2 smoke
+
+on:
+  push:
+    branches:
+      - cbi-v64-crawler-bridge-round2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - name: Run crawler bridge tests
+        run: >-
+          python -m unittest
+          tests.test_v64_crawler_execution_bridge
+          tests.test_v64_browser_escalation
+          -v
+      - name: Compile round2 modules and CLI
+        run: >-
+          python -m py_compile
+          unified_runtime/crawler_execution_bridge.py
+          unified_runtime/browser_escalation.py
+          scripts/run_crawler_bridge.py
+
+  playwright-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - name: Install Playwright
+        run: python -m pip install --disable-pip-version-check --no-input "playwright>=1.49,<2"
+      - name: Install Chromium runtime
+        run: python -m playwright install --with-deps chromium
+      - name: Run live local browser smoke
+        run: python scripts/run_browser_round2_live_smoke.py
