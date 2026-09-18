@@ -1007,7 +1007,7 @@ class SessionStore:
 
     def append(self, investigation_id: str, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         lock_path = self.root / f".{investigation_id}.write.lock"
-        with exclusive_file_lock(lock_path, timeout_seconds=15.0):
+        with exclusive_file_lock(lock_path, timeout_seconds=30.0):
             events = self._read_unlocked(investigation_id)
             event = self._event(len(events) + 1, events[-1]["event_hash"], event_type, payload)
             with self.path(investigation_id).open("a", encoding="utf-8", newline="\n") as handle:
