@@ -181,10 +181,6 @@ class Crawl4AIBackend:
             await crawler.__aexit__(exc_type, exc, tb)
 
     async def fetch(self, url: str) -> CrawlPage:
-        if self._crawler is None:
-            async with self:
-                return await self.fetch(url)
-
         if self.public_network_only:
             try:
                 await asyncio.to_thread(
@@ -201,6 +197,10 @@ class Crawl4AIBackend:
                     success=False,
                     error=f"public_network_guard:{exc}",
                 )
+
+        if self._crawler is None:
+            async with self:
+                return await self.fetch(url)
 
         try:
             result = await self._crawler.arun(url=url)
