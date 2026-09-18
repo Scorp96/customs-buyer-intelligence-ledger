@@ -1,0 +1,24 @@
+name: CBI crawler round1 smoke
+
+on:
+  push:
+    branches:
+      - cbi-v64-release-candidate-crawler-round1-20260918
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - name: Run crawler bridge unit tests
+        run: python -m unittest tests.test_v64_crawler_execution_bridge -v
+      - name: Compile crawler bridge and CLI
+        run: python -m py_compile unified_runtime/crawler_execution_bridge.py scripts/run_crawler_bridge.py
