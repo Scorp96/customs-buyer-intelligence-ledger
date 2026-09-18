@@ -305,7 +305,7 @@ class V54ResilienceTests(unittest.TestCase):
             process.stdin.write(json.dumps(request) + "\n")
             process.stdin.flush()
             response = json.loads(process.stdout.readline())
-            self.assertEqual(response["result"]["serverInfo"]["version"], "6.1.0")
+            self.assertEqual(response["result"]["serverInfo"]["version"], "6.4.0")
             self.assertIn("Default to ANSWER_FIRST", response["result"]["instructions"])
         finally:
             if process.stdin:

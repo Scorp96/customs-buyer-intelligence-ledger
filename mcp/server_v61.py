@@ -34,6 +34,12 @@ from mcp import server as _server  # noqa: E402
 from unified_runtime import ValidationError  # noqa: E402
 from unified_runtime.production_tool_surface_v64 import MUTATION_WAL_AUDIT_TOOL_NAME  # noqa: E402
 from unified_runtime.resilience import exclusive_file_lock  # noqa: E402
+from mcp.crawler_tool_v64 import (  # noqa: E402
+    CRAWLER_TOOL_NAME,
+    crawler_runtime_status,
+    crawler_tool_descriptor,
+    execute_public_crawl_handler,
+)
 
 
 _MUTATING_TOOLS = {
@@ -799,6 +805,7 @@ def _health_with_adapter_wal(arguments: dict[str, Any]) -> dict[str, Any]:
     health = copy.deepcopy(_ORIGINAL_HANDLERS["get_runtime_health"](arguments))
     wal = _journal_status()
     health["mutation_wal"] = wal
+    health["crawler_runtime"] = crawler_runtime_status()
     if wal["reconciliation_required"]:
         health["status"] = "DEGRADED_RECONCILIATION_REQUIRED"
     return health
@@ -966,6 +973,7 @@ def hardened_tool_descriptors() -> list[dict[str, Any]]:
             },
         }
     )
+    tools.append(crawler_tool_descriptor())
     return tools
 
 
@@ -975,6 +983,7 @@ _server.tool_descriptors = hardened_tool_descriptors
 _server.TOOL_HANDLERS["get_runtime_contract"] = _contract_with_adapter_wal
 _server.TOOL_HANDLERS["get_runtime_health"] = _health_with_adapter_wal
 _server.TOOL_HANDLERS[MUTATION_WAL_AUDIT_TOOL_NAME] = _mutation_wal_audit
+_server.TOOL_HANDLERS[CRAWLER_TOOL_NAME] = execute_public_crawl_handler
 for _name in _MUTATING_TOOLS:
     if _name in _ORIGINAL_HANDLERS:
         _server.TOOL_HANDLERS[_name] = _wrap_handler(

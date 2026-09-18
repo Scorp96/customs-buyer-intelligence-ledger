@@ -31,3 +31,5 @@ services:
         value: Scorp96
       - key: CBI_REMOTE_MAX_BODY_BYTES
         value: "8388608"
+      - key: CBI_CRAWLER_ENABLED
+        value: "1"

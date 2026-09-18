@@ -62,7 +62,7 @@ def main() -> int:
         )
         try:
             initialized = rpc(process, 1, "initialize", {"protocolVersion": "2025-06-18"})["result"]
-            assert initialized["serverInfo"]["version"] == "6.1.0"
+            assert initialized["serverInfo"]["version"] == "6.4.0"
             listed = rpc(process, 2, "tools/list")["result"]["tools"]
             tools = {row["name"]: row for row in listed}
             start_schema = tools["start_investigation"]["inputSchema"]
@@ -176,7 +176,7 @@ def main() -> int:
                 process.kill()
                 process.wait(timeout=5)
 
-    print(json.dumps({"runtime_version": "6.1.0", "passed": len(passed), "tests": passed}, indent=2))
+    print(json.dumps({"runtime_version": "6.4.0", "passed": len(passed), "tests": passed}, indent=2))
     return 0
 
 
