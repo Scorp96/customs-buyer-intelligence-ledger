@@ -259,9 +259,17 @@ def _route_candidates(page: CrawlPage) -> list[dict[str, Any]]:
             })
 
     for match in PHONE_RE.finditer(page.text):
-        phone = _normalize_phone(match.group(1))
+        raw_phone = match.group(1)
+        phone = _normalize_phone(raw_phone)
+        context_start = max(0, match.start() - 40)
+        context_end = min(len(page.text), match.end() + 20)
+        context = page.text[context_start:context_end]
+        # A leading + is strong syntax evidence for an international number.
+        # Local-looking digit groups require nearby phone/channel context so
+        # dates, dimensions and order numbers are not promoted as routes.
+        phone_context_ok = raw_phone.lstrip().startswith("+") or bool(PHONE_CONTEXT_RE.search(context))
         key = ("PHONE", phone)
-        if phone and key not in seen:
+        if phone and phone_context_ok and key not in seen:
             seen.add(key)
             candidates.append({
                 "kind": "PHONE",
