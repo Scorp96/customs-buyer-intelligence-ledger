@@ -23,6 +23,18 @@ crawl4ai-setup
 crawl4ai-doctor
 ```
 
+## Manual local execution
+
+After installing the crawler dependency, one planned task can be executed without any paid API:
+
+```bash
+python scripts/run_crawler_bridge.py \
+  --seed-url https://example.com \
+  --task-json '{"task_id":"V63CONTACT-DEMO","source_family":"official_contact"}' \
+  --official-domain-verified
+```
+
+The command prints normalized receipt JSON to stdout. Omit `--official-domain-verified` unless CBI/host evidence has already proven the domain belongs to the investigated Account.
 ## Round 1 behavior
 
 `unified_runtime/crawler_execution_bridge.py` adds:
