@@ -95,6 +95,7 @@ from mcp.object_store_recovery_v63 import (  # noqa: E402
 from mcp.remote_durability_checkpoint_v63 import (  # noqa: E402
     install_remote_durability_checkpoint,
 )
+from mcp.crawler_tool_v64 import crawler_runtime_status  # noqa: E402
 
 
 _RUNTIME = _production._RUNTIME
@@ -208,6 +209,7 @@ def _health() -> dict[str, Any]:
         "backup_recovery_enabled": True,
         "object_store_persistence_enabled": _PERSISTENCE is not None,
         "remote_post_handler_checkpoint_enabled": _PERSISTENCE is not None,
+        "crawler_runtime": crawler_runtime_status(),
         "deployment_identity": _deployment_identity(persistence_health),
     }
     if _PERSISTENCE is not None:

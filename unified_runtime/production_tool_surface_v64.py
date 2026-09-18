@@ -7,12 +7,15 @@ can validate the composed surface without polluting the core contract.
 """
 
 MUTATION_WAL_AUDIT_TOOL_NAME = "get_mutation_wal_audit"
+CRAWLER_EXECUTION_TOOL_NAME = "execute_public_crawl"
 
 V64_PRODUCTION_ADAPTER_TOOL_NAMES = (
     MUTATION_WAL_AUDIT_TOOL_NAME,
+    CRAWLER_EXECUTION_TOOL_NAME,
 )
 
 __all__ = [
     "MUTATION_WAL_AUDIT_TOOL_NAME",
+    "CRAWLER_EXECUTION_TOOL_NAME",
     "V64_PRODUCTION_ADAPTER_TOOL_NAMES",
 ]
