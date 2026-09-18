@@ -187,6 +187,53 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(receipt["result"], "NEGATIVE_EXHAUSTED")
         self.assertEqual(receipt["route_candidates"], [])
 
+    def test_goal_aware_link_label_prioritizes_opaque_procurement_url(self) -> None:
+        pages = {
+            "https://example.com/": CrawlPage(
+                url="https://example.com/",
+                text="Example Company",
+                links=(
+                    "https://example.com/page?id=42",
+                    "https://example.com/products",
+                ),
+                link_hints=(
+                    ("https://example.com/page?id=42", "Equipo de Compras e Importaciones"),
+                    ("https://example.com/products", "Products"),
+                ),
+            ),
+            "https://example.com/page?id=42": CrawlPage(
+                url="https://example.com/page?id=42",
+                text="Purchasing contact: +51 999 111 222",
+                links=(),
+            ),
+            "https://example.com/products": CrawlPage(
+                url="https://example.com/products",
+                text="Products",
+                links=(),
+            ),
+        }
+        backend = FakeBackend(pages)
+        bridge = CrawlExecutionBridge(backend, max_pages=2)
+        receipt = run(
+            bridge.execute(
+                {
+                    "task_id": "V63CONTACT-GOAL",
+                    "source_family": "official_contact",
+                    "query": "compras importaciones purchasing",
+                    "route_target": "NAMED",
+                },
+                seed_url="https://example.com/",
+                official_domain_verified=True,
+            )
+        )
+
+        self.assertEqual(backend.calls[:2], [
+            "https://example.com/",
+            "https://example.com/page?id=42",
+        ])
+        self.assertEqual(receipt["result"], "POSITIVE")
+        self.assertIn("compras", receipt["goal_terms"])
+
     def test_failed_seed_is_blocked_not_negative(self) -> None:
         backend = FakeBackend({})
         bridge = CrawlExecutionBridge(backend)
