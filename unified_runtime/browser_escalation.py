@@ -4,9 +4,10 @@ import asyncio
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from .crawler_execution_bridge import CrawlPage
+from .public_network_guard import is_public_http_url, validate_public_http_url
 
 
 CLICK_INTENT_TERMS = (
@@ -107,6 +108,8 @@ class PlaywrightBrowserBackend:
         settle_ms: int = 500,
         scroll_steps: int = 3,
         click_budget: int = 6,
+        public_network_only: bool = False,
+        block_heavy_resources: bool = False,
     ) -> None:
         if navigation_timeout_ms < 1_000:
             raise ValueError("navigation_timeout_ms must be >= 1000")
@@ -121,6 +124,8 @@ class PlaywrightBrowserBackend:
         self.settle_ms = int(settle_ms)
         self.scroll_steps = int(scroll_steps)
         self.click_budget = int(click_budget)
+        self.public_network_only = bool(public_network_only)
+        self.block_heavy_resources = bool(block_heavy_resources)
         self._playwright: Any | None = None
         self._browser: Any | None = None
         self._context: Any | None = None
@@ -221,6 +226,52 @@ class PlaywrightBrowserBackend:
         assert self._context is not None
         page = await self._context.new_page()
         self._session_page_count += 1
+        if self.public_network_only:
+            try:
+                await asyncio.to_thread(
+                    validate_public_http_url,
+                    url,
+                    resolve_dns=True,
+                )
+            except ValueError as exc:
+                await page.close()
+                if owned_session:
+                    await self.__aexit__(None, None, None)
+                return CrawlPage(
+                    url=url,
+                    text="",
+                    links=(),
+                    link_hints=(),
+                    success=False,
+                    error=f"public_network_guard:{exc}",
+                )
+
+            async def guard_route(route: Any, request: Any) -> None:
+                if self.block_heavy_resources and str(getattr(request, "resource_type", "")) in {
+                    "image", "media", "font",
+                }:
+                    await route.abort()
+                    return
+                request_url = str(getattr(request, "url", "") or "")
+                scheme = urlsplit(request_url).scheme.lower()
+                if scheme in {"data", "blob", "about"}:
+                    await route.continue_()
+                    return
+                if scheme not in {"http", "https"}:
+                    await route.abort()
+                    return
+                allowed, _reason = await asyncio.to_thread(
+                    is_public_http_url,
+                    request_url,
+                    resolve_dns=True,
+                )
+                if allowed:
+                    await route.continue_()
+                else:
+                    await route.abort()
+
+            await page.route("**/*", guard_route)
+
         try:
             response = await page.goto(
                 url,
@@ -235,6 +286,22 @@ class PlaywrightBrowserBackend:
                 await page.wait_for_timeout(min(self.settle_ms, 1_000))
 
             final_url = page.url or url
+            if self.public_network_only:
+                try:
+                    await asyncio.to_thread(
+                        validate_public_http_url,
+                        final_url,
+                        resolve_dns=True,
+                    )
+                except ValueError as exc:
+                    return CrawlPage(
+                        url=final_url,
+                        text="",
+                        links=(),
+                        link_hints=(),
+                        success=False,
+                        error=f"public_network_redirect_guard:{exc}",
+                    )
             body = page.locator("body")
             text = await body.inner_text(timeout=self.navigation_timeout_ms)
 
