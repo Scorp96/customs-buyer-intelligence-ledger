@@ -2,6 +2,10 @@ name: CBI v6.3 isolated Render R2 PVC acceptance
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - cbi-v6-3-demand-expansion
+      - cbi-v63-production-integration-completion-20260919
 
 permissions:
   contents: read
@@ -13,7 +17,7 @@ concurrency:
 jobs:
   external-acceptance:
     name: Isolated Render R2 PVC external acceptance
-    if: ${{ github.ref == 'refs/heads/cbi-v6-3-demand-expansion' }}
+    if: ${{ github.ref == 'refs/heads/cbi-v6-3-demand-expansion' || github.ref == 'refs/heads/cbi-v63-production-integration-completion-20260919' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -28,7 +32,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "cbi-v6-3-demand-expansion"
+          case "$GITHUB_REF_NAME" in
+            cbi-v6-3-demand-expansion|cbi-v63-production-integration-completion-20260919) ;;
+            *) echo "UNEXPECTED_ACCEPTANCE_BRANCH=$GITHUB_REF_NAME" >&2; exit 1 ;;
+          esac
           actual="$(git rev-parse HEAD)"
           test "$actual" = "$GITHUB_SHA"
           echo "ISOLATED_ACCEPTANCE_FEATURE_SHA=$actual"
