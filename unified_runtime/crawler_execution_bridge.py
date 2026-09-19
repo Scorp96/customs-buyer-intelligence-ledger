@@ -465,6 +465,18 @@ def _source_throttle_failure(row: dict[str, str]) -> bool:
     )
 
 
+def _source_access_blocked_failure(row: dict[str, str]) -> bool:
+    error = str(row.get("error") or "").lower()
+    return bool(error) and (
+        "anti-bot protection" in error
+        or "http_status_403" in error
+        or "http 403" in error
+        or "status code 403" in error
+        or "forbidden" in error
+        or "access denied" in error
+    )
+
+
 def _source_unavailable_failure(row: dict[str, str]) -> bool:
     error = str(row.get("error") or "").lower()
     return bool(error) and (
@@ -638,17 +650,28 @@ class CrawlExecutionBridge:
         evidence_ids = sorted(set(evidence_ids) | set(route_evidence_ids))
 
         source_throttled = any(_source_throttle_failure(row) for row in failed_urls)
+        source_access_blocked = (
+            not source_throttled
+            and not pages
+            and bool(failed_urls)
+            and any(_source_access_blocked_failure(row) for row in failed_urls)
+        )
         source_unavailable = (
             not source_throttled
+            and not source_access_blocked
             and not pages
             and bool(failed_urls)
             and any(_source_unavailable_failure(row) for row in failed_urls)
         )
-        source_blocked = source_throttled or source_unavailable
+        source_blocked = source_throttled or source_access_blocked or source_unavailable
         source_status = (
             "SOURCE_THROTTLED"
             if source_throttled
-            else ("SOURCE_UNAVAILABLE" if source_unavailable else "OK")
+            else (
+                "SOURCE_ACCESS_BLOCKED"
+                if source_access_blocked
+                else ("SOURCE_UNAVAILABLE" if source_unavailable else "OK")
+            )
         )
 
         is_contact_task = task_key == "task_id"
