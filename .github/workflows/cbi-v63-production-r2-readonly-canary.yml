@@ -48,6 +48,70 @@ jobs:
           echo "CBI_PRODUCTION_BASELINE=$baseline" >> "$GITHUB_ENV"
           echo "PRODUCTION_BRANCH_BASELINE=$baseline"
 
+      - name: Prepare sanitized receipt directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/v63-production-r2-readonly-canary"
+          mkdir -p "$RUNNER_TEMP/v63-production-r2-readonly-canary"
+
+      - name: Capture production health authority
+        shell: bash
+        env:
+          PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+        run: |
+          set -euo pipefail
+          health="$RUNNER_TEMP/v63-production-r2-readonly-canary/health.json"
+          for attempt in 1 2 3; do
+            if curl --fail --silent --show-error --connect-timeout 10 --max-time 90 "$PRODUCTION_URL/healthz" > "$health"; then
+              break
+            fi
+            rm -f "$health"
+            echo "PRODUCTION_HEALTH_RETRY=$attempt" >&2
+            sleep 5
+          done
+          test -s "$health"
+          python - "$health" "$RUNNER_TEMP/v63-production-r2-readonly-canary/health-authority.json" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          health = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          ident = health.get("deployment_identity") or {}
+          store = health.get("object_store_persistence") or {}
+          if health.get("status") != "ok":
+              raise SystemExit("PRODUCTION_HEALTH_NOT_OK")
+          if ident.get("git_sha") != os.environ["CBI_PRODUCTION_BASELINE"]:
+              raise SystemExit("PRODUCTION_HEALTH_GIT_SHA_MISMATCH")
+          if ident.get("object_state_schema") != "cbi.object-store-state.v2":
+              raise SystemExit("PRODUCTION_OBJECT_STATE_SCHEMA_MISMATCH")
+          if store.get("prefix") != "cbi-v61":
+              raise SystemExit("PRODUCTION_R2_PREFIX_MISMATCH")
+          generation = store.get("generation")
+          if isinstance(generation, bool) or not isinstance(generation, int) or generation <= 0:
+              raise SystemExit("PRODUCTION_R2_GENERATION_INVALID")
+          receipt = {
+              "schema": "cbi.v63-production-health-authority.v1",
+              "status": "VERIFIED",
+              "production_git_sha": ident.get("git_sha"),
+              "object_state_schema": ident.get("object_state_schema"),
+              "object_store_generation": generation,
+              "restore_generation": ident.get("restore_generation"),
+              "restore_source": ident.get("restore_source"),
+              "object_store_prefix": store.get("prefix"),
+              "archive_format": store.get("archive_format"),
+              "last_error": store.get("last_error"),
+              "production_write_performed": False,
+          }
+          Path(sys.argv[2]).write_text(
+              json.dumps(receipt, sort_keys=True, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(receipt, sort_keys=True))
+          PY
+          rm -f "$health"
+
       - name: Compile production R2 read-only Canary runner
         run: python -m py_compile scripts/run_v63_production_r2_readonly_canary.py
 
@@ -62,8 +126,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf "$RUNNER_TEMP/v63-production-r2-readonly-canary"
-          mkdir -p "$RUNNER_TEMP/v63-production-r2-readonly-canary"
           python scripts/run_v63_production_r2_readonly_canary.py             --output "$RUNNER_TEMP/v63-production-r2-readonly-canary/receipt.json"
 
       - name: Verify production branch baseline is unchanged
@@ -81,14 +143,14 @@ jobs:
           fi
           echo "PRODUCTION_BRANCH_UNCHANGED=$actual"
 
-      - name: Upload sanitized Canary receipt
+      - name: Upload sanitized Canary receipts
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: cbi-v63-production-r2-readonly-canary-${{ github.sha }}
           if-no-files-found: error
           retention-days: 14
-          path: ${{ runner.temp }}/v63-production-r2-readonly-canary/receipt.json
+          path: ${{ runner.temp }}/v63-production-r2-readonly-canary/*.json
 
       - name: Confirm production isolation
         if: ${{ always() }}

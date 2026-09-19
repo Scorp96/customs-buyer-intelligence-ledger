@@ -30,7 +30,7 @@ REQUIRED_TOOLS = {
 
 
 class ReadOnlyObjectClient:
-    """Expose only object-store GET to make R2 mutation impossible in this gate."""
+    """Expose only object-store GET so this gate cannot mutate Production R2."""
 
     def __init__(self, delegate: S3CompatibleClient) -> None:
         self._delegate = delegate
@@ -72,9 +72,8 @@ def run(output: Path) -> dict[str, Any]:
             region=str(os.environ.get("CBI_V63_R2_REGION") or "auto").strip() or "auto",
         )
     )
-    read_only_client = ReadOnlyObjectClient(delegate)
     manager = RecoveryObjectStoreStateManagerV63(
-        read_only_client,  # type: ignore[arg-type]
+        ReadOnlyObjectClient(delegate),  # type: ignore[arg-type]
         prefix=PRODUCTION_PREFIX,
     )
     pointer = manager.read_pointer(required=True)
@@ -85,8 +84,7 @@ def run(output: Path) -> dict[str, Any]:
         live_root = Path(tmp_name) / "live"
         if not manager.restore_into(live_root):
             raise RuntimeError("PRODUCTION_R2_RESTORE_MISSING")
-        sessions = live_root / "sessions"
-        if not sessions.is_dir():
+        if not (live_root / "sessions").is_dir():
             raise RuntimeError("PRODUCTION_R2_SESSIONS_MISSING")
 
         harness = ExactCheckoutMcpHarness(ROOT, live_root)
@@ -117,16 +115,14 @@ def run(output: Path) -> dict[str, Any]:
                 row = dict(rows[0])
                 investigation_id = str(row.get("investigation_id") or "").strip()
                 account_id = str(row.get("account_id") or "").strip()
-                product_profile_id = str(
-                    row.get("product_profile_id") or ""
-                ).strip().upper()
+                profile_id = str(row.get("product_profile_id") or "").strip().upper()
                 if not investigation_id or not account_id:
                     raise RuntimeError(
                         f"CANARY_OPPORTUNITY_IDENTITY_MISSING:{opportunity_id}"
                     )
-                if product_profile_id != "PVC":
+                if profile_id != "PVC":
                     raise RuntimeError(
-                        f"CANARY_PRODUCT_PROFILE_MISMATCH:{opportunity_id}:{product_profile_id}"
+                        f"CANARY_PRODUCT_PROFILE_MISMATCH:{opportunity_id}:{profile_id}"
                     )
                 if projected.get("projection_source") != (
                     "EXISTING_APPEND_ONLY_INVESTIGATION_EVENT_CHAIN"
@@ -235,31 +231,30 @@ def run(output: Path) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Restore the current production R2 state into a runner-local temporary "
-            "directory and verify existing Tesoro/Van Nhan Product Opportunity "
-            "events through the integration-head read models. No object-store write "
-            "API is exposed to the restore manager."
+            "Restore current Production R2 into runner-local temporary storage and "
+            "verify existing Tesoro/Van Nhan Product Opportunity events through the "
+            "integration-head read models. The object-store manager receives a "
+            "GET-only client facade."
         )
     )
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
+    output = Path(args.output).expanduser().resolve()
     try:
-        result = run(Path(args.output).expanduser().resolve())
+        result = run(output)
     except Exception as exc:
-        print(
-            json.dumps(
-                {
-                    "schema": "cbi.v63-production-r2-readonly-canary.v1",
-                    "status": "BLOCKED",
-                    "verified": False,
-                    "read_only": True,
-                    "error_code": str(exc).split(":", 1)[0],
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
-            file=sys.stderr,
-        )
+        blocked = {
+            "schema": "cbi.v63-production-r2-readonly-canary.v1",
+            "status": "BLOCKED",
+            "verified": False,
+            "read_only": True,
+            "error_code": str(exc).split(":", 1)[0],
+            "object_store_write_api_exposed": False,
+            "production_render_mutation_performed": False,
+            "production_r2_mutation_performed": False,
+        }
+        _write_json(output, blocked)
+        print(json.dumps(blocked, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return 1
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
     return 0
