@@ -65,6 +65,18 @@ class V63ReleaseEvidenceAssemblerTests(unittest.TestCase):
             "runtime_durable_backend_requires_existing_mutation_correlation": True,
             "runtime_durable_backend_raw_idempotency_key_persisted": False,
             "runtime_durable_backend_side_effect_reexecution_allowed": False,
+            "runtime_read_model_bindings_complete": True,
+            "runtime_read_model_binding_status": "BOUND",
+            "read_model_tool_surface_complete_v6_3": True,
+            "read_model_runtime_bindings_v6_3": {
+                "durable_event_reader": "BOUND",
+                "opportunity_event_query": "BOUND",
+                "evidence_ownership_verifier": "BOUND",
+                "evidence_provenance_verifier": "BOUND",
+                "opportunity_evidence_verifier": "BOUND",
+                "opportunity_derived_state_provider": "BOUND",
+                "capability_profile_source": "PRIVATE_LOADER_BOUND",
+            },
         })
         return {
             "research_orchestration_v6_2": {"enabled": True},
