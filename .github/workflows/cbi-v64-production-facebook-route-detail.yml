@@ -1,0 +1,96 @@
+name: CBI v6.4 production Facebook route detail short probe
+
+on:
+  push:
+    branches:
+      - cbi-v64-production-source-access-canary-20260919
+    paths:
+      - '.github/workflows/cbi-v64-production-facebook-route-detail.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Production Facebook route detail short probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Resolve route types with short independent crawls
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: 9ec63f627fb7d8d8796f5cab3a4bdfdd9bbe723f
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,time,urllib.error,urllib.request
+          base=os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token=os.environ["CBI_PRODUCTION_BEARER_TOKEN"]
+          expected=os.environ["EXPECTED_SHA"].lower()
+
+          def http(req,timeout=60):
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as r:
+                      return r.status,json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try:p=json.loads(raw)
+                  except Exception:p={"raw":raw[:800]}
+                  return e.code,p
+
+          s,h=http(urllib.request.Request(base+"/healthz",headers={"Accept":"application/json"}),30)
+          if s!=200 or str((h.get("deployment_identity") or {}).get("git_sha") or "").lower()!=expected:
+              raise SystemExit("PRODUCTION_HEALTH_OR_SHA_MISMATCH")
+
+          rid=50000
+          def crawl(i):
+              global rid
+              rid+=1; this=rid
+              body=json.dumps({"jsonrpc":"2.0","id":this,"method":"tools/call","params":{
+                  "name":"execute_public_crawl","arguments":{
+                      "task":{"task_id":f"PROD-FB-ROUTE-SHORT-{i}","source_family":"public_social",
+                              "company_name":"Ferreterias La Quinta Inc",
+                              "query":"Ferreterias La Quinta Mayaguez email phone whatsapp"},
+                      "seed_url":"https://www.facebook.com/ferreteriaslaquintainc/",
+                      "max_pages":1,"browser_escalation":False,"timeout_seconds":18,"max_retries":0}}},separators=(",",":")).encode()
+              req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                  "Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json",
+                  "MCP-Protocol-Version":"2026-07-28"})
+              t=time.monotonic(); status,p=http(req,55); elapsed=time.monotonic()-t
+              if status!=200 or p.get("id")!=this or p.get("error"):
+                  return {"attempt":i,"http_status":status,"rpc_error":p.get("error"),
+                          "elapsed_seconds":round(elapsed,3)}
+              r=(p.get("result") or {}).get("structuredContent") or {}
+              routes=r.get("route_candidates") or []
+              return {"attempt":i,"http_status":status,"status":r.get("status"),"result":r.get("result"),
+                      "route_count":len(routes),"routes":routes,"elapsed_seconds":round(elapsed,3)}
+
+          rows=[]
+          positive=None
+          for i in range(1,5):
+              row=crawl(i); rows.append(row)
+              if row.get("result")=="POSITIVE" and row.get("routes"):
+                  positive=row; break
+              time.sleep(1.5)
+
+          if not positive:
+              print(json.dumps({"status":"NOT_OBSERVED","attempts":[{k:v for k,v in x.items() if k!="routes"} for x in rows]},sort_keys=True))
+              raise SystemExit("FACEBOOK_ROUTE_DETAILS_NOT_OBSERVED")
+
+          def mask(kind,value):
+              value=str(value or "")
+              if kind=="EMAIL":
+                  if "@" not in value:return "***"
+                  local,domain=value.split("@",1); return (local[:1] if local else "")+"***@"+domain
+              digits="".join(ch for ch in value if ch.isdigit())
+              return "***"+digits[-4:] if digits else "***"
+
+          summary=[{"kind":x.get("kind"),"masked_value":mask(str(x.get("kind") or ""),x.get("value")),
+                    "source_url":x.get("source_url"),"has_channel_url":bool(x.get("channel_url"))}
+                   for x in positive["routes"]]
+          print(json.dumps({"status":"VERIFIED","production_write_performed":False,
+                            "attempts":[{k:v for k,v in x.items() if k!="routes"} for x in rows],
+                            "route_summary":summary},sort_keys=True))
+          PY
