@@ -249,6 +249,43 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(receipt["pages_crawled"], 0)
         self.assertEqual(len(receipt["failed_urls"]), 1)
 
+    def test_source_throttle_is_blocked_with_fallback_not_negative_exhausted(self) -> None:
+        url = "https://www.facebook.com/ferreteriaslaquintainc/"
+        backend = FakeBackend({
+            url: CrawlPage(
+                url=url,
+                text="",
+                links=(),
+                success=False,
+                error="source_throttled:META_TEMPORARILY_BLOCKED",
+            )
+        })
+        bridge = CrawlExecutionBridge(backend)
+        receipt = run(
+            bridge.execute(
+                {
+                    "task_id": "V63CONTACT-FB-THROTTLED",
+                    "source_family": "public_social",
+                    "company_name": "Ferreterias La Quinta Inc",
+                },
+                seed_url=url,
+                official_domain_verified=False,
+            )
+        )
+
+        self.assertEqual(receipt["result"], "BLOCKED")
+        self.assertEqual(receipt["source_status"], "SOURCE_THROTTLED")
+        self.assertTrue(receipt["retryable"])
+        self.assertTrue(receipt["fallback_required"])
+        self.assertFalse(receipt["negative_contact_conclusion_allowed"])
+        self.assertEqual(
+            receipt["fallback_search_plan"]["contact_conclusion_if_unresolved"],
+            "NOT_VERIFIED",
+        )
+        queries = receipt["fallback_search_plan"]["queries"]
+        self.assertIn('"Ferreterias La Quinta Inc" email', queries)
+        self.assertIn('site:facebook.com "ferreteriaslaquintainc"', queries)
+
     def test_rejects_non_http_seed(self) -> None:
         backend = FakeBackend({})
         bridge = CrawlExecutionBridge(backend)
