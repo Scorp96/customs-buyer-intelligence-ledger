@@ -1,0 +1,80 @@
+name: CBI production MCP read-only auth probe
+
+on:
+  push:
+    branches:
+      - cbi-v63-production-integration-completion-20260919
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe production MCP authentication without mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CBI_PRODUCTION_MCP_URL: https://cbi-v61-preview.onrender.com/mcp
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+
+          url = os.environ["CBI_PRODUCTION_MCP_URL"]
+          payload = json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}).encode("utf-8")
+
+          def probe(label, token=None):
+              headers = {
+                  "Content-Type": "application/json",
+                  "Accept": "application/json",
+                  "User-Agent": "CBI-production-readonly-auth-probe/1",
+              }
+              if token:
+                  headers["Authorization"] = "Bearer " + token
+              req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as resp:
+                      status = int(resp.status)
+                      body = resp.read()
+                      www = resp.headers.get("WWW-Authenticate")
+              except urllib.error.HTTPError as exc:
+                  status = int(exc.code)
+                  body = exc.read()
+                  www = exc.headers.get("WWW-Authenticate")
+              try:
+                  obj = json.loads(body.decode("utf-8"))
+              except Exception:
+                  obj = {}
+              result = obj.get("result") if isinstance(obj, dict) else None
+              tools = result.get("tools") if isinstance(result, dict) else None
+              names = sorted(
+                  str(row.get("name"))
+                  for row in (tools or [])
+                  if isinstance(row, dict) and row.get("name")
+              )
+              error = obj.get("error") if isinstance(obj, dict) else None
+              safe = {
+                  "label": label,
+                  "http_status": status,
+                  "www_authenticate_present": bool(www),
+                  "oauth_metadata_advertised": bool(www and "resource_metadata" in www),
+                  "tool_count": len(names),
+                  "required_read_tools_present": all(
+                      name in names for name in (
+                          "get_product_opportunities",
+                          "get_demand_anchors",
+                          "get_market_cells",
+                          "evaluate_market_acceptance",
+                          "get_expansion_state",
+                      )
+                  ),
+                  "error_code": error.get("code") if isinstance(error, dict) else None,
+                  "error_message": error.get("message") if isinstance(error, dict) else None,
+              }
+              print(json.dumps(safe, sort_keys=True))
+
+          probe("anonymous")
+          probe("github_actions_token", os.environ.get("GH_TOKEN") or "")
+          PY
