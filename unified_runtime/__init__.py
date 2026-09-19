@@ -84,6 +84,7 @@ from .country_identity_hardening import (
     V61CountryIdentityHardeningMixin,
 )
 
+from .production_integration_v63 import V63ProductionIntegrationMixin
 from .demand_expansion import V63DemandExpansionMixin
 from .research_orchestration_hardening import V61ResearchOrchestrationHardeningMixin
 from .crawler_execution_bridge import (
@@ -105,6 +106,7 @@ FRESHNESS_LEVELS = V61_FRESHNESS_LEVELS
 
 
 class UnifiedRuntime(
+    V63ProductionIntegrationMixin,
     V63DemandExpansionMixin,
     V61ResearchOrchestrationHardeningMixin,
     V61CountryIdentityHardeningMixin,
