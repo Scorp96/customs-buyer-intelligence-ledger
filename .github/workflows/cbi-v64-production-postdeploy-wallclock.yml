@@ -1,0 +1,206 @@
+name: CBI v6.4 production postdeploy wall-clock closure
+
+on:
+  push:
+    branches:
+      - cbi-v64-production-postdeploy-wallclock-20260919
+    paths:
+      - '.github/workflows/cbi-v64-production-postdeploy-wallclock.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  closure:
+    name: Production wall-clock + fail-closed postdeploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Verify production runtime and crawler boundaries
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: 675a629d2eb6d1f92e48bc03382fc999750c9a7d
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import concurrent.futures,json,os,statistics,time,urllib.error,urllib.request
+
+          base=os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token=os.environ["CBI_PRODUCTION_BEARER_TOKEN"]
+          expected=os.environ["EXPECTED_SHA"].lower()
+
+          def http(req,timeout=75):
+              started=time.monotonic()
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as r:
+                      return r.status,dict(r.headers.items()),json.loads(r.read().decode()),time.monotonic()-started
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try:p=json.loads(raw)
+                  except Exception:p={"raw":raw[:1000]}
+                  return e.code,dict(e.headers.items()),p,time.monotonic()-started
+
+          s,_,h,_=http(urllib.request.Request(base+"/healthz",headers={"Accept":"application/json"}),30)
+          if s!=200 or h.get("status")!="ok": raise SystemExit("PRODUCTION_HEALTH_NOT_OK")
+          ident=h.get("deployment_identity") or {}
+          if str(ident.get("git_sha") or "").lower()!=expected:
+              raise SystemExit(f"PRODUCTION_SHA_MISMATCH:{ident.get('git_sha')}")
+          runtime=h.get("crawler_runtime") or {}
+          if runtime.get("max_wall_seconds")!=50.0: raise SystemExit("PROD_MAX_WALL_NOT_50")
+          if runtime.get("max_attempt_envelope_seconds")!=30.0: raise SystemExit("PROD_ATTEMPT_ENVELOPE_NOT_30")
+
+          rid=1
+          def rpc(method,params,timeout=75):
+              global rid
+              this=rid; rid+=1
+              body=json.dumps({"jsonrpc":"2.0","id":this,"method":method,"params":params},separators=(",",":")).encode()
+              req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                  "Authorization":"Bearer "+token,
+                  "Content-Type":"application/json",
+                  "Accept":"application/json",
+                  "MCP-Protocol-Version":"2026-07-28"})
+              status,headers,p,elapsed=http(req,timeout)
+              if status!=200:
+                  raise RuntimeError("HTTP:"+json.dumps({"status":status,"elapsed":round(elapsed,3),"payload":p},sort_keys=True)[:1500])
+              if p.get("id")!=this or p.get("error"):
+                  raise RuntimeError("RPC:"+json.dumps(p,sort_keys=True)[:1500])
+              return p.get("result") or {},elapsed
+
+          listed,_=rpc("tools/list",{},45)
+          tools={x.get("name"):x for x in listed.get("tools",[]) if isinstance(x,dict)}
+          desc=tools.get("execute_public_crawl") or {}
+          contract=desc.get("contract") or {}
+          for key in (
+              "bounded_wall_clock",
+              "bounded_attempt_envelope",
+              "partial_failure_fail_closed",
+              "source_throttle_fail_closed",
+              "source_access_blocked_fail_closed",
+              "source_unavailable_fail_closed",
+          ):
+              if contract.get(key) is not True:
+                  raise SystemExit("CONTRACT_MISSING:"+key)
+
+          # Real anti-bot source: still fail-closed after wall-clock changes.
+          c1,e1=rpc("tools/call",{"name":"execute_public_crawl","arguments":{
+              "task":{"task_id":"PROD59-403","source_family":"public_directory",
+                      "company_name":"Ferreterias La Quinta Inc",
+                      "query":"Ferreterias La Quinta Mayaguez contact phone"},
+              "seed_url":"https://www.findglocal.com/PR/Mayaguez/751821588200868/Ferreterias-La-Quinta%2C-Mayaguez",
+              "max_pages":1,"browser_escalation":False,"timeout_seconds":15,"max_retries":1}},60)
+          blocked=c1.get("structuredContent") or {}
+          if blocked.get("result")!="BLOCKED": raise SystemExit("403_NOT_BLOCKED")
+          if blocked.get("status") not in {"SOURCE_ACCESS_BLOCKED","SOURCE_UNAVAILABLE"}:
+              raise SystemExit("403_BAD_STATUS:"+str(blocked.get("status")))
+          if blocked.get("fallback_required") is not True: raise SystemExit("403_NO_FALLBACK")
+          if blocked.get("negative_contact_conclusion_allowed") is not False: raise SystemExit("403_FALSE_NEGATIVE_ALLOWED")
+          if blocked.get("production_route_ownership_promoted") is not False: raise SystemExit("403_ROUTE_PROMOTED")
+          if e1>=60: raise SystemExit("403_OUTER_WINDOW_EXCEEDED")
+
+          # Facebook can succeed or fail-closed; neither may become a false
+          # negative or an outer gateway error.
+          c2,e2=rpc("tools/call",{"name":"execute_public_crawl","arguments":{
+              "task":{"task_id":"PROD59-FACEBOOK","source_family":"public_social",
+                      "company_name":"Ferreterias La Quinta Inc",
+                      "query":"Ferreterias La Quinta Mayaguez email phone whatsapp"},
+              "seed_url":"https://www.facebook.com/ferreteriaslaquintainc/",
+              "max_pages":1,"browser_escalation":False,"timeout_seconds":15,"max_retries":1}},60)
+          fb=c2.get("structuredContent") or {}
+          if fb.get("status") in {"SOURCE_THROTTLED","SOURCE_ACCESS_BLOCKED","SOURCE_UNAVAILABLE"}:
+              if fb.get("result")!="BLOCKED": raise SystemExit("FB_FAILCLOSED_RESULT_BAD")
+              if fb.get("fallback_required") is not True: raise SystemExit("FB_FAILCLOSED_FALLBACK_MISSING")
+              if fb.get("negative_contact_conclusion_allowed") is not False: raise SystemExit("FB_FALSE_NEGATIVE_ALLOWED")
+          elif fb.get("status")=="CRAWL_EXECUTED":
+              if fb.get("result")!="POSITIVE" or not (fb.get("route_candidates") or []):
+                  raise SystemExit("FB_CRAWL_FALSE_NEGATIVE")
+          else:
+              raise SystemExit("FB_UNEXPECTED_STATUS:"+str(fb.get("status")))
+          if fb.get("production_route_ownership_promoted") is not False: raise SystemExit("FB_ROUTE_PROMOTED")
+          if e2>=60: raise SystemExit("FB_OUTER_WINDOW_EXCEEDED")
+
+          # Broad directory fallback may discover routes but may not verify ownership.
+          c3,e3=rpc("tools/call",{"name":"execute_public_crawl","arguments":{
+              "task":{"task_id":"PROD59-FALLBACK","source_family":"public_directory",
+                      "company_name":"Ferreterias La Quinta Inc",
+                      "query":"Ferreteria La Quinta Mayaguez contact phone"},
+              "seed_url":"https://www.barretobestblocks.com/ferreterias/",
+              "max_pages":1,"browser_escalation":False,"timeout_seconds":15,"max_retries":1}},60)
+          fallback=c3.get("structuredContent") or {}
+          routes=fallback.get("route_candidates") or []
+          if fallback.get("status")!="CRAWL_EXECUTED" or fallback.get("result")!="POSITIVE" or not routes:
+              raise SystemExit("FALLBACK_NOT_POSITIVE")
+          if fallback.get("verified") is not False: raise SystemExit("FALLBACK_FALSE_VERIFIED")
+          if fallback.get("owner_scope")!="UNVERIFIED": raise SystemExit("FALLBACK_OWNER_SCOPE_BAD")
+          if fallback.get("current_company_association") is not False: raise SystemExit("FALLBACK_ASSOCIATION_PROMOTED")
+          if fallback.get("production_route_ownership_promoted") is not False: raise SystemExit("FALLBACK_ROUTE_PROMOTED")
+          if e3>=60: raise SystemExit("FALLBACK_OUTER_WINDOW_EXCEEDED")
+
+          # Controlled ingress burst remains healthy.
+          def burst_one(i):
+              request_id=30000+i
+              body=json.dumps({"jsonrpc":"2.0","id":request_id,"method":"tools/list","params":{}},separators=(",",":")).encode()
+              attempts=[]
+              for n in range(1,4):
+                  req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                      "Authorization":"Bearer "+token,
+                      "Content-Type":"application/json",
+                      "Accept":"application/json",
+                      "MCP-Protocol-Version":"2026-07-28"})
+                  status,headers,p,elapsed=http(req,45)
+                  attempts.append({"status":status,"elapsed":round(elapsed,3),"retry_after":headers.get("Retry-After")})
+                  if status==200:
+                      return {"ok":p.get("id")==request_id and isinstance(p.get("result"),dict),"attempts":attempts}
+                  if status!=429: return {"ok":False,"attempts":attempts}
+                  time.sleep(0.25*(2**(n-1)))
+              return {"ok":False,"attempts":attempts}
+
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+              burst=list(ex.map(burst_one,range(16)))
+          bad=[x for x in burst if not x["ok"]]
+          if bad: raise SystemExit("MCP_BURST_UNHANDLED:"+json.dumps(bad,sort_keys=True)[:2400])
+          first429=sum(1 for x in burst if x["attempts"][0]["status"]==429)
+          all429=sum(1 for x in burst for a in x["attempts"] if a["status"]==429)
+          lat=[a["elapsed"] for x in burst for a in x["attempts"] if a["status"]==200]
+
+          print(json.dumps({
+              "schema":"cbi.v64-production-wallclock-postdeploy.v1",
+              "status":"VERIFIED",
+              "production_git_sha":expected,
+              "production_write_performed":False,
+              "runtime":{
+                  "max_wall_seconds":runtime.get("max_wall_seconds"),
+                  "max_attempt_envelope_seconds":runtime.get("max_attempt_envelope_seconds")
+              },
+              "access_blocked":{
+                  "status":blocked.get("status"),
+                  "result":blocked.get("result"),
+                  "execution_budget_exhausted":blocked.get("execution_budget_exhausted"),
+                  "elapsed_seconds":round(e1,3)
+              },
+              "facebook":{
+                  "status":fb.get("status"),
+                  "result":fb.get("result"),
+                  "route_count":len(fb.get("route_candidates") or []),
+                  "execution_budget_exhausted":fb.get("execution_budget_exhausted"),
+                  "elapsed_seconds":round(e2,3)
+              },
+              "fallback":{
+                  "route_count":len(routes),
+                  "route_kinds":sorted({str(x.get("kind") or "") for x in routes}),
+                  "owner_scope":fallback.get("owner_scope"),
+                  "verified":fallback.get("verified"),
+                  "elapsed_seconds":round(e3,3)
+              },
+              "mcp_ingress_burst":{
+                  "total_requests":16,
+                  "max_concurrency":4,
+                  "unhandled_failures":0,
+                  "first_attempt_429":first429,
+                  "all_429_attempts":all429,
+                  "latency_ms_p50":round(statistics.median(lat)*1000,1) if lat else None,
+                  "latency_ms_max":round(max(lat)*1000,1) if lat else None
+              }
+          },sort_keys=True))
+          PY
