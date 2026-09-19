@@ -566,7 +566,12 @@ class V63DemandExpansionMixin:
         args = copy.deepcopy(arguments)
         investigation_id = str(args.get("investigation_id") or "").strip()
         if not investigation_id:
-            raise ValueError("INVESTIGATION_ID_REQUIRED_FOR_EVIDENCE_BINDING")
+            result = _derive_demand_anchor(args)
+            result["derived_view"] = True
+            result["evidence_ownership_verified"] = False
+            result["direct_procurement_provenance_verified"] = False
+            result["persistent_mutation_performed"] = False
+            return result
         account_id = str(args.get("account_id") or "").strip()
         evidence_ids = [str(v).strip() for v in args.get("source_evidence_ids", []) if str(v).strip()]
         self._v63_validate_evidence_owner(investigation_id, account_id, evidence_ids)
@@ -592,6 +597,8 @@ class V63DemandExpansionMixin:
 
     def evaluate_product_opportunity(self, arguments: dict[str, Any]) -> dict[str, Any]:
         args = copy.deepcopy(arguments)
+        if not callable(getattr(self, "_read_v63_durable_events", None)):
+            return _derive_product_opportunity_evaluation(args)
         opportunity = self._v63_resolve_opportunity(args)
         evidence_ids = [
             str(v).strip()
