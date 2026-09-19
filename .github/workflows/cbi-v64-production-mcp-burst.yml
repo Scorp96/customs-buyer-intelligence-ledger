@@ -1,0 +1,70 @@
+name: CBI v6.4 production MCP ingress burst
+
+on:
+  push:
+    branches:
+      - cbi-v64-production-source-access-canary-20260919
+    paths:
+      - '.github/workflows/cbi-v64-production-mcp-burst.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  burst:
+    name: Production MCP ingress burst
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Run controlled read-only burst
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import concurrent.futures,json,os,statistics,time,urllib.error,urllib.request
+          base=os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token=os.environ["CBI_PRODUCTION_BEARER_TOKEN"]
+          def once(i):
+              rid=40000+i
+              body=json.dumps({"jsonrpc":"2.0","id":rid,"method":"tools/list","params":{}},separators=(",",":")).encode()
+              attempts=[]
+              for n in range(1,4):
+                  req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                      "Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json",
+                      "MCP-Protocol-Version":"2026-07-28"})
+                  t=time.monotonic()
+                  try:
+                      with urllib.request.urlopen(req,timeout=45) as r:
+                          payload=json.loads(r.read().decode()); status=r.status; headers=dict(r.headers.items())
+                  except urllib.error.HTTPError as e:
+                      status=e.code; headers=dict(e.headers.items())
+                      raw=e.read().decode("utf-8","replace")
+                      try: payload=json.loads(raw)
+                      except Exception: payload={"raw":raw[:500]}
+                  elapsed=time.monotonic()-t
+                  attempts.append({"attempt":n,"status":status,"retry_after":headers.get("Retry-After"),
+                                   "elapsed_seconds":round(elapsed,3)})
+                  if status==200:
+                      return {"ok":payload.get("id")==rid and isinstance(payload.get("result"),dict),"attempts":attempts}
+                  if status!=429:return {"ok":False,"attempts":attempts}
+                  ra=headers.get("Retry-After")
+                  try: wait=float(ra) if ra is not None else min(2.0,0.25*(2**(n-1)))
+                  except Exception: wait=min(2.0,0.25*(2**(n-1)))
+                  time.sleep(max(0.05,min(wait,3.0)))
+              return {"ok":False,"attempts":attempts}
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+              rows=list(ex.map(once,range(16)))
+          bad=[x for x in rows if not x["ok"]]
+          first429=sum(1 for x in rows if x["attempts"][0]["status"]==429)
+          all429=sum(1 for x in rows for a in x["attempts"] if a["status"]==429)
+          lat=[a["elapsed_seconds"] for x in rows for a in x["attempts"] if a["status"]==200]
+          receipt={"status":"VERIFIED" if not bad else "FAILED","total_requests":16,"max_concurrency":4,
+                   "unhandled_failures":len(bad),"first_attempt_429":first429,"all_429_attempts":all429,
+                   "latency_ms_p50":round(statistics.median(lat)*1000,1) if lat else None,
+                   "latency_ms_max":round(max(lat)*1000,1) if lat else None}
+          print(json.dumps(receipt,sort_keys=True))
+          if bad:raise SystemExit("MCP_BURST_UNHANDLED:"+json.dumps(bad,sort_keys=True)[:2500])
+          PY
