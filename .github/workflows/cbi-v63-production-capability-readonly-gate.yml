@@ -1,0 +1,113 @@
+name: CBI v6.3 Production capability read-only gate
+
+on:
+  push:
+    branches:
+      - cbi-v63-production-integration-evidence-20260919-d4eb609
+    paths:
+      - '.github/workflows/cbi-v63-production-capability-readonly-gate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Production PVC capability and Sales Readiness read-only gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run authenticated Production capability gate
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_PRODUCTION_SHA: 11429b041c1714c2074c45193bf0a13b8a2ca16f
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+
+          base=os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token=os.environ.get("CBI_PRODUCTION_BEARER_TOKEN","")
+          expected=os.environ["EXPECTED_PRODUCTION_SHA"]
+          if len(token)<32:
+              raise SystemExit("PRODUCTION_BEARER_SECRET_UNAVAILABLE")
+
+          def health():
+              req=urllib.request.Request(base+"/healthz",method="GET",headers={"Accept":"application/json"})
+              with urllib.request.urlopen(req,timeout=30) as resp:
+                  return json.loads(resp.read().decode())
+
+          rid=1
+          def rpc(method,params):
+              global rid
+              current=rid; rid+=1
+              body=json.dumps({"jsonrpc":"2.0","id":current,"method":method,"params":params},separators=(",",":")).encode()
+              req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                  "Authorization":"Bearer "+token,
+                  "Content-Type":"application/json",
+                  "Accept":"application/json",
+                  "MCP-Protocol-Version":"2026-07-28",
+              })
+              try:
+                  with urllib.request.urlopen(req,timeout=45) as resp:
+                      payload=json.loads(resp.read().decode())
+              except urllib.error.HTTPError as exc:
+                  raise SystemExit(f"MCP_HTTP_{exc.code}:"+exc.read().decode("utf-8","replace")[:500])
+              if payload.get("error"):
+                  raise SystemExit("MCP_RPC_ERROR:"+json.dumps(payload["error"],sort_keys=True)[:800])
+              return payload.get("result") or {}
+
+          def tool(name,args):
+              out=rpc("tools/call",{"name":name,"arguments":args})
+              sc=out.get("structuredContent")
+              if not isinstance(sc,dict):
+                  raise SystemExit("STRUCTURED_CONTENT_MISSING:"+name)
+              return sc
+
+          before=health()
+          ident=before.get("deployment_identity") or {}
+          store=before.get("object_store_persistence") or {}
+          if ident.get("git_sha")!=expected:
+              raise SystemExit("PRODUCTION_GIT_SHA_MISMATCH")
+          generation=store.get("generation")
+
+          contract=tool("get_runtime_contract",{})
+          demand=contract.get("demand_expansion_v6_3") or {}
+          bindings=demand.get("read_model_runtime_bindings_v6_3") or {}
+          capability_binding=bindings.get("capability_profile_source")
+
+          profile=tool("get_capability_profile",{"product_profile_id":"PVC"})
+          readiness=tool("evaluate_sales_readiness",{
+              "investigation_id":"INV-20260829T074838Z-b3f3984b20d8",
+              "opportunity_id":"OPP-TESORO-PVC-CANARY-20260918",
+              "account_id":"TESORO-EN-MADERAS-II-PR",
+              "product_profile_id":"PVC",
+          })
+
+          after=health()
+          store_after=after.get("object_store_persistence") or {}
+          if store_after.get("generation")!=generation:
+              raise SystemExit("PRODUCTION_GENERATION_CHANGED_DURING_CAPABILITY_GATE")
+
+          result={
+              "schema":"cbi.v63-production-capability-readonly-gate.v1",
+              "production_git_sha":expected,
+              "object_state_generation":generation,
+              "generation_unchanged":True,
+              "production_write_performed":False,
+              "capability_binding":capability_binding,
+              "capability_profile_status":profile.get("status"),
+              "capability_profile_reason":profile.get("reason"),
+              "capability_profile_id":(profile.get("capability_profile") or {}).get("capability_profile_id"),
+              "sales_readiness_status":readiness.get("status"),
+              "sales_readiness_reason":readiness.get("reason"),
+              "sales_readiness_state":(readiness.get("sales_readiness") or {}).get("sales_readiness_state"),
+          }
+          print(json.dumps(result,sort_keys=True))
+
+          if profile.get("status")!="READY":
+              raise SystemExit("PRODUCTION_CAPABILITY_PROFILE_NOT_READY")
+          if readiness.get("status")!="READY":
+              raise SystemExit("PRODUCTION_SALES_READINESS_NOT_CONFIGURED")
+          PY
