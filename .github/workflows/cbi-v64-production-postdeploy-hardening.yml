@@ -1,0 +1,174 @@
+name: CBI v6.4 production postdeploy hardening closure
+
+on:
+  push:
+    branches:
+      - cbi-v64-production-postdeploy-hardening-20260919
+    paths:
+      - '.github/workflows/cbi-v64-production-postdeploy-hardening.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  closure:
+    name: Production 403 + MCP burst + fallback ownership closure
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Verify production postdeploy closure read only
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: 007d69950d2a3c87caa8d8649cf782be1d25a98e
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import concurrent.futures
+          import json
+          import os
+          import statistics
+          import time
+          import urllib.error
+          import urllib.request
+
+          base=os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token=os.environ["CBI_PRODUCTION_BEARER_TOKEN"]
+          expected=os.environ["EXPECTED_SHA"].lower()
+
+          def http(req, timeout=90):
+              started=time.monotonic()
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as r:
+                      return r.status,dict(r.headers.items()),json.loads(r.read().decode()),time.monotonic()-started
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try:p=json.loads(raw)
+                  except Exception:p={"raw":raw[:1000]}
+                  return e.code,dict(e.headers.items()),p,time.monotonic()-started
+
+          s,_,h,_=http(urllib.request.Request(base+"/healthz",headers={"Accept":"application/json"}),30)
+          if s!=200 or h.get("status")!="ok":
+              raise SystemExit("PRODUCTION_HEALTH_NOT_OK")
+          observed=str((h.get("deployment_identity") or {}).get("git_sha") or "").lower()
+          if observed!=expected:
+              raise SystemExit(f"PRODUCTION_SHA_MISMATCH:{observed}")
+
+          rid=100
+          def rpc(method,params,timeout=90):
+              global rid
+              this=rid; rid+=1
+              body=json.dumps({"jsonrpc":"2.0","id":this,"method":method,"params":params},separators=(",",":")).encode()
+              req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                  "Authorization":"Bearer "+token,
+                  "Content-Type":"application/json",
+                  "Accept":"application/json",
+                  "MCP-Protocol-Version":"2026-07-28"})
+              status,headers,p,elapsed=http(req,timeout)
+              if status!=200 or p.get("id")!=this or p.get("error"):
+                  raise RuntimeError(json.dumps({"http_status":status,"payload":p,"elapsed":round(elapsed,3)},sort_keys=True)[:1800])
+              return p.get("result") or {},elapsed
+
+          # 1) Real anti-bot 403 must be fail-closed and entity-aware.
+          call,elapsed=rpc("tools/call",{"name":"execute_public_crawl","arguments":{
+              "task":{"task_id":"PROD-POST-403","source_family":"public_directory",
+                      "company_name":"Ferreterias La Quinta Inc",
+                      "query":"Ferreterias La Quinta Mayaguez contact phone"},
+              "seed_url":"https://www.findglocal.com/PR/Mayaguez/751821588200868/Ferreterias-La-Quinta%2C-Mayaguez",
+              "max_pages":1,"browser_escalation":False,"timeout_seconds":20,"max_retries":0}},70)
+          blocked=call.get("structuredContent") or {}
+          plan=blocked.get("fallback_search_plan") or {}
+          queries=plan.get("queries") or []
+          if blocked.get("status")!="SOURCE_ACCESS_BLOCKED": raise SystemExit("PROD_403_STATUS_INVALID")
+          if blocked.get("result")!="BLOCKED": raise SystemExit("PROD_403_RESULT_INVALID")
+          if blocked.get("fallback_required") is not True: raise SystemExit("PROD_403_FALLBACK_MISSING")
+          if blocked.get("negative_contact_conclusion_allowed") is not False: raise SystemExit("PROD_403_FALSE_NEGATIVE_ALLOWED")
+          if plan.get("reason")!="SOURCE_ACCESS_BLOCKED": raise SystemExit("PROD_403_REASON_INVALID")
+          if 'site:facebook.com "Ferreterias La Quinta Inc"' not in queries: raise SystemExit("PROD_403_ENTITY_PIVOT_MISSING")
+          if 'site:facebook.com "PR"' in queries: raise SystemExit("PROD_403_BROAD_PIVOT_PRESENT")
+          if blocked.get("production_route_ownership_promoted") is not False: raise SystemExit("PROD_403_ROUTE_PROMOTED")
+
+          # 2) Controlled MCP ingress burst.
+          def burst_one(i):
+              request_id=20000+i
+              body=json.dumps({"jsonrpc":"2.0","id":request_id,"method":"tools/list","params":{}},separators=(",",":")).encode()
+              attempts=[]
+              for n in range(1,4):
+                  req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                      "Authorization":"Bearer "+token,
+                      "Content-Type":"application/json",
+                      "Accept":"application/json",
+                      "MCP-Protocol-Version":"2026-07-28"})
+                  status,headers,p,dt=http(req,45)
+                  attempts.append({"attempt":n,"status":status,"retry_after":headers.get("Retry-After"),
+                                   "elapsed_seconds":round(dt,3)})
+                  if status==200:
+                      return {"ok":p.get("id")==request_id and isinstance(p.get("result"),dict),"attempts":attempts}
+                  if status!=429:return {"ok":False,"attempts":attempts}
+                  ra=headers.get("Retry-After")
+                  try: wait=float(ra) if ra is not None else min(2.0,0.25*(2**(n-1)))
+                  except Exception: wait=min(2.0,0.25*(2**(n-1)))
+                  time.sleep(max(0.05,min(wait,3.0)))
+              return {"ok":False,"attempts":attempts}
+
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+              burst=list(ex.map(burst_one,range(16)))
+          bad=[x for x in burst if not x["ok"]]
+          if bad: raise SystemExit("PROD_MCP_BURST_UNHANDLED:"+json.dumps(bad,sort_keys=True)[:2500])
+          first429=sum(1 for x in burst if x["attempts"][0]["status"]==429)
+          all429=sum(1 for x in burst for a in x["attempts"] if a["status"]==429)
+          lat=[a["elapsed_seconds"] for x in burst for a in x["attempts"] if a["status"]==200]
+
+          # 3) Host fallback can discover contacts, but broad directory routes must stay unverified.
+          fallback_call,fallback_elapsed=rpc("tools/call",{"name":"execute_public_crawl","arguments":{
+              "task":{"task_id":"PROD-POST-FALLBACK","source_family":"public_directory",
+                      "company_name":"Ferreterias La Quinta Inc",
+                      "query":"Ferreteria La Quinta Mayaguez contact phone"},
+              "seed_url":"https://www.barretobestblocks.com/ferreterias/",
+              "max_pages":1,"browser_escalation":False,"timeout_seconds":20,"max_retries":0}},70)
+          fallback=fallback_call.get("structuredContent") or {}
+          routes=fallback.get("route_candidates") or []
+          if fallback.get("status")!="CRAWL_EXECUTED" or fallback.get("result")!="POSITIVE" or not routes:
+              raise SystemExit("PROD_FALLBACK_NOT_POSITIVE")
+          if fallback.get("verified") is not False: raise SystemExit("PROD_FALLBACK_FALSE_VERIFIED")
+          if fallback.get("owner_scope")!="UNVERIFIED": raise SystemExit("PROD_FALLBACK_OWNER_SCOPE_INVALID")
+          if fallback.get("current_company_association") is not False: raise SystemExit("PROD_FALLBACK_COMPANY_ASSOCIATION_PROMOTED")
+          if fallback.get("production_route_ownership_promoted") is not False: raise SystemExit("PROD_FALLBACK_ROUTE_PROMOTED")
+
+          kinds=sorted({str(x.get("kind") or "") for x in routes})
+          print(json.dumps({
+              "schema":"cbi.v64-production-postdeploy-hardening.v1",
+              "status":"VERIFIED",
+              "production_git_sha":expected,
+              "production_write_performed":False,
+              "access_blocked":{
+                  "status":blocked.get("status"),
+                  "result":blocked.get("result"),
+                  "fallback_required":blocked.get("fallback_required"),
+                  "negative_contact_conclusion_allowed":blocked.get("negative_contact_conclusion_allowed"),
+                  "fallback_queries":queries,
+                  "elapsed_seconds":round(elapsed,3)
+              },
+              "mcp_ingress_burst":{
+                  "total_requests":16,
+                  "max_concurrency":4,
+                  "unhandled_failures":0,
+                  "first_attempt_429":first429,
+                  "all_429_attempts":all429,
+                  "latency_ms_p50":round(statistics.median(lat)*1000,1) if lat else None,
+                  "latency_ms_max":round(max(lat)*1000,1) if lat else None
+              },
+              "fallback_ownership":{
+                  "crawler_status":fallback.get("status"),
+                  "crawler_result":fallback.get("result"),
+                  "route_count":len(routes),
+                  "route_kinds":kinds,
+                  "verified":fallback.get("verified"),
+                  "owner_scope":fallback.get("owner_scope"),
+                  "current_company_association":fallback.get("current_company_association"),
+                  "production_route_ownership_promoted":fallback.get("production_route_ownership_promoted"),
+                  "elapsed_seconds":round(fallback_elapsed,3)
+              }
+          },sort_keys=True))
+          PY
