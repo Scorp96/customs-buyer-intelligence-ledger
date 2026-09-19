@@ -1,3 +1,4 @@
+# rerun-marker: production-existing-canary-final-gate
 name: CBI v6.3 Production Tesoro session reconstruction Canary
 
 on:
