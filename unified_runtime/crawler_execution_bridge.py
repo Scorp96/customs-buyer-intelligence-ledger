@@ -631,6 +631,16 @@ class CrawlExecutionBridge:
                 })
                 break
 
+            # Some third-party crawler stacks delay or suppress cancellation.
+            # Detect that overrun after control returns so an over-budget
+            # contact crawl can never be mistaken for complete exhaustion.
+            if deadline is not None and time.monotonic() >= deadline:
+                execution_budget_exhausted = True
+                failed_urls.append({
+                    "url": url,
+                    "error": f"execution_budget_exceeded_after_{max_elapsed_seconds:g}s",
+                })
+
             if not page.success:
                 failed_urls.append({"url": url, "error": page.error or "crawl_failed"})
                 continue
@@ -701,20 +711,24 @@ class CrawlExecutionBridge:
         failure_relevant = bool(failed_urls) and not positive_evidence
         source_throttled = (
             failure_relevant
+            and not execution_budget_exhausted
             and any(_source_throttle_failure(row) for row in failed_urls)
         )
         source_access_blocked = (
             failure_relevant
+            and not execution_budget_exhausted
             and not source_throttled
             and any(_source_access_blocked_failure(row) for row in failed_urls)
         )
-        # Everything else that prevented completion is unavailable from the
-        # caller's point of view, including explicit timeout/5xx failures,
-        # global execution-budget exhaustion, and unknown crawler failures.
+        # Budget exhaustion takes precedence over a late lower-level response:
+        # once the bounded request window has been exceeded, the source was not
+        # available in time for this synchronous MCP execution.
         source_unavailable = (
             failure_relevant
-            and not source_throttled
-            and not source_access_blocked
+            and (
+                execution_budget_exhausted
+                or (not source_throttled and not source_access_blocked)
+            )
         )
         source_blocked = source_throttled or source_access_blocked or source_unavailable
         source_status = (
