@@ -1,0 +1,109 @@
+name: CBI v6.4 wall-clock live acceptance r2
+
+on:
+  push:
+    branches:
+      - cbi-v64-wallclock-live-evidence-r2-20260919
+    paths:
+      - '.github/workflows/cbi-v64-wallclock-live-acceptance-r2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Acceptance wall-clock overrun detection r2
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify over-budget late response fails closed
+        env:
+          CBI_ACCEPTANCE_URL: https://cbi-v63-r2-acceptance-20260903-r01.onrender.com
+          CBI_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: 27dc5f79ddbf5b3b6c85fb97857a9a89c9cb3318
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,time,urllib.error,urllib.request
+          base=os.environ["CBI_ACCEPTANCE_URL"].rstrip("/")
+          token=os.environ["CBI_ACCEPTANCE_BEARER_TOKEN"]
+          expected=os.environ["EXPECTED_SHA"].lower()
+
+          def http(req,timeout=70):
+              started=time.monotonic()
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as r:
+                      return r.status,json.loads(r.read().decode()),time.monotonic()-started
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try:p=json.loads(raw)
+                  except Exception:p={"raw":raw[:1000]}
+                  return e.code,p,time.monotonic()-started
+
+          s,h,_=http(urllib.request.Request(base+"/healthz",headers={"Accept":"application/json"}),30)
+          if s!=200 or h.get("status")!="ok": raise SystemExit("ACCEPTANCE_HEALTH_NOT_OK")
+          ident=h.get("deployment_identity") or {}
+          if str(ident.get("git_sha") or "").lower()!=expected:
+              raise SystemExit("ACCEPTANCE_SHA_MISMATCH")
+
+          body=json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+              "name":"execute_public_crawl","arguments":{
+                  "task":{"task_id":"ACCEPT-WALLCLOCK-LIVE-R2","source_family":"public_directory",
+                          "company_name":"Ferreterias La Quinta Inc",
+                          "query":"Ferreterias La Quinta Mayaguez contact phone"},
+                  "seed_url":"https://www.findglocal.com/PR/Mayaguez/751821588200868/Ferreterias-La-Quinta%2C-Mayaguez",
+                  "max_pages":1,"browser_escalation":False,"timeout_seconds":15,"max_retries":1}}},separators=(",",":")).encode()
+          req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+              "Authorization":"Bearer "+token,
+              "Content-Type":"application/json",
+              "Accept":"application/json",
+              "MCP-Protocol-Version":"2026-07-28"})
+
+          status,p,elapsed=http(req,55)
+          if status!=200:
+              raise SystemExit("OUTER_HTTP_NOT_200:"+json.dumps({"status":status,"elapsed":round(elapsed,3)},sort_keys=True))
+          if p.get("id")!=1 or p.get("error"):
+              raise SystemExit("RPC_FAILED:"+json.dumps(p,sort_keys=True)[:1600])
+
+          r=(p.get("result") or {}).get("structuredContent") or {}
+          runtime=r.get("runtime") or {}
+          receipt={
+              "http_status":status,
+              "elapsed_seconds":round(elapsed,3),
+              "status":r.get("status"),
+              "result":r.get("result"),
+              "source_status":r.get("source_status"),
+              "execution_budget_seconds":r.get("execution_budget_seconds"),
+              "execution_budget_exhausted":r.get("execution_budget_exhausted"),
+              "fallback_required":r.get("fallback_required"),
+              "negative_contact_conclusion_allowed":r.get("negative_contact_conclusion_allowed"),
+              "failed_urls":r.get("failed_urls"),
+              "runtime_max_wall_seconds":runtime.get("max_wall_seconds"),
+              "runtime_max_attempt_envelope_seconds":runtime.get("max_attempt_envelope_seconds"),
+              "production_route_ownership_promoted":r.get("production_route_ownership_promoted"),
+          }
+          print(json.dumps(receipt,sort_keys=True))
+
+          if runtime.get("max_wall_seconds")!=15.0: raise SystemExit("WALLCLOCK_ENV_NOT_15")
+          if runtime.get("max_attempt_envelope_seconds")!=30.0: raise SystemExit("ATTEMPT_ENVELOPE_NOT_30")
+          if r.get("result")!="BLOCKED": raise SystemExit("EXPECTED_BLOCKED")
+          if r.get("fallback_required") is not True: raise SystemExit("FALLBACK_NOT_REQUIRED")
+          if r.get("negative_contact_conclusion_allowed") is not False: raise SystemExit("FALSE_NEGATIVE_ALLOWED")
+          if r.get("production_route_ownership_promoted") is not False: raise SystemExit("ROUTE_PROMOTED")
+          if elapsed>=45: raise SystemExit("OUTER_GATEWAY_MARGIN_NOT_PRESERVED")
+
+          # Preferred proof: delayed cancellation exceeds the 15s budget and is
+          # surfaced as SOURCE_UNAVAILABLE. If the remote site responds earlier
+          # with a true 403, SOURCE_ACCESS_BLOCKED is also semantically valid,
+          # but only when the observed wall time did not exceed the configured
+          # soft budget by a material margin.
+          if elapsed > 17.0:
+              if r.get("execution_budget_exhausted") is not True:
+                  raise SystemExit("OVER_BUDGET_NOT_RECORDED")
+              if r.get("status")!="SOURCE_UNAVAILABLE":
+                  raise SystemExit("OVER_BUDGET_MUST_BE_SOURCE_UNAVAILABLE")
+          else:
+              if r.get("status") not in {"SOURCE_UNAVAILABLE","SOURCE_ACCESS_BLOCKED"}:
+                  raise SystemExit("UNEXPECTED_EARLY_SOURCE_STATUS")
+          PY
