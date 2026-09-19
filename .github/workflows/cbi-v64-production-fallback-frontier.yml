@@ -1,0 +1,116 @@
+name: CBI v6.4 production fallback frontier closure
+
+on:
+  push:
+    branches:
+      - cbi-v64-production-source-access-canary-20260919
+    paths:
+      - '.github/workflows/cbi-v64-production-fallback-frontier.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fallback:
+    name: Production fallback frontier -> crawler -> contact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify fallback frontier read only
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: 9ec63f627fb7d8d8796f5cab3a4bdfdd9bbe723f
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,time,urllib.error,urllib.request
+          base=os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token=os.environ["CBI_PRODUCTION_BEARER_TOKEN"]
+          expected=os.environ["EXPECTED_SHA"].lower()
+
+          def http(req,timeout=90):
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as r:
+                      return r.status,json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try:p=json.loads(raw)
+                  except Exception:p={"raw":raw[:800]}
+                  return e.code,p
+
+          s,h=http(urllib.request.Request(base+"/healthz",headers={"Accept":"application/json"}),30)
+          if s!=200 or str((h.get("deployment_identity") or {}).get("git_sha") or "").lower()!=expected:
+              raise SystemExit("PRODUCTION_HEALTH_OR_SHA_MISMATCH")
+
+          rid=60000
+          def crawl(url,i):
+              global rid
+              rid+=1; this=rid
+              body=json.dumps({"jsonrpc":"2.0","id":this,"method":"tools/call","params":{
+                  "name":"execute_public_crawl","arguments":{
+                      "task":{"task_id":f"PROD-FALLBACK-FRONTIER-{i}","source_family":"public_directory",
+                              "company_name":"Ferreterias La Quinta Inc",
+                              "query":"Ferreteria La Quinta Mayaguez contact phone"},
+                      "seed_url":url,"max_pages":1,"browser_escalation":False,
+                      "timeout_seconds":20,"max_retries":0}}},separators=(",",":")).encode()
+              req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                  "Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json",
+                  "MCP-Protocol-Version":"2026-07-28"})
+              t=time.monotonic(); status,p=http(req,70); elapsed=time.monotonic()-t
+              if status!=200 or p.get("id")!=this or p.get("error"):
+                  return {"url":url,"http_status":status,"elapsed_seconds":round(elapsed,3),
+                          "rpc_error":p.get("error")}
+              r=(p.get("result") or {}).get("structuredContent") or {}
+              return {"url":url,"http_status":status,"elapsed_seconds":round(elapsed,3),
+                      "status":r.get("status"),"result":r.get("result"),
+                      "source_status":r.get("source_status"),
+                      "fallback_required":r.get("fallback_required"),
+                      "negative_contact_conclusion_allowed":r.get("negative_contact_conclusion_allowed"),
+                      "failed_urls":r.get("failed_urls"),"routes":r.get("route_candidates") or []}
+
+          candidates=[
+              "https://www.barretobestblocks.com/ferreterias/",
+              "https://global.showmelocal.com/pr-mayaguez-search-hardware%2Bstores",
+              "https://www.waze.com/es/live-map/directions/pr/mayaguez/mayaguez/ferreteria-la-quinta?to=place.ChIJJyuXAJKzAowREjzBAk",
+          ]
+          attempts=[]; positive=None
+          for i,url in enumerate(candidates,1):
+              row=crawl(url,i); attempts.append(row)
+              if row.get("result")=="POSITIVE" and row.get("routes"):
+                  positive=row; break
+
+          def mask(kind,value):
+              value=str(value or "")
+              if kind=="EMAIL":
+                  if "@" not in value:return "***"
+                  local,domain=value.split("@",1); return (local[:1] if local else "")+"***@"+domain
+              digits="".join(ch for ch in value if ch.isdigit())
+              return "***"+digits[-4:] if digits else "***"
+
+          public_attempts=[{k:v for k,v in x.items() if k!="routes"} for x in attempts]
+          if not positive:
+              print(json.dumps({"status":"FAILED","attempts":public_attempts},sort_keys=True))
+              raise SystemExit("FALLBACK_FRONTIER_EXHAUSTED_WITHOUT_CONTACT")
+
+          routes=positive["routes"]
+          summary=[{"kind":x.get("kind"),"masked_value":mask(str(x.get("kind") or ""),x.get("value")),
+                    "source_url":x.get("source_url"),"has_channel_url":bool(x.get("channel_url"))}
+                   for x in routes]
+          kinds=sorted({str(x.get("kind") or "") for x in routes})
+          if not set(kinds)&{"PHONE","WHATSAPP","EMAIL"}:
+              raise SystemExit("FALLBACK_CONTACT_KIND_MISSING")
+          print(json.dumps({
+              "schema":"cbi.v64-fallback-frontier-closure.v1",
+              "status":"VERIFIED",
+              "production_write_performed":False,
+              "host_discovery_source":"WEB_SEARCH",
+              "company":"Ferreterias La Quinta Inc",
+              "attempts":public_attempts,
+              "selected_fallback_url":positive["url"],
+              "route_count":len(routes),
+              "route_kinds":kinds,
+              "route_summary":summary
+          },sort_keys=True))
+          PY
