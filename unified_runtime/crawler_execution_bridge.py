@@ -455,6 +455,78 @@ def _route_candidates(page: CrawlPage) -> list[dict[str, Any]]:
     return candidates
 
 
+def _source_throttle_failure(row: dict[str, str]) -> bool:
+    error = str(row.get("error") or "").lower()
+    return (
+        error.startswith("source_throttled:")
+        or "http_status_429" in error
+        or "too many requests" in error
+        or "rate limit" in error
+    )
+
+
+def _source_unavailable_failure(row: dict[str, str]) -> bool:
+    error = str(row.get("error") or "").lower()
+    return bool(error) and (
+        error.startswith("timeout_after_")
+        or error.startswith("backend_exception:")
+        or error.startswith("playwright:")
+        or error.startswith("http_status_5")
+        or "connection reset" in error
+        or "connection refused" in error
+        or "temporarily unavailable" in error
+    )
+
+
+def _fallback_subject(task: dict[str, Any], seed_url: str) -> str:
+    for key in ("company_name", "account_name", "legal_name", "buyer_name", "entity_name"):
+        value = " ".join(str(task.get(key) or "").split())
+        if value:
+            return value[:180]
+    parsed = urlsplit(seed_url)
+    slug = parsed.path.strip("/").split("/", 1)[0]
+    if slug:
+        return slug.replace("-", " ").replace("_", " ")[:180]
+    return (parsed.hostname or seed_url)[:180]
+
+
+def _fallback_search_plan(
+    task: dict[str, Any],
+    seed_url: str,
+    *,
+    reason: str = "SOURCE_THROTTLED",
+) -> dict[str, Any]:
+    subject = _fallback_subject(task, seed_url)
+    parsed = urlsplit(seed_url)
+    slug = parsed.path.strip("/").split("/", 1)[0]
+    queries = [
+        f'"{subject}" email',
+        f'"{subject}" phone whatsapp',
+        f'"{subject}" contact',
+    ]
+    if slug:
+        queries.append(f'site:facebook.com "{slug}"')
+    return {
+        "reason": reason,
+        "host_action": "WEB_SEARCH_AND_PUBLIC_SOURCE_FALLBACK",
+        "subject": subject,
+        "queries": queries,
+        "source_families": [
+            "SEARCH_INDEX",
+            "OFFICIAL_WEBSITE",
+            "PUBLIC_DIRECTORY",
+            "INSTAGRAM",
+            "LINKEDIN",
+            "PUBLIC_SOCIAL_MIRROR",
+        ],
+        "contact_conclusion_if_unresolved": "NOT_VERIFIED",
+        "instructions": (
+            "Do not conclude that an email/phone does not exist. Use host web search and public "
+            "fallback sources, then feed discovered public URLs back into execute_public_crawl."
+        ),
+    }
+
+
 class CrawlExecutionBridge:
     """Execute an existing v6.3 source/contact task against one verified site.
 
@@ -565,13 +637,37 @@ class CrawlExecutionBridge:
         route_evidence_ids = sorted({row["evidence_id"] for row in route_candidates})
         evidence_ids = sorted(set(evidence_ids) | set(route_evidence_ids))
 
+        source_throttled = any(_source_throttle_failure(row) for row in failed_urls)
+        source_unavailable = (
+            not source_throttled
+            and not pages
+            and bool(failed_urls)
+            and any(_source_unavailable_failure(row) for row in failed_urls)
+        )
+        source_blocked = source_throttled or source_unavailable
+        source_status = (
+            "SOURCE_THROTTLED"
+            if source_throttled
+            else ("SOURCE_UNAVAILABLE" if source_unavailable else "OK")
+        )
+
         is_contact_task = task_key == "task_id"
         if is_contact_task:
-            result = "POSITIVE" if route_candidates else ("BLOCKED" if not pages else "NEGATIVE_EXHAUSTED")
+            if route_candidates:
+                result = "POSITIVE"
+            elif source_blocked:
+                result = "BLOCKED"
+            else:
+                result = "BLOCKED" if not pages else "NEGATIVE_EXHAUSTED"
         else:
             result = "POSITIVE" if pages else "BLOCKED"
 
         verified_route = bool(official_domain_verified and route_candidates)
+        fallback_plan = (
+            _fallback_search_plan(task, cleaned_seed, reason=source_status)
+            if source_blocked
+            else None
+        )
         receipt: dict[str, Any] = {
             task_key: task_id,
             "result": result,
@@ -584,6 +680,11 @@ class CrawlExecutionBridge:
             "source_urls": [page.url for page in pages],
             "pages_crawled": len(pages),
             "failed_urls": failed_urls,
+            "source_status": source_status,
+            "retryable": bool(source_blocked),
+            "fallback_required": bool(source_blocked),
+            "fallback_search_plan": fallback_plan,
+            "negative_contact_conclusion_allowed": not source_blocked,
             "crawler_backend": getattr(self.backend, "name", type(self.backend).__name__),
             "search_execution_performed": True,
             "planning_is_execution_proof": False,

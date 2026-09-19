@@ -33,6 +33,57 @@ SPA_SHELL_MARKERS = (
     "enable javascript", "loading...",
 )
 
+_SOURCE_THROTTLE_ERROR_MARKERS = (
+    "http_status_429",
+    "status code 429",
+    "too many requests",
+    "rate limit",
+    "rate_limited",
+    "source_throttled",
+)
+_META_THROTTLE_TEXT_MARKERS = (
+    "you're temporarily blocked",
+    "you’re temporarily blocked",
+    "going too fast",
+    "we limit how often you can",
+    "try again later",
+)
+_GENERIC_THROTTLE_TEXT_MARKERS = (
+    "too many requests",
+    "rate limit exceeded",
+)
+
+
+def _is_meta_host(url: str) -> bool:
+    host = (urlsplit(str(url or "")).hostname or "").lower()
+    return host in {"facebook.com", "instagram.com"} or host.endswith(".facebook.com") or host.endswith(".instagram.com")
+
+
+def _source_throttle_reason(page: CrawlPage) -> str | None:
+    error = str(page.error or "").strip().lower()
+    if error.startswith("source_throttled:"):
+        return str(page.error or "").split(":", 1)[1] or "SOURCE_THROTTLED"
+    if any(marker in error for marker in _SOURCE_THROTTLE_ERROR_MARKERS):
+        return "HTTP_429_OR_RATE_LIMIT"
+
+    text = " ".join(str(page.text or "").lower().split())
+    if any(marker in text for marker in _GENERIC_THROTTLE_TEXT_MARKERS):
+        return "RATE_LIMIT_PAGE"
+    if _is_meta_host(page.url) and any(marker in text for marker in _META_THROTTLE_TEXT_MARKERS):
+        return "META_TEMPORARILY_BLOCKED"
+    return None
+
+
+def _retry_delay_seconds(base_delay: float, attempt: int, url: str, *, throttled: bool) -> float:
+    if base_delay <= 0:
+        return 0.0
+    if not throttled:
+        return float(base_delay)
+    exponential = max(0.5, float(base_delay)) * (2 ** max(0, int(attempt)))
+    jitter_seed = sum(str(url or "").encode("utf-8")) + (int(attempt) * 37)
+    jitter = (jitter_seed % 251) / 1000.0
+    return min(10.0, exponential + jitter)
+
 
 class AsyncPageBackend(Protocol):
     name: str
@@ -67,6 +118,8 @@ def _safe_click_label(label: str) -> bool:
 
 
 def _quality_score(page: CrawlPage) -> int:
+    if _source_throttle_reason(page):
+        return -20_000
     if not page.success:
         return -10_000
     text_chars = len(page.text or "")
@@ -76,6 +129,8 @@ def _quality_score(page: CrawlPage) -> int:
 
 
 def _escalation_reason(page: CrawlPage, *, sparse_text_chars: int) -> str | None:
+    if _source_throttle_reason(page):
+        return "PRIMARY_SOURCE_THROTTLED"
     if not page.success:
         return "PRIMARY_FETCH_FAILED"
     text = (page.text or "").strip()
@@ -464,18 +519,41 @@ class ResilientCrawlerBackend:
                     error=f"backend_exception:{type(exc).__name__}:{exc}",
                 )
 
+            throttle_reason = _source_throttle_reason(page)
+            if throttle_reason:
+                page = CrawlPage(
+                    url=page.url or url,
+                    text=page.text or "",
+                    links=tuple(page.links or ()),
+                    link_hints=tuple(page.link_hints or ()),
+                    success=False,
+                    error=f"source_throttled:{throttle_reason}",
+                )
+
+            retry_delay = 0.0
+            if attempt < self.max_retries:
+                retry_delay = _retry_delay_seconds(
+                    self.retry_delay_seconds,
+                    attempt,
+                    url,
+                    throttled=bool(throttle_reason),
+                )
+
             self._attempts.append({
                 "url": url,
                 "attempt": attempt + 1,
                 "success": bool(page.success),
                 "timed_out": timed_out,
+                "source_throttled": bool(throttle_reason),
+                "throttle_reason": throttle_reason,
+                "retry_delay_seconds": retry_delay,
                 "error": page.error,
             })
             last_page = page
             if page.success:
                 return page
-            if attempt < self.max_retries and self.retry_delay_seconds:
-                await asyncio.sleep(self.retry_delay_seconds)
+            if retry_delay:
+                await asyncio.sleep(retry_delay)
 
         assert last_page is not None
         return last_page

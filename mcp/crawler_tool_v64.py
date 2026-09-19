@@ -105,7 +105,9 @@ def crawler_tool_descriptor() -> dict[str, Any]:
             "Execute one existing CBI public-source/contact research task against a supplied public website seed "
             "using the self-hosted Crawl4AI path with optional local Playwright escalation. This is execution, not "
             "planning proof; it never sends messages, logs in, bypasses access controls, or promotes a discovered "
-            "route to verified Account ownership by itself."
+            "route to verified Account ownership by itself. Source HTTP 429 / anti-bot throttle pages are fail-closed "
+            "as SOURCE_THROTTLED; repeated fetch timeouts/unavailability are surfaced as SOURCE_UNAVAILABLE. Both "
+            "include a host-web-search fallback plan rather than a false negative."
         ),
         "inputSchema": {
             "type": "object",
@@ -164,6 +166,11 @@ def crawler_tool_descriptor() -> dict[str, Any]:
             "route_ownership_promoted": False,
             "bounded_concurrency": True,
             "bounded_pages": True,
+            "source_throttle_fail_closed": True,
+            "source_throttle_retry_backoff": True,
+            "host_fallback_plan_on_throttle": True,
+            "source_unavailable_fail_closed": True,
+            "host_fallback_plan_on_unavailable": True,
         },
     }
 
@@ -261,9 +268,17 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
                 official_domain_verified=False,
             )
 
-    receipt["status"] = "CRAWL_EXECUTED"
-    receipt["runtime"] = crawler_runtime_status()
-    receipt["production_route_ownership_promoted"] = False
+    return _finalize_receipt(receipt)
+
+
+def _finalize_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
+    source_status = str(receipt.get("source_status") or "")
+    if source_status in {"SOURCE_THROTTLED", "SOURCE_UNAVAILABLE"}:
+        receipt["status"] = source_status
+    elif not str(receipt.get("status") or "").strip():
+        receipt["status"] = "CRAWL_EXECUTED"
+    receipt.setdefault("runtime", crawler_runtime_status())
+    receipt.setdefault("production_route_ownership_promoted", False)
     return receipt
 
 
@@ -294,7 +309,7 @@ def execute_public_crawl_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(arguments, dict):
         raise ValueError("arguments must be an object")
     if not _env_enabled():
-        return _run_coroutine_sync(arguments)
+        return _finalize_receipt(_run_coroutine_sync(arguments))
 
     acquired = _CRAWLER_SEMAPHORE.acquire(timeout=_crawler_acquire_timeout())
     if not acquired:
@@ -305,7 +320,7 @@ def execute_public_crawl_handler(arguments: dict[str, Any]) -> dict[str, Any]:
             "paid_api_required": False,
         }
     try:
-        return _run_coroutine_sync(arguments)
+        return _finalize_receipt(_run_coroutine_sync(arguments))
     finally:
         _CRAWLER_SEMAPHORE.release()
 
