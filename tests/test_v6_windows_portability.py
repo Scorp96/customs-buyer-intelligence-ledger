@@ -41,7 +41,7 @@ class V6WindowsPortabilityTests(unittest.TestCase):
         )
 
     def test_mcp_launcher_discovers_supported_python_dynamically(self) -> None:
-        config = json.loads((PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        config = json.loads((PLUGIN_ROOT / "deploy" / "local" / "mcp.windows.json").read_text(encoding="utf-8"))
         server = config["mcpServers"]["buyer-outreach-actions"]
         self.assertEqual(server["command"], "powershell.exe")
         command = server["args"][-1]
@@ -54,7 +54,7 @@ class V6WindowsPortabilityTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Windows-only installed-layout launcher regression")
     def test_mcp_launcher_cold_starts_from_installed_userprofile_layout(self) -> None:
-        config = json.loads((PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        config = json.loads((PLUGIN_ROOT / "deploy" / "local" / "mcp.windows.json").read_text(encoding="utf-8"))
         server = config["mcpServers"]["buyer-outreach-actions"]
         requests = [
             {

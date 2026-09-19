@@ -28,7 +28,7 @@ user customs row
   -> optional cloud delta monitor
 ```
 
-Git is source/version control, not the research engine. Local CLI, `.mcp.json`, Windows Runtime, CMD, PowerShell and Python are engineering/acceptance/recovery surfaces only.
+Git is source/version control, not the research engine. The plugin `.mcp.json` is the cloud production MCP route. Local CLI, `deploy/local/mcp.windows.json`, Windows Runtime, CMD, PowerShell and Python are engineering/acceptance/recovery surfaces only.
 
 For the normal user path:
 

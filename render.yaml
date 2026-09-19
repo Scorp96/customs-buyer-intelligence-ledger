@@ -10,7 +10,7 @@ services:
     dockerContext: .
     dockerCommand: python -B -Xutf8 mcp/render_bootstrap.py
     autoDeployTrigger: checksPass
-    healthCheckPath: /healthz
+    healthCheckPath: /readyz
     renderSubdomainPolicy: enabled
     envVars:
       - key: CBI_RENDER_LIVE_ROOT

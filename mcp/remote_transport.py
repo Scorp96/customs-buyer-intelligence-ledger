@@ -190,6 +190,14 @@ class RemoteMcpApplication:
             return HTTPStatus.OK, self._error_payload(request_id, -32602, str(exc))
 
 
+def _health_http_status(value: Mapping[str, Any], *, readiness: bool) -> int:
+    """Map Runtime health to liveness/readiness HTTP status."""
+    if not readiness:
+        return HTTPStatus.OK
+    status = str(value.get("status") or "").strip().lower()
+    return HTTPStatus.OK if status == "ok" else HTTPStatus.SERVICE_UNAVAILABLE
+
+
 class _ReusableThreadingHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -228,13 +236,40 @@ class RemoteMcpRequestHandler(BaseHTTPRequestHandler):
     def _path(self) -> str:
         return urlsplit(self.path).path
 
+    def _send_health(self, *, readiness: bool, head_only: bool = False) -> None:
+        try:
+            payload = self.app.health()
+            status = _health_http_status(payload, readiness=readiness)
+            if head_only:
+                self._send_empty(status)
+            else:
+                self._send_json(status, payload)
+        except Exception:
+            if head_only:
+                self._send_empty(HTTPStatus.SERVICE_UNAVAILABLE)
+            else:
+                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"status": "error"})
+
+    def do_HEAD(self) -> None:  # noqa: N802
+        path = self._path()
+        if path == "/healthz":
+            self._send_health(readiness=False, head_only=True)
+            return
+        if path == "/readyz":
+            self._send_health(readiness=True, head_only=True)
+            return
+        if path == "/mcp":
+            self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED)
+            return
+        self._send_empty(HTTPStatus.NOT_FOUND)
+
     def do_GET(self) -> None:  # noqa: N802
         path = self._path()
-        if path in {"/healthz", "/readyz"}:
-            try:
-                self._send_json(HTTPStatus.OK, self.app.health())
-            except Exception:
-                self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"status": "error"})
+        if path == "/healthz":
+            self._send_health(readiness=False)
+            return
+        if path == "/readyz":
+            self._send_health(readiness=True)
             return
         if path == "/mcp":
             self._send_empty(HTTPStatus.METHOD_NOT_ALLOWED)

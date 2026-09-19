@@ -8,6 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / ".codex-plugin" / "plugin.json"
 SKILL = ROOT / "skills" / "customs-buyer-one-shot" / "SKILL.md"
+MCP_CONFIG = ROOT / ".mcp.json"
+LOCAL_MCP_CONFIG = ROOT / "deploy" / "local" / "mcp.windows.json"
 
 
 class CustomsBuyerOneShotSkillTests(unittest.TestCase):
@@ -57,6 +59,25 @@ class CustomsBuyerOneShotSkillTests(unittest.TestCase):
             "Runtime unavailability is **not** permission to fall back to the user's PC",
             text,
         )
+
+
+    def test_plugin_mcp_is_cloud_first_and_local_windows_is_engineering_only(self) -> None:
+        config = json.loads(MCP_CONFIG.read_text(encoding="utf-8"))
+        server = config["mcpServers"]["buyer-outreach-actions"]
+        self.assertEqual("http", server["type"])
+        self.assertEqual("https://cbi-v61-preview.onrender.com/mcp", server["url"])
+        self.assertEqual("oauth", server["auth"])
+        self.assertEqual("CBI_REMOTE_BEARER_TOKEN", server["bearer_token_env_var"])
+        self.assertNotIn("command", server)
+        self.assertNotIn("args", server)
+        self.assertTrue(LOCAL_MCP_CONFIG.is_file())
+        local = json.loads(LOCAL_MCP_CONFIG.read_text(encoding="utf-8"))
+        self.assertEqual("powershell.exe", local["mcpServers"]["buyer-outreach-actions"]["command"])
+
+    def test_one_shot_documents_remote_mcp_as_canonical_plugin_path(self) -> None:
+        text = SKILL.read_text(encoding="utf-8")
+        self.assertIn("The plugin `.mcp.json` is the cloud production MCP route", text)
+        self.assertIn("deploy/local/mcp.windows.json", text)
 
 
 if __name__ == "__main__":
