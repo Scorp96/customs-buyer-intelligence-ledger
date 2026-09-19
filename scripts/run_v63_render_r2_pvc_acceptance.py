@@ -257,6 +257,7 @@ def _poll_pinned_health(
     *,
     timeout_seconds: float,
     required_restore_generation: int | None = None,
+    different_instance_id: str | None = None,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + max(1.0, float(timeout_seconds))
     last_error = "REMOTE_HEALTH_NOT_READY"
@@ -265,6 +266,16 @@ def _poll_pinned_health(
             health = client.read_health()
             identity = health.get("deployment_identity") if isinstance(health, dict) else None
             identity = identity if isinstance(identity, dict) else {}
+            if different_instance_id is not None:
+                observed_instance_id = str(identity.get("instance_id") or "").strip()
+                if not observed_instance_id:
+                    last_error = "REMOTE_INSTANCE_ID_NOT_READY"
+                    time.sleep(3.0)
+                    continue
+                if observed_instance_id == str(different_instance_id):
+                    last_error = "REMOTE_INSTANCE_REPLACEMENT_NOT_READY"
+                    time.sleep(3.0)
+                    continue
             if required_restore_generation is not None:
                 if identity.get("restore_generation") != required_restore_generation:
                     last_error = "REMOTE_RESTORE_GENERATION_NOT_READY"
@@ -290,6 +301,7 @@ class RenderR2ExternalReplacementController:
         restart_hook_url: str,
         acceptance_client: RenderR2AcceptanceClient,
         initial_deployment_id: str,
+        initial_instance_id: str,
         poll_timeout_seconds: float,
     ) -> None:
         self.object_client = object_client
@@ -297,6 +309,9 @@ class RenderR2ExternalReplacementController:
         self.restart_hook_url = str(restart_hook_url)
         self.acceptance_client = acceptance_client
         self.current_deployment_id = str(initial_deployment_id)
+        self.current_instance_id = str(initial_instance_id)
+        if not self.current_instance_id:
+            raise RuntimeError("RENDER_INITIAL_INSTANCE_ID_MISSING")
         self.poll_timeout_seconds = float(poll_timeout_seconds)
 
     def _manager(self) -> RecoveryObjectStoreStateManagerV63:
@@ -354,24 +369,32 @@ class RenderR2ExternalReplacementController:
         pointer = manager.read_pointer(required=True)
         assert pointer is not None
         source_generation = int(pointer.generation)
-        before = self.current_deployment_id
-        after = _trigger_render_hook(
+        before_deployment = self.current_deployment_id
+        before_instance = self.current_instance_id
+        after_deployment = _trigger_render_hook(
             self.restart_hook_url,
             "RENDER_RESTART",
         )
-        if after == before:
+        if after_deployment == before_deployment:
             raise RuntimeError("RENDER_RESTART_DEPLOYMENT_ID_NOT_CHANGED")
         health = _poll_pinned_health(
             self.acceptance_client,
             timeout_seconds=self.poll_timeout_seconds,
             required_restore_generation=source_generation,
+            different_instance_id=before_instance,
         )
         identity = health.get("deployment_identity") if isinstance(health, dict) else None
         identity = identity if isinstance(identity, dict) else {}
-        self.current_deployment_id = after
+        after_instance = str(identity.get("instance_id") or "").strip()
+        if not after_instance or after_instance == before_instance:
+            raise RuntimeError("RENDER_RESTART_INSTANCE_ID_NOT_CHANGED")
+        self.current_deployment_id = after_deployment
+        self.current_instance_id = after_instance
         return {
-            "instance_before": before,
-            "instance_after": after,
+            "instance_before": before_instance,
+            "instance_after": after_instance,
+            "deployment_before": before_deployment,
+            "deployment_after": after_deployment,
             "restored_generation": identity.get("restore_generation"),
             "restore_source": identity.get("restore_source"),
         }
@@ -406,10 +429,6 @@ def _run_external(
     seed_manager = RecoveryObjectStoreStateManagerV63(object_client, prefix=prefix)
     _ensure_disposable_r2_baseline(manager=seed_manager, checkout_root=ROOT)
 
-    initial_deployment_id = _trigger_render_hook(
-        configuration["CBI_V63_RENDER_DEPLOY_HOOK_URL"],
-        "RENDER_DEPLOY",
-    )
     client = RenderR2AcceptanceClient(
         RenderR2AcceptanceClientConfig(
             base_url=configuration["CBI_V63_ACCEPTANCE_BASE_URL"],
@@ -418,7 +437,27 @@ def _run_external(
             timeout_seconds=30.0,
         )
     )
-    _poll_pinned_health(client, timeout_seconds=poll_timeout_seconds)
+    baseline_health = client.read_health()
+    baseline_identity = baseline_health.get("deployment_identity") if isinstance(baseline_health, dict) else None
+    baseline_identity = baseline_identity if isinstance(baseline_identity, dict) else {}
+    baseline_instance_id = str(baseline_identity.get("instance_id") or "").strip()
+    if not baseline_instance_id:
+        raise RuntimeError("RENDER_BASELINE_INSTANCE_ID_MISSING")
+
+    initial_deployment_id = _trigger_render_hook(
+        configuration["CBI_V63_RENDER_DEPLOY_HOOK_URL"],
+        "RENDER_DEPLOY",
+    )
+    deployed_health = _poll_pinned_health(
+        client,
+        timeout_seconds=poll_timeout_seconds,
+        different_instance_id=baseline_instance_id,
+    )
+    deployed_identity = deployed_health.get("deployment_identity") if isinstance(deployed_health, dict) else None
+    deployed_identity = deployed_identity if isinstance(deployed_identity, dict) else {}
+    initial_instance_id = str(deployed_identity.get("instance_id") or "").strip()
+    if not initial_instance_id or initial_instance_id == baseline_instance_id:
+        raise RuntimeError("RENDER_DEPLOY_INSTANCE_ID_NOT_CHANGED")
 
     controller = RenderR2ExternalReplacementController(
         object_client=object_client,
@@ -426,6 +465,7 @@ def _run_external(
         restart_hook_url=configuration["CBI_V63_RENDER_RESTART_HOOK_URL"],
         acceptance_client=client,
         initial_deployment_id=initial_deployment_id,
+        initial_instance_id=initial_instance_id,
         poll_timeout_seconds=poll_timeout_seconds,
     )
     receipt = run_v63_render_r2_pvc_acceptance(client, controller)
