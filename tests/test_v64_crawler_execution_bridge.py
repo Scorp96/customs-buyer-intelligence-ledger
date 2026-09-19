@@ -324,6 +324,52 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
             "NOT_VERIFIED",
         )
 
+    def test_source_access_blocked_is_fail_closed_with_fallback(self) -> None:
+        url = "https://www.findglocal.com/example"
+        backend = FakeBackend({
+            url: CrawlPage(
+                url=url,
+                text="",
+                links=(),
+                success=False,
+                error="Blocked by anti-bot protection: HTTP 403 with HTML content (4749 bytes)",
+            )
+        })
+        bridge = CrawlExecutionBridge(backend)
+        receipt = run(
+            bridge.execute(
+                {
+                    "task_id": "V63CONTACT-403",
+                    "source_family": "public_directory",
+                    "company_name": "Ferreterias La Quinta Inc",
+                },
+                seed_url=url,
+                official_domain_verified=False,
+            )
+        )
+
+        self.assertEqual(receipt["result"], "BLOCKED")
+        self.assertEqual(receipt["source_status"], "SOURCE_ACCESS_BLOCKED")
+        self.assertTrue(receipt["retryable"])
+        self.assertTrue(receipt["fallback_required"])
+        self.assertFalse(receipt["negative_contact_conclusion_allowed"])
+        self.assertEqual(
+            receipt["fallback_search_plan"]["reason"],
+            "SOURCE_ACCESS_BLOCKED",
+        )
+        self.assertEqual(
+            receipt["fallback_search_plan"]["contact_conclusion_if_unresolved"],
+            "NOT_VERIFIED",
+        )
+        self.assertIn(
+            'site:facebook.com "Ferreterias La Quinta Inc"',
+            receipt["fallback_search_plan"]["queries"],
+        )
+        self.assertNotIn(
+            'site:facebook.com "PR"',
+            receipt["fallback_search_plan"]["queries"],
+        )
+
     def test_rejects_non_http_seed(self) -> None:
         backend = FakeBackend({})
         bridge = CrawlExecutionBridge(backend)

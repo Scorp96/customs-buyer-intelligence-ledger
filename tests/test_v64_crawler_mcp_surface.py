@@ -28,6 +28,8 @@ class CrawlerMcpSurfaceTests(unittest.TestCase):
         self.assertTrue(descriptor["contract"]["source_throttle_fail_closed"])
         self.assertTrue(descriptor["contract"]["source_throttle_retry_backoff"])
         self.assertTrue(descriptor["contract"]["host_fallback_plan_on_throttle"])
+        self.assertTrue(descriptor["contract"]["source_access_blocked_fail_closed"])
+        self.assertTrue(descriptor["contract"]["host_fallback_plan_on_access_blocked"])
         self.assertTrue(descriptor["contract"]["source_unavailable_fail_closed"])
         self.assertTrue(descriptor["contract"]["host_fallback_plan_on_unavailable"])
 
@@ -76,6 +78,42 @@ class CrawlerMcpSurfaceTests(unittest.TestCase):
             )
 
         self.assertEqual(result["status"], "SOURCE_THROTTLED")
+        self.assertEqual(result["result"], "BLOCKED")
+        self.assertTrue(result["fallback_required"])
+        self.assertFalse(result["production_route_ownership_promoted"])
+
+    def test_source_access_blocked_receipt_surfaces_top_level_status(self) -> None:
+        class OneShotSemaphore:
+            def acquire(self, timeout=None):
+                return True
+
+            def release(self):
+                return None
+
+        receipt = {
+            "result": "BLOCKED",
+            "source_status": "SOURCE_ACCESS_BLOCKED",
+            "retryable": True,
+            "fallback_required": True,
+            "fallback_search_plan": {"host_action": "WEB_SEARCH_AND_PUBLIC_SOURCE_FALLBACK"},
+        }
+        with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False), patch.object(
+            crawler_tool_v64,
+            "_CRAWLER_SEMAPHORE",
+            OneShotSemaphore(),
+        ), patch.object(
+            crawler_tool_v64,
+            "_run_coroutine_sync",
+            return_value=dict(receipt),
+        ):
+            result = crawler_tool_v64.execute_public_crawl_handler(
+                {
+                    "task": {"task_id": "V64-403-BLOCKED"},
+                    "seed_url": "https://www.findglocal.com/example",
+                }
+            )
+
+        self.assertEqual(result["status"], "SOURCE_ACCESS_BLOCKED")
         self.assertEqual(result["result"], "BLOCKED")
         self.assertTrue(result["fallback_required"])
         self.assertFalse(result["production_route_ownership_promoted"])
