@@ -1,0 +1,110 @@
+name: CBI v6.4 current-head wall-clock acceptance
+
+on:
+  push:
+    branches:
+      - cbi-v64-wallclock-exacthead-evidence-20260919-r2
+    paths:
+      - '.github/workflows/cbi-v64-current-wallclock-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Current-head bounded crawler acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Verify current-head budgets and no outer 502
+        env:
+          CBI_ACCEPTANCE_URL: https://cbi-v63-r2-acceptance-20260903-r01.onrender.com
+          CBI_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: 27dc5f79ddbf5b3b6c85fb97857a9a89c9cb3318
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,time,urllib.error,urllib.request
+          base=os.environ["CBI_ACCEPTANCE_URL"].rstrip("/")
+          token=os.environ["CBI_ACCEPTANCE_BEARER_TOKEN"]
+          expected=os.environ["EXPECTED_SHA"].lower()
+
+          def open_json(req,timeout=75):
+              t=time.monotonic()
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as r:
+                      return r.status,json.loads(r.read().decode()),time.monotonic()-t
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try:p=json.loads(raw)
+                  except Exception:p={"raw":raw[:1200]}
+                  return e.code,p,time.monotonic()-t
+
+          s,h,_=open_json(urllib.request.Request(base+"/healthz",headers={"Accept":"application/json"}),30)
+          if s!=200 or h.get("status")!="ok": raise SystemExit("HEALTH_NOT_OK")
+          ident=h.get("deployment_identity") or {}
+          if str(ident.get("git_sha") or "").lower()!=expected:
+              raise SystemExit("SHA_MISMATCH:"+str(ident.get("git_sha")))
+          cr=h.get("crawler_runtime") or {}
+          wall=float(cr.get("max_wall_seconds") or 0)
+          envelope=float(cr.get("max_attempt_envelope_seconds") or 0)
+          if not (15 <= wall <= 55): raise SystemExit("WALL_BUDGET_INVALID:"+str(wall))
+          if envelope != 30.0: raise SystemExit("ATTEMPT_ENVELOPE_INVALID:"+str(envelope))
+
+          rid=1
+          def rpc(args,timeout=75):
+              global rid
+              this=rid; rid+=1
+              body=json.dumps({"jsonrpc":"2.0","id":this,"method":"tools/call","params":{
+                  "name":"execute_public_crawl","arguments":args}},separators=(",",":")).encode()
+              req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                  "Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json",
+                  "MCP-Protocol-Version":"2026-07-28"})
+              status,p,elapsed=open_json(req,timeout)
+              if status!=200: return status,p,elapsed
+              if p.get("id")!=this: raise SystemExit("RPC_ID_MISMATCH")
+              return status,p,elapsed
+
+          # Oversized per-page envelope must fail immediately at application level.
+          status,bad,elapsed_bad=rpc({
+              "task":{"task_id":"ENVELOPE-REJECT","source_family":"public_test"},
+              "seed_url":"https://example.com/",
+              "max_pages":1,"browser_escalation":False,
+              "timeout_seconds":20,"max_retries":1
+          },30)
+          if status!=200 or not isinstance(bad.get("error"),dict):
+              raise SystemExit("ENVELOPE_NOT_REJECTED")
+          if "must be <= 30" not in str(bad["error"].get("message") or ""):
+              raise SystemExit("ENVELOPE_ERROR_MISMATCH:"+json.dumps(bad,sort_keys=True))
+          if elapsed_bad > 10: raise SystemExit("ENVELOPE_REJECTION_TOO_SLOW")
+
+          # Valid maximum envelope: must return JSON-RPC/structured result before outer gateway.
+          status,p,elapsed=rpc({
+              "task":{"task_id":"VALID-SLOW-PROBE","source_family":"public_test","company_name":"Wallclock Probe"},
+              "seed_url":"https://httpbin.org/delay/60",
+              "max_pages":1,"browser_escalation":False,
+              "timeout_seconds":15,"max_retries":1
+          },75)
+          if status!=200:
+              raise SystemExit("OUTER_HTTP_FAILURE:"+json.dumps({"status":status,"elapsed":elapsed,"payload":p},sort_keys=True)[:1800])
+          if p.get("error"):
+              raise SystemExit("VALID_RPC_ERROR:"+json.dumps(p["error"],sort_keys=True))
+          r=(p.get("result") or {}).get("structuredContent") or {}
+          if elapsed >= 70: raise SystemExit("CALL_NOT_BOUNDED:"+str(elapsed))
+          if r.get("status") not in {"CRAWL_EXECUTED","SOURCE_UNAVAILABLE","SOURCE_THROTTLED","SOURCE_ACCESS_BLOCKED"}:
+              raise SystemExit("UNEXPECTED_STATUS:"+str(r.get("status")))
+          print(json.dumps({
+              "status":"VERIFIED",
+              "deployment_git_sha":expected,
+              "max_wall_seconds":wall,
+              "max_attempt_envelope_seconds":envelope,
+              "invalid_envelope_rejected_seconds":round(elapsed_bad,3),
+              "valid_probe_elapsed_seconds":round(elapsed,3),
+              "valid_probe_status":r.get("status"),
+              "valid_probe_result":r.get("result"),
+              "execution_budget_seconds":r.get("execution_budget_seconds"),
+              "execution_budget_exhausted":r.get("execution_budget_exhausted"),
+              "outer_http_502":False
+          },sort_keys=True))
+          PY
