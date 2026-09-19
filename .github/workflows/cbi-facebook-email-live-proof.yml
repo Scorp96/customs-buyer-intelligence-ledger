@@ -1,0 +1,94 @@
+name: CBI Facebook email live proof
+
+on:
+  push:
+    branches:
+      - cbi-facebook-email-live-proof-20260919
+    paths:
+      - '.github/workflows/cbi-facebook-email-live-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    name: Extract Facebook email through production CBI
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Call production CBI read-only crawler
+        env:
+          CBI_URL: https://cbi-v61-preview.onrender.com
+          CBI_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error, time
+          base=os.environ["CBI_URL"].rstrip("/")
+          token=os.environ["CBI_TOKEN"]
+
+          def call(rid,args,timeout=75):
+              body=json.dumps({"jsonrpc":"2.0","id":rid,"method":"tools/call","params":{
+                  "name":"execute_public_crawl","arguments":args
+              }},separators=(",",":")).encode()
+              req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                  "Authorization":"Bearer "+token,
+                  "Content-Type":"application/json",
+                  "Accept":"application/json",
+                  "MCP-Protocol-Version":"2026-07-28"})
+              t=time.monotonic()
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as r:
+                      payload=json.loads(r.read().decode())
+                      return {"http":r.status,"elapsed":round(time.monotonic()-t,3),"payload":payload}
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try:p=json.loads(raw)
+                  except Exception:p={"raw":raw[:2000]}
+                  return {"http":e.code,"elapsed":round(time.monotonic()-t,3),"payload":p}
+
+          task={
+            "task_id":"FB-LAQUINTA-EMAIL-LIVE",
+            "source_family":"public_social",
+            "company_name":"Ferreterias La Quinta Inc",
+            "query":"Ferreterias La Quinta Inc Mayaguez Puerto Rico email correo electrónico contact"
+          }
+          urls=[
+            "https://www.facebook.com/ferreteriaslaquintainc/",
+            "https://www.facebook.com/ferreteriaslaquintainc/about",
+            "https://www.facebook.com/ferreteriaslaquintainc/about_contact_and_basic_info"
+          ]
+          out=[]
+          rid=1
+          for url in urls:
+              for browser in (False,True):
+                  args={
+                    "task":task,
+                    "seed_url":url,
+                    "max_pages":2,
+                    "browser_escalation":browser,
+                    "timeout_seconds":15,
+                    "max_retries":1
+                  }
+                  res=call(rid,args,75); rid+=1
+                  sc=((res.get("payload") or {}).get("result") or {}).get("structuredContent") or {}
+                  out.append({
+                    "url":url,
+                    "browser_escalation":browser,
+                    "http":res["http"],
+                    "elapsed":res["elapsed"],
+                    "status":sc.get("status"),
+                    "result":sc.get("result"),
+                    "source_status":sc.get("source_status"),
+                    "route_candidates":sc.get("route_candidates"),
+                    "emails":sc.get("emails"),
+                    "phones":sc.get("phones"),
+                    "pages_crawled":sc.get("pages_crawled"),
+                    "failed_urls":sc.get("failed_urls"),
+                    "fallback_required":sc.get("fallback_required"),
+                    "negative_contact_conclusion_allowed":sc.get("negative_contact_conclusion_allowed"),
+                    "backend_diagnostics":sc.get("backend_diagnostics")
+                  })
+          print(json.dumps({"results":out},ensure_ascii=False,sort_keys=True))
+          PY
