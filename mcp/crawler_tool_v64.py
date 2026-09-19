@@ -105,7 +105,8 @@ def crawler_tool_descriptor() -> dict[str, Any]:
             "Execute one existing CBI public-source/contact research task against a supplied public website seed "
             "using the self-hosted Crawl4AI path with optional local Playwright escalation. This is execution, not "
             "planning proof; it never sends messages, logs in, bypasses access controls, or promotes a discovered "
-            "route to verified Account ownership by itself."
+            "route to verified Account ownership by itself. Source HTTP 429 / anti-bot throttle pages are fail-closed "
+            "as SOURCE_THROTTLED and include a host-web-search fallback plan rather than a false negative."
         ),
         "inputSchema": {
             "type": "object",
@@ -164,6 +165,9 @@ def crawler_tool_descriptor() -> dict[str, Any]:
             "route_ownership_promoted": False,
             "bounded_concurrency": True,
             "bounded_pages": True,
+            "source_throttle_fail_closed": True,
+            "source_throttle_retry_backoff": True,
+            "host_fallback_plan_on_throttle": True,
         },
     }
 
@@ -261,7 +265,10 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
                 official_domain_verified=False,
             )
 
-    receipt["status"] = "CRAWL_EXECUTED"
+    if receipt.get("source_status") == "SOURCE_THROTTLED":
+        receipt["status"] = "SOURCE_THROTTLED"
+    else:
+        receipt["status"] = "CRAWL_EXECUTED"
     receipt["runtime"] = crawler_runtime_status()
     receipt["production_route_ownership_promoted"] = False
     return receipt
