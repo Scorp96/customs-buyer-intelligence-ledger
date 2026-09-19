@@ -371,6 +371,13 @@ class V63DemandExpansionMixin:
         args = dict(arguments or {})
         profile_id = str(args.get("product_profile_id") or "PVC").strip().upper()
         profiles = getattr(self, "_v63_capability_profiles", {}) or {}
+        if not profiles:
+            loader = getattr(self, "_load_v63_capability_bundle", None)
+            if callable(loader):
+                bundle = loader()
+                if bundle is not None:
+                    _bind_private_capability_bundle(self, bundle)
+                    profiles = getattr(self, "_v63_capability_profiles", {}) or {}
         capability = copy.deepcopy(profiles.get(profile_id))
         if capability is None:
             return {
@@ -424,7 +431,21 @@ class V63DemandExpansionMixin:
         }
 
     def preview_customs_seed_expansion(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        result = plan_customs_seed_expansion(arguments)
+        args = copy.deepcopy(arguments)
+        requested_source_type = str(args.get("source_type") or "CUSTOMS").strip().upper()
+        if requested_source_type != "CUSTOMS":
+            raise ValueError("CUSTOMS_SOURCE_REQUIRED")
+        investigation_id = str(args.get("investigation_id") or "").strip()
+        account_id = str(args.get("account_id") or "").strip()
+        evidence_ids = [str(v).strip() for v in args.get("source_evidence_ids", []) if str(v).strip()]
+        self._v63_validate_evidence_owner(investigation_id, account_id, evidence_ids)
+        opportunity = self._v63_resolve_opportunity(args)
+        self._v63_validate_opportunity_evidence_binding(investigation_id, opportunity, evidence_ids)
+        self._v63_validate_evidence_provenance(investigation_id, evidence_ids, "CUSTOMS")
+        args["source_type"] = "CUSTOMS"
+        result = plan_customs_seed_expansion(args)
+        result["demand_anchor"]["evidence_ownership_verified"] = True
+        result["demand_anchor"]["direct_procurement_provenance_verified"] = True
         result["preview_only"] = True
         result["persistent_mutation_performed"] = False
         return result
@@ -469,7 +490,7 @@ class V63DemandExpansionMixin:
         )
 
     def plan_contact_exhaustion(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        opportunity = dict(arguments.get("opportunity") or {})
+        opportunity = self._v63_resolve_opportunity(arguments)
         current_routes = dict(arguments.get("current_routes") or {})
         return _plan_contact_exhaustion(opportunity, current_routes)
 
@@ -479,19 +500,29 @@ class V63DemandExpansionMixin:
     def evaluate_route_reuse(self, arguments: dict[str, Any]) -> dict[str, Any]:
         result = _reuse_route_for_opportunity(
             dict(arguments.get("route") or {}),
-            dict(arguments.get("opportunity") or {}),
+            self._v63_resolve_opportunity(arguments),
         )
         result["persistent_mutation_performed"] = False
         return result
 
     def get_portfolio_metrics(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        result = _compute_portfolio_metrics(list(arguments.get("opportunities") or []))
+        supplied = arguments.get("opportunities")
+        if isinstance(supplied, list):
+            opportunities = list(supplied)
+        else:
+            opportunities = self.get_product_opportunities(arguments)["opportunities"]
+        result = _compute_portfolio_metrics(opportunities)
         result["persistent_mutation_performed"] = False
         return result
 
     def schedule_expansion_research(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        supplied = arguments.get("opportunities")
+        if isinstance(supplied, list):
+            opportunities = list(supplied)
+        else:
+            opportunities = self.get_product_opportunities(arguments)["opportunities"]
         result = _schedule_research_work(
-            list(arguments.get("opportunities") or []),
+            opportunities,
             float(arguments.get("budget_units") or 0.0),
         )
         result["persistent_mutation_performed"] = False
@@ -508,7 +539,8 @@ class V63DemandExpansionMixin:
         return result
 
     def evaluate_sales_readiness(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        opportunity = dict(arguments.get("opportunity") or {})
+        opportunity = self._v63_resolve_opportunity(arguments)
+        arguments = {**copy.deepcopy(arguments), "opportunity": opportunity}
         profile_id = str(opportunity.get("product_profile_id") or arguments.get("product_profile_id") or "").strip().upper()
         current = self.get_capability_profile({"product_profile_id": profile_id})
         if current["status"] != "READY":
@@ -531,8 +563,24 @@ class V63DemandExpansionMixin:
         return invoke_v63_runtime_durable_backend(self, tool_name, arguments)
 
     def derive_demand_anchor(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        result = _derive_demand_anchor(copy.deepcopy(arguments))
+        args = copy.deepcopy(arguments)
+        investigation_id = str(args.get("investigation_id") or "").strip()
+        if not investigation_id:
+            raise ValueError("INVESTIGATION_ID_REQUIRED_FOR_EVIDENCE_BINDING")
+        account_id = str(args.get("account_id") or "").strip()
+        evidence_ids = [str(v).strip() for v in args.get("source_evidence_ids", []) if str(v).strip()]
+        self._v63_validate_evidence_owner(investigation_id, account_id, evidence_ids)
+        opportunity = self._v63_resolve_opportunity(args)
+        self._v63_validate_opportunity_evidence_binding(investigation_id, opportunity, evidence_ids)
+        source_type = str(args.get("source_type") or "").strip().upper()
+        provenance_verified = False
+        if _is_direct_procurement_source(source_type):
+            self._v63_validate_evidence_provenance(investigation_id, evidence_ids, source_type)
+            provenance_verified = True
+        result = _derive_demand_anchor(args)
         result["derived_view"] = True
+        result["evidence_ownership_verified"] = True
+        result["direct_procurement_provenance_verified"] = provenance_verified
         result["persistent_mutation_performed"] = False
         return result
 
@@ -543,7 +591,24 @@ class V63DemandExpansionMixin:
         return self._invoke_v63_durable_mutation("create_product_opportunity", arguments)
 
     def evaluate_product_opportunity(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        return _derive_product_opportunity_evaluation(copy.deepcopy(arguments))
+        args = copy.deepcopy(arguments)
+        opportunity = self._v63_resolve_opportunity(args)
+        evidence_ids = [
+            str(v).strip()
+            for v in dict(args.get("assessment") or {}).get("commercial_evidence_ids", [])
+            if str(v).strip()
+        ]
+        self._v63_validate_evidence_owner(
+            str(args.get("investigation_id") or ""),
+            str(opportunity.get("account_id") or ""),
+            evidence_ids,
+        )
+        self._v63_validate_opportunity_evidence_binding(
+            str(args.get("investigation_id") or ""), opportunity, evidence_ids
+        )
+        result = _derive_product_opportunity_evaluation(args)
+        result["validated_against_projected_opportunity"] = True
+        return result
 
     def promote_opportunity_anchor(self, arguments: dict[str, Any]) -> dict[str, Any]:
         return self._invoke_v63_durable_mutation("promote_opportunity_anchor", arguments)
