@@ -1,0 +1,110 @@
+name: CBI v6.3 production MCP read-only auth probe
+
+on:
+  push:
+    branches:
+      - cbi-v63-production-integration-completion-20260919
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Production MCP read-only auth probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact integration SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Probe Production MCP with existing acceptance bearer
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+
+          base = os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token = os.environ.get("CBI_PRODUCTION_BEARER_TOKEN", "")
+          if len(token) < 32:
+              raise SystemExit("PRODUCTION_BEARER_SECRET_UNAVAILABLE")
+
+          request_id = 1
+          def rpc(method, params):
+              global request_id
+              body = json.dumps({"jsonrpc":"2.0","id":request_id,"method":method,"params":params}, separators=(",",":")).encode()
+              req = urllib.request.Request(
+                  base + "/mcp",
+                  data=body,
+                  method="POST",
+                  headers={
+                      "Authorization": "Bearer " + token,
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                      "MCP-Protocol-Version": "2026-07-28",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      payload = json.loads(resp.read().decode())
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode("utf-8", "replace")
+                  raise SystemExit(f"PRODUCTION_MCP_HTTP_{exc.code}:" + raw[:300])
+              if payload.get("error"):
+                  raise SystemExit("PRODUCTION_MCP_RPC_ERROR:" + json.dumps(payload["error"], sort_keys=True)[:300])
+              rid = request_id
+              request_id += 1
+              return payload.get("result") or {}
+
+          tools = rpc("tools/list", {})
+          names = sorted(
+              row.get("name")
+              for row in tools.get("tools", [])
+              if isinstance(row, dict) and row.get("name")
+          )
+          required = {"get_investigation_health", "capture_authoritative_source_evidence"}
+          missing = sorted(required - set(names))
+          if missing:
+              raise SystemExit("PRODUCTION_REQUIRED_READ_TOOLS_MISSING:" + ",".join(missing))
+
+          canaries = [
+              "INV-20260829T074838Z-b3f3984b20d8",
+              "INV-20260824T063846Z-4d333e50f706",
+          ]
+          observed = []
+          for inv in canaries:
+              result = rpc("tools/call", {
+                  "name":"get_investigation_health",
+                  "arguments":{"investigation_id":inv},
+              })
+              structured = result.get("structuredContent")
+              if not isinstance(structured, dict):
+                  raise SystemExit("PRODUCTION_HEALTH_STRUCTURED_CONTENT_MISSING:" + inv)
+              observed.append({
+                  "investigation_id": inv,
+                  "status": structured.get("status"),
+                  "last_safe_seq": structured.get("last_safe_seq"),
+                  "last_safe_event_hash": structured.get("last_safe_event_hash"),
+              })
+
+          print(json.dumps({
+              "status":"VERIFIED",
+              "production_write_performed":False,
+              "tools_list_observed":True,
+              "required_read_tools_present":True,
+              "canaries":observed,
+          }, sort_keys=True))
+          PY
