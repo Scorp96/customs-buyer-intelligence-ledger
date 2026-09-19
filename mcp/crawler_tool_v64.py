@@ -265,12 +265,16 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
                 official_domain_verified=False,
             )
 
+    return _finalize_receipt(receipt)
+
+
+def _finalize_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
     if receipt.get("source_status") == "SOURCE_THROTTLED":
         receipt["status"] = "SOURCE_THROTTLED"
-    else:
+    elif not str(receipt.get("status") or "").strip():
         receipt["status"] = "CRAWL_EXECUTED"
-    receipt["runtime"] = crawler_runtime_status()
-    receipt["production_route_ownership_promoted"] = False
+    receipt.setdefault("runtime", crawler_runtime_status())
+    receipt.setdefault("production_route_ownership_promoted", False)
     return receipt
 
 
@@ -301,7 +305,7 @@ def execute_public_crawl_handler(arguments: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(arguments, dict):
         raise ValueError("arguments must be an object")
     if not _env_enabled():
-        return _run_coroutine_sync(arguments)
+        return _finalize_receipt(_run_coroutine_sync(arguments))
 
     acquired = _CRAWLER_SEMAPHORE.acquire(timeout=_crawler_acquire_timeout())
     if not acquired:
@@ -312,7 +316,7 @@ def execute_public_crawl_handler(arguments: dict[str, Any]) -> dict[str, Any]:
             "paid_api_required": False,
         }
     try:
-        return _run_coroutine_sync(arguments)
+        return _finalize_receipt(_run_coroutine_sync(arguments))
     finally:
         _CRAWLER_SEMAPHORE.release()
 
