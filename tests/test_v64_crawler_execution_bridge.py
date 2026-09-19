@@ -248,6 +248,9 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(receipt["result"], "BLOCKED")
         self.assertEqual(receipt["pages_crawled"], 0)
         self.assertEqual(len(receipt["failed_urls"]), 1)
+        self.assertEqual(receipt["source_status"], "SOURCE_UNAVAILABLE")
+        self.assertTrue(receipt["fallback_required"])
+        self.assertFalse(receipt["negative_contact_conclusion_allowed"])
 
     def test_source_throttle_is_blocked_with_fallback_not_negative_exhausted(self) -> None:
         url = "https://www.facebook.com/ferreteriaslaquintainc/"
@@ -369,6 +372,114 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
             'site:facebook.com "PR"',
             receipt["fallback_search_plan"]["queries"],
         )
+
+    def test_partial_contact_failure_never_becomes_negative_exhausted(self) -> None:
+        root = "https://example.com/"
+        contact = "https://example.com/contact"
+        backend = FakeBackend({
+            root: CrawlPage(
+                url=root,
+                text="Example Company",
+                links=(contact,),
+            ),
+            contact: CrawlPage(
+                url=contact,
+                text="",
+                links=(),
+                success=False,
+                error="crawl_failed",
+            ),
+        })
+        bridge = CrawlExecutionBridge(backend, max_pages=2)
+        receipt = run(
+            bridge.execute(
+                {"task_id": "V63CONTACT-PARTIAL-FAIL", "source_family": "official_contact"},
+                seed_url=root,
+                official_domain_verified=True,
+            )
+        )
+
+        self.assertEqual(receipt["pages_crawled"], 1)
+        self.assertEqual(receipt["route_candidates"], [])
+        self.assertEqual(receipt["result"], "BLOCKED")
+        self.assertEqual(receipt["source_status"], "SOURCE_UNAVAILABLE")
+        self.assertTrue(receipt["fallback_required"])
+        self.assertFalse(receipt["negative_contact_conclusion_allowed"])
+
+    def test_execution_budget_exhaustion_fails_closed_before_gateway_timeout(self) -> None:
+        root = "https://example.com/"
+        contact = "https://example.com/contact"
+
+        class SlowSecondPageBackend:
+            name = "slow-second-page"
+
+            async def fetch(self, url: str) -> CrawlPage:
+                if url == root:
+                    return CrawlPage(
+                        url=root,
+                        text="Example Company",
+                        links=(contact,),
+                    )
+                await asyncio.sleep(0.2)
+                return CrawlPage(
+                    url=url,
+                    text="Contact us",
+                    links=(),
+                )
+
+        bridge = CrawlExecutionBridge(SlowSecondPageBackend(), max_pages=2)
+        receipt = run(
+            bridge.execute(
+                {"task_id": "V63CONTACT-WALL-BUDGET", "source_family": "official_contact"},
+                seed_url=root,
+                official_domain_verified=True,
+                max_elapsed_seconds=0.05,
+            )
+        )
+
+        self.assertEqual(receipt["pages_crawled"], 1)
+        self.assertEqual(receipt["result"], "BLOCKED")
+        self.assertEqual(receipt["source_status"], "SOURCE_UNAVAILABLE")
+        self.assertTrue(receipt["execution_budget_exhausted"])
+        self.assertEqual(receipt["execution_budget_seconds"], 0.05)
+        self.assertTrue(receipt["fallback_required"])
+        self.assertFalse(receipt["negative_contact_conclusion_allowed"])
+        self.assertTrue(
+            any(
+                str(row.get("error") or "").startswith("execution_budget_exceeded_after_")
+                for row in receipt["failed_urls"]
+            )
+        )
+
+    def test_public_source_positive_evidence_survives_trailing_link_failure(self) -> None:
+        root = "https://example.com/"
+        broken = "https://example.com/broken"
+        backend = FakeBackend({
+            root: CrawlPage(
+                url=root,
+                text="Manufacturer of PVC foam board.",
+                links=(broken,),
+            ),
+            broken: CrawlPage(
+                url=broken,
+                text="",
+                links=(),
+                success=False,
+                error="crawl_failed",
+            ),
+        })
+        bridge = CrawlExecutionBridge(backend, max_pages=2)
+        receipt = run(
+            bridge.execute(
+                {"call_id": "V63CALL-PARTIAL-POSITIVE", "source_family": "official_products"},
+                seed_url=root,
+            )
+        )
+
+        self.assertEqual(receipt["result"], "POSITIVE")
+        self.assertEqual(receipt["source_status"], "OK")
+        self.assertEqual(receipt["pages_crawled"], 1)
+        self.assertEqual(len(receipt["failed_urls"]), 1)
 
     def test_rejects_non_http_seed(self) -> None:
         backend = FakeBackend({})
