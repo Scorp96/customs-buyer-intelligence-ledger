@@ -1,0 +1,195 @@
+name: CBI v6.3 Production Van Nhan session reconstruction Canary
+
+on:
+  push:
+    branches:
+      - cbi-v63-production-integration-completion-20260919
+    paths:
+      - '.github/workflows/cbi-v63-production-vannhan-session-canary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Van Nhan exact production session -> new projector
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact integration SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Capture production branch baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/cbi-v6-cloud-runtime-20260901:refs/remotes/origin/cbi-v6-cloud-runtime-20260901
+          baseline="$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)"
+          echo "CBI_PRODUCTION_BASELINE=$baseline" >> "$GITHUB_ENV"
+
+      - name: Run Van Nhan read-only reconstruction Canary
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          OUT_DIR: ${{ runner.temp }}/cbi-v63-vannhan-canary
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$OUT_DIR"
+          mkdir -p "$OUT_DIR"
+          python - <<'PY'
+          import base64, hashlib, json, os, tempfile, urllib.request, urllib.error
+          from pathlib import Path
+          from unified_runtime import UnifiedRuntime
+
+          base = os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token = os.environ.get("CBI_PRODUCTION_BEARER_TOKEN", "")
+          out = Path(os.environ["OUT_DIR"])
+          inv = "INV-20260824T063846Z-4d333e50f706"
+          opp_id = "OPP-VN-0107809749-PVC-CANARY-20260918"
+          expected_account = "VN-0107809749"
+
+          if len(token) < 32:
+              raise SystemExit("PRODUCTION_BEARER_SECRET_UNAVAILABLE")
+
+          request_id = 1
+          def rpc(method, params):
+              global request_id
+              body = json.dumps({"jsonrpc":"2.0","id":request_id,"method":method,"params":params}, separators=(",",":")).encode()
+              req = urllib.request.Request(
+                  base + "/mcp", data=body, method="POST",
+                  headers={
+                      "Authorization":"Bearer " + token,
+                      "Content-Type":"application/json",
+                      "Accept":"application/json",
+                      "MCP-Protocol-Version":"2026-07-28",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=45) as resp:
+                      payload = json.loads(resp.read().decode())
+              except urllib.error.HTTPError as exc:
+                  raise SystemExit(f"MCP_HTTP_{exc.code}:" + exc.read().decode("utf-8","replace")[:300])
+              request_id += 1
+              if payload.get("error"):
+                  raise SystemExit("MCP_RPC_ERROR:" + json.dumps(payload["error"], sort_keys=True)[:500])
+              return payload.get("result") or {}
+
+          def call_tool(name, arguments):
+              result = rpc("tools/call", {"name":name,"arguments":arguments})
+              structured = result.get("structuredContent")
+              if not isinstance(structured, dict):
+                  raise SystemExit("STRUCTURED_CONTENT_MISSING:" + name)
+              return structured
+
+          health = call_tool("get_investigation_health", {"investigation_id":inv})
+          if health.get("status") != "READY":
+              raise SystemExit("VANNHAN_INVESTIGATION_NOT_READY")
+          seq = health.get("last_safe_seq")
+          tail_hash = health.get("last_safe_event_hash")
+
+          capture = call_tool("capture_authoritative_source_evidence", {
+              "operation":"EXACT_SESSION_CAPTURE",
+              "investigation_id":inv,
+              "expected_last_safe_seq":seq,
+              "expected_last_safe_event_hash":tail_hash,
+              "acknowledge_private_state":True,
+          })
+          if capture.get("schema") != "cbi.v64-authoritative-single-session-capture.v1":
+              raise SystemExit("VANNHAN_CAPTURE_SCHEMA_MISMATCH")
+          if capture.get("production_write_performed") is not False:
+              raise SystemExit("VANNHAN_CAPTURE_MUTATED_PRODUCTION")
+
+          raw = base64.b64decode(capture["payload_base64"], validate=True)
+          if hashlib.sha256(raw).hexdigest() != capture.get("payload_sha256"):
+              raise SystemExit("VANNHAN_CAPTURE_SHA_MISMATCH")
+
+          with tempfile.TemporaryDirectory(prefix="vannhan-v63-rebuild-") as tmp:
+              root = Path(tmp) / "sessions"
+              root.mkdir(parents=True)
+              (root / f"{inv}.jsonl").write_bytes(raw)
+              runtime = UnifiedRuntime(root)
+
+              projection = runtime.get_product_opportunities({
+                  "investigation_id":inv,
+                  "opportunity_id":opp_id,
+              })
+              rows = projection.get("opportunities") or []
+              if len(rows) != 1:
+                  raise SystemExit("VANNHAN_OPPORTUNITY_RECONSTRUCTION_COUNT_MISMATCH")
+              opp = rows[0]
+              if opp.get("opportunity_id") != opp_id:
+                  raise SystemExit("VANNHAN_OPPORTUNITY_ID_MISMATCH")
+              if opp.get("account_id") != expected_account:
+                  raise SystemExit("VANNHAN_ACCOUNT_ID_MISMATCH")
+              if str(opp.get("product_profile_id") or "").upper() != "PVC":
+                  raise SystemExit("VANNHAN_PRODUCT_PROFILE_NOT_PVC")
+
+              planner = runtime.plan_contact_exhaustion({
+                  "investigation_id":inv,
+                  "opportunity_id":opp_id,
+                  "account_id":expected_account,
+                  "product_profile_id":"PVC",
+                  "current_routes":{},
+              })
+              if str(planner.get("product_profile_id") or "").upper() != "PVC":
+                  raise SystemExit("VANNHAN_ID_ONLY_PLANNER_PRODUCT_PROFILE_MISMATCH")
+
+              metrics = runtime.get_portfolio_metrics({
+                  "investigation_id":inv,
+                  "opportunity_id":opp_id,
+                  "product_profile_id":"PVC",
+              })
+              if metrics.get("product_opportunity_count") != 1:
+                  raise SystemExit("VANNHAN_PORTFOLIO_METRICS_COUNT_MISMATCH")
+              if metrics.get("unique_account_count") != 1:
+                  raise SystemExit("VANNHAN_PORTFOLIO_ACCOUNT_COUNT_MISMATCH")
+
+              receipt = {
+                  "schema":"cbi.v63-production-existing-canary-reconstruction.v1",
+                  "case":"VAN_NHAN",
+                  "verified":True,
+                  "production_write_performed":False,
+                  "investigation_id":inv,
+                  "source_last_safe_seq":seq,
+                  "source_last_safe_event_hash":tail_hash,
+                  "source_payload_sha256":capture.get("payload_sha256"),
+                  "opportunity_id":opp.get("opportunity_id"),
+                  "account_id":opp.get("account_id"),
+                  "product_profile_id":opp.get("product_profile_id"),
+                  "lifecycle_stage":opp.get("lifecycle_stage"),
+                  "planner_product_profile_id":planner.get("product_profile_id"),
+                  "portfolio_metrics":{
+                      "product_opportunity_count":metrics.get("product_opportunity_count"),
+                      "unique_account_count":metrics.get("unique_account_count"),
+                  },
+              }
+              (out / "VANNHAN_RECONSTRUCTION_RECEIPT.json").write_text(
+                  json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+              )
+              print(json.dumps(receipt, sort_keys=True))
+          PY
+
+      - name: Verify production branch unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/cbi-v6-cloud-runtime-20260901:refs/remotes/origin/cbi-v6-cloud-runtime-20260901
+          test "$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)" = "$CBI_PRODUCTION_BASELINE"
+
+      - name: Upload sanitized Van Nhan receipt only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v63-vannhan-production-reconstruction-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/cbi-v63-vannhan-canary/VANNHAN_RECONSTRUCTION_RECEIPT.json
