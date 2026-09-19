@@ -5,19 +5,29 @@ from typing import Any
 
 from .contact_exhaustion import plan_contact_exhaustion as _plan_contact_exhaustion
 from .capability_profile import evaluate_capability_fit as _evaluate_capability_fit
+from .capability_binding_v63 import bind_private_capability_bundle as _bind_private_capability_bundle
 from .candidate_research_gate import (
     assess_candidate_researchability as _assess_candidate_researchability,
     rank_candidate_research_queue as _rank_candidate_research_queue,
 )
 from .contract_v63 import build_v63_contract
 from .demand_pipeline import plan_customs_seed_expansion
-from .demand_market import derive_demand_anchor as _derive_demand_anchor
+from .demand_market import (
+    derive_demand_anchor as _derive_demand_anchor,
+    derive_market_cell as _derive_market_cell,
+    evaluate_market_acceptance as _evaluate_market_acceptance,
+    is_direct_procurement_source as _is_direct_procurement_source,
+)
 from .expansion_planner import (
     evaluate_expansion_saturation as _evaluate_expansion_saturation,
     generate_discovery_queries,
     plan_expansion,
 )
-from .opportunity_domain import relative_opportunity, derive_product_opportunity_evaluation as _derive_product_opportunity_evaluation
+from .opportunity_domain import (
+    LIFECYCLE_STAGES as _V63_LIFECYCLE_STAGES,
+    relative_opportunity,
+    derive_product_opportunity_evaluation as _derive_product_opportunity_evaluation,
+)
 from .legacy_peer_projection import project_legacy_peer_receipt as _project_legacy_peer_receipt
 from .recursive_expansion import prepare_recursive_expansion as _prepare_recursive_expansion
 from .product_profiles import list_product_profiles
@@ -29,6 +39,7 @@ from .local_outreach_policy import plan_local_outreach as _plan_local_outreach
 from .local_context_resolution import plan_local_context_resolution as _plan_local_context_resolution
 from .sales_readiness import evaluate_sales_readiness as _evaluate_sales_readiness
 from .runtime_durable_backend_v63 import get_v63_runtime_durable_backend_state, invoke_v63_runtime_durable_backend
+from .v63_projection import project_product_opportunities as _project_product_opportunities
 
 
 _WAL_BINDING_ERROR = "V63_MUTATION_REQUIRES_PRODUCTION_WAL_BINDING"
@@ -57,6 +68,58 @@ class V63DemandExpansionMixin:
         result["demand_expansion_v6_3"]["runtime_durable_backend_requires_existing_mutation_correlation"] = backend_state["requires_existing_mutation_correlation"]
         result["demand_expansion_v6_3"]["runtime_durable_backend_raw_idempotency_key_persisted"] = backend_state["raw_idempotency_key_persisted"]
         result["demand_expansion_v6_3"]["runtime_durable_backend_side_effect_reexecution_allowed"] = backend_state["side_effect_reexecution_allowed"]
+
+        read_model_bindings = {
+            "durable_event_reader": "BOUND" if callable(getattr(self, "_read_v63_durable_events", None)) else "UNBOUND",
+            "opportunity_event_query": "BOUND" if callable(getattr(self, "_query_v63_opportunity_events", None)) else "UNBOUND",
+            "evidence_ownership_verifier": "BOUND" if callable(getattr(self, "_validate_v63_evidence_ownership", None)) else "UNBOUND",
+            "evidence_provenance_verifier": "BOUND" if callable(getattr(self, "_validate_v63_evidence_provenance", None)) else "UNBOUND",
+            "opportunity_evidence_verifier": "BOUND" if callable(getattr(self, "_validate_v63_opportunity_evidence_binding", None)) else "UNBOUND",
+            "opportunity_derived_state_provider": "BOUND" if callable(getattr(self, "_derive_v63_opportunity_runtime_view", None)) else "UNBOUND",
+        }
+        if getattr(self, "_v63_capability_profiles", None):
+            capability_binding = "BOUND_IN_MEMORY"
+        elif callable(getattr(self, "_load_v63_capability_bundle", None)):
+            capability_binding = "PRIVATE_LOADER_BOUND"
+        else:
+            capability_binding = "UNBOUND"
+        read_model_bindings["capability_profile_source"] = capability_binding
+
+        blocker_codes = {
+            "durable_event_reader": "V63_DURABLE_EVENT_READER_NOT_BOUND",
+            "opportunity_event_query": "V63_OPPORTUNITY_EVENT_QUERY_NOT_BOUND",
+            "evidence_ownership_verifier": "V63_EVIDENCE_OWNERSHIP_VERIFIER_NOT_BOUND",
+            "evidence_provenance_verifier": "V63_EVIDENCE_PROVENANCE_VERIFIER_NOT_BOUND",
+            "opportunity_evidence_verifier": "V63_OPPORTUNITY_EVIDENCE_VERIFIER_NOT_BOUND",
+            "opportunity_derived_state_provider": "V63_OPPORTUNITY_DERIVED_VIEW_PROVIDER_NOT_BOUND",
+            "capability_profile_source": "V63_CAPABILITY_PROFILE_SOURCE_NOT_BOUND",
+        }
+        blockers = [
+            blocker_codes[name]
+            for name, state in read_model_bindings.items()
+            if state == "UNBOUND"
+        ]
+        result["demand_expansion_v6_3"]["read_model_runtime_bindings_v6_3"] = read_model_bindings
+        result["demand_expansion_v6_3"]["runtime_integration_blockers_v6_3"] = blockers
+        result["demand_expansion_v6_3"]["runtime_read_model_bindings_complete"] = not blockers
+        result["demand_expansion_v6_3"]["runtime_read_model_binding_status"] = (
+            "BOUND" if not blockers else "FAIL_CLOSED_INCOMPLETE"
+        )
+        result["demand_expansion_v6_3"]["runtime_binding_status_is_not_production_acceptance"] = True
+        result["demand_expansion_v6_3"]["required_read_model_tools_v6_3"] = [
+            "get_product_opportunities",
+            "get_demand_anchors",
+            "get_market_cells",
+            "evaluate_market_acceptance",
+            "get_expansion_state",
+        ]
+        result["demand_expansion_v6_3"]["read_model_tools_exposed_v6_3"] = {
+            name: callable(getattr(self, name, None))
+            for name in result["demand_expansion_v6_3"]["required_read_model_tools_v6_3"]
+        }
+        result["demand_expansion_v6_3"]["read_model_tool_surface_complete_v6_3"] = all(
+            result["demand_expansion_v6_3"]["read_model_tools_exposed_v6_3"].values()
+        )
         return result
 
     def get_product_profiles(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
