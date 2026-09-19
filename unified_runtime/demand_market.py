@@ -17,6 +17,10 @@ _DIRECT_PROCUREMENT_SOURCES = {
 }
 
 
+def is_direct_procurement_source(source_type: str) -> bool:
+    return str(source_type or "").strip().upper() in _DIRECT_PROCUREMENT_SOURCES
+
+
 def _canonical_hash(payload: dict[str, Any], prefix: str) -> str:
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
     return f"{prefix}-{hashlib.sha256(raw).hexdigest()[:20].upper()}"
@@ -131,8 +135,6 @@ def evaluate_market_acceptance(signals: list[dict[str, Any]]) -> dict[str, Any]:
     channel_count = sum(1 for row in events if row.get("channel_signal"))
     supplier_signal_count = sum(1 for row in events if row.get("supplier_signal"))
 
-    # Conservative escalation: direct multi-buyer demand is M3; M4/M5 need additional
-    # independent supply/channel density and do not arise from shipment count alone.
     if buyer_count >= 4 and len(supplier_networks) >= 3 and channel_count >= 2 and len(events) >= 8:
         level = "M5"
         reason = "DENSE_MULTI_BUYER_MULTI_SUPPLIER_CHANNEL_MARKET"
