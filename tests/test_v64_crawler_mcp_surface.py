@@ -32,6 +32,8 @@ class CrawlerMcpSurfaceTests(unittest.TestCase):
         self.assertTrue(descriptor["contract"]["host_fallback_plan_on_access_blocked"])
         self.assertTrue(descriptor["contract"]["source_unavailable_fail_closed"])
         self.assertTrue(descriptor["contract"]["host_fallback_plan_on_unavailable"])
+        self.assertTrue(descriptor["contract"]["bounded_wall_clock"])
+        self.assertTrue(descriptor["contract"]["partial_failure_fail_closed"])
 
     def test_disabled_runtime_returns_structured_non_mutating_result(self) -> None:
         with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "0"}, clear=False):
@@ -188,6 +190,8 @@ class CrawlerMcpSurfaceTests(unittest.TestCase):
         self.assertTrue(status["redirect_revalidation"])
         self.assertEqual(status["max_pages_per_call"], 12)
         self.assertGreaterEqual(status["max_concurrency"], 1)
+        self.assertGreaterEqual(status["max_wall_seconds"], 15.0)
+        self.assertLessEqual(status["max_wall_seconds"], 100.0)
 
         descriptors = {
             str(item.get("name") or ""): item

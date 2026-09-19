@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import heapq
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Protocol
@@ -565,6 +566,7 @@ class CrawlExecutionBridge:
         *,
         seed_url: str,
         official_domain_verified: bool = False,
+        max_elapsed_seconds: float | None = None,
     ) -> dict[str, Any]:
         if not isinstance(task, dict):
             raise ValueError("task must be an object")
@@ -585,6 +587,16 @@ class CrawlExecutionBridge:
         failed_urls: list[dict[str, str]] = []
         source_family = str(task.get("source_family") or "")
         goal_terms = _task_goal_terms(task)
+        is_contact_task = task_key == "task_id"
+
+        if max_elapsed_seconds is not None:
+            max_elapsed_seconds = float(max_elapsed_seconds)
+            if max_elapsed_seconds <= 0 or max_elapsed_seconds > 300:
+                raise ValueError("max_elapsed_seconds must be in (0, 300]")
+            deadline = time.monotonic() + max_elapsed_seconds
+        else:
+            deadline = None
+        execution_budget_exhausted = False
 
         while queue and len(pages) < self.max_pages:
             neg_score, depth, url = heapq.heappop(queue)
@@ -592,7 +604,43 @@ class CrawlExecutionBridge:
                 continue
             visited.add(url)
 
-            page = await self.backend.fetch(url)
+            remaining_seconds: float | None = None
+            if deadline is not None:
+                remaining_seconds = deadline - time.monotonic()
+                if remaining_seconds <= 0:
+                    execution_budget_exhausted = True
+                    failed_urls.append({
+                        "url": url,
+                        "error": f"execution_budget_exceeded_after_{max_elapsed_seconds:g}s",
+                    })
+                    break
+
+            try:
+                if remaining_seconds is None:
+                    page = await self.backend.fetch(url)
+                else:
+                    page = await asyncio.wait_for(
+                        self.backend.fetch(url),
+                        timeout=remaining_seconds,
+                    )
+            except asyncio.TimeoutError:
+                execution_budget_exhausted = True
+                failed_urls.append({
+                    "url": url,
+                    "error": f"execution_budget_exceeded_after_{max_elapsed_seconds:g}s",
+                })
+                break
+
+            # Some third-party crawler stacks delay or suppress cancellation.
+            # Detect that overrun after control returns so an over-budget
+            # contact crawl can never be mistaken for complete exhaustion.
+            if deadline is not None and time.monotonic() >= deadline:
+                execution_budget_exhausted = True
+                failed_urls.append({
+                    "url": url,
+                    "error": f"execution_budget_exceeded_after_{max_elapsed_seconds:g}s",
+                })
+
             if not page.success:
                 failed_urls.append({"url": url, "error": page.error or "crawl_failed"})
                 continue
@@ -654,19 +702,33 @@ class CrawlExecutionBridge:
         route_evidence_ids = sorted({row["evidence_id"] for row in route_candidates})
         evidence_ids = sorted(set(evidence_ids) | set(route_evidence_ids))
 
-        source_throttled = any(_source_throttle_failure(row) for row in failed_urls)
+        # A failed fetch is completion-blocking only when this task has not
+        # already obtained the evidence that makes the task positive. This
+        # prevents partial crawls from becoming false NEGATIVE_EXHAUSTED while
+        # allowing a positive contact/page result to remain positive even if an
+        # unrelated trailing link later fails.
+        positive_evidence = bool(route_candidates) if is_contact_task else bool(pages)
+        failure_relevant = bool(failed_urls) and not positive_evidence
+        source_throttled = (
+            failure_relevant
+            and not execution_budget_exhausted
+            and any(_source_throttle_failure(row) for row in failed_urls)
+        )
         source_access_blocked = (
-            not source_throttled
-            and not pages
-            and bool(failed_urls)
+            failure_relevant
+            and not execution_budget_exhausted
+            and not source_throttled
             and any(_source_access_blocked_failure(row) for row in failed_urls)
         )
+        # Budget exhaustion takes precedence over a late lower-level response:
+        # once the bounded request window has been exceeded, the source was not
+        # available in time for this synchronous MCP execution.
         source_unavailable = (
-            not source_throttled
-            and not source_access_blocked
-            and not pages
-            and bool(failed_urls)
-            and any(_source_unavailable_failure(row) for row in failed_urls)
+            failure_relevant
+            and (
+                execution_budget_exhausted
+                or (not source_throttled and not source_access_blocked)
+            )
         )
         source_blocked = source_throttled or source_access_blocked or source_unavailable
         source_status = (
@@ -679,7 +741,6 @@ class CrawlExecutionBridge:
             )
         )
 
-        is_contact_task = task_key == "task_id"
         if is_contact_task:
             if route_candidates:
                 result = "POSITIVE"
@@ -709,6 +770,8 @@ class CrawlExecutionBridge:
             "pages_crawled": len(pages),
             "failed_urls": failed_urls,
             "source_status": source_status,
+            "execution_budget_seconds": max_elapsed_seconds,
+            "execution_budget_exhausted": execution_budget_exhausted,
             "retryable": bool(source_blocked),
             "fallback_required": bool(source_blocked),
             "fallback_search_plan": fallback_plan,
