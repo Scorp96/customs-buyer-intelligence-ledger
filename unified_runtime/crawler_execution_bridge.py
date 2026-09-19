@@ -511,13 +511,18 @@ def _fallback_search_plan(
     subject = _fallback_subject(task, seed_url)
     parsed = urlsplit(seed_url)
     slug = parsed.path.strip("/").split("/", 1)[0]
+    host = (parsed.hostname or "").lower()
     queries = [
         f'"{subject}" email',
         f'"{subject}" phone whatsapp',
         f'"{subject}" contact',
     ]
-    if slug:
-        queries.append(f'site:facebook.com "{slug}"')
+    if slug and (host == "facebook.com" or host.endswith(".facebook.com")):
+        facebook_pivot = slug
+    else:
+        facebook_pivot = subject
+    if facebook_pivot:
+        queries.append(f'site:facebook.com "{facebook_pivot}"')
     return {
         "reason": reason,
         "host_action": "WEB_SEARCH_AND_PUBLIC_SOURCE_FALLBACK",
