@@ -1,0 +1,148 @@
+name: CBI v6.4 production route details and MCP burst
+
+on:
+  push:
+    branches:
+      - cbi-v64-production-source-access-canary-20260919
+    paths:
+      - '.github/workflows/cbi-v64-production-route-burst.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Production route details + MCP burst
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Resolve Facebook route types read only
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: 9ec63f627fb7d8d8796f5cab3a4bdfdd9bbe723f
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, time, urllib.request, urllib.error
+          base=os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token=os.environ["CBI_PRODUCTION_BEARER_TOKEN"]
+          expected=os.environ["EXPECTED_SHA"].lower()
+
+          def http(req, timeout=210):
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as r:
+                      return r.status,json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try: payload=json.loads(raw)
+                  except Exception: payload={"raw":raw[:800]}
+                  return e.code,payload
+
+          s,h=http(urllib.request.Request(base+"/healthz",headers={"Accept":"application/json"}),45)
+          if s!=200 or str((h.get("deployment_identity") or {}).get("git_sha") or "").lower()!=expected:
+              raise SystemExit("PRODUCTION_HEALTH_OR_SHA_MISMATCH")
+
+          rid=1
+          def rpc(method,params,timeout=210):
+              global rid
+              this=rid; rid+=1
+              body=json.dumps({"jsonrpc":"2.0","id":this,"method":method,"params":params},separators=(",",":")).encode()
+              req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                  "Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json",
+                  "MCP-Protocol-Version":"2026-07-28"})
+              status,p=http(req,timeout)
+              if status!=200 or p.get("id")!=this or p.get("error"):
+                  raise SystemExit("RPC_FAILED:"+json.dumps({"status":status,"payload":p},sort_keys=True)[:1200])
+              return p.get("result") or {}
+
+          positive=None
+          attempts=[]
+          for i in range(1,4):
+              t=time.monotonic()
+              call=rpc("tools/call",{"name":"execute_public_crawl","arguments":{
+                  "task":{"task_id":f"PROD-FB-ROUTE-TYPE-{i}","source_family":"public_social",
+                          "company_name":"Ferreterias La Quinta Inc",
+                          "query":"Ferreterias La Quinta Mayaguez email phone whatsapp"},
+                  "seed_url":"https://www.facebook.com/ferreteriaslaquintainc/",
+                  "max_pages":1,"browser_escalation":True,"timeout_seconds":25,"max_retries":1}},210)
+              r=call.get("structuredContent") or {}
+              routes=r.get("route_candidates") or []
+              attempts.append({"attempt":i,"status":r.get("status"),"result":r.get("result"),
+                               "route_count":len(routes),"elapsed_seconds":round(time.monotonic()-t,3)})
+              if r.get("status")=="CRAWL_EXECUTED" and r.get("result")=="POSITIVE" and routes:
+                  positive=r; break
+              if r.get("status") not in {"SOURCE_THROTTLED","SOURCE_UNAVAILABLE","CRAWL_EXECUTED"}:
+                  raise SystemExit("UNEXPECTED_FACEBOOK_STATUS:"+str(r.get("status")))
+
+          if not positive:
+              raise SystemExit("FACEBOOK_ROUTE_DETAILS_NOT_OBSERVED:"+json.dumps(attempts,sort_keys=True))
+
+          def mask(kind,value):
+              value=str(value or "")
+              if kind=="EMAIL":
+                  if "@" not in value:return "***"
+                  local,domain=value.split("@",1)
+                  return (local[:1] if local else "")+"***@"+domain
+              digits="".join(ch for ch in value if ch.isdigit())
+              return "***"+digits[-4:] if digits else "***"
+
+          summary=[{"kind":x.get("kind"),"masked_value":mask(str(x.get("kind") or ""),x.get("value")),
+                    "source_url":x.get("source_url"),"has_channel_url":bool(x.get("channel_url"))}
+                   for x in positive.get("route_candidates") or []]
+          print(json.dumps({"status":"VERIFIED","production_write_performed":False,
+                            "attempts":attempts,"route_summary":summary},sort_keys=True))
+          PY
+
+      - name: Run controlled MCP ingress burst
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import concurrent.futures,json,os,statistics,time,urllib.error,urllib.request
+          base=os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token=os.environ["CBI_PRODUCTION_BEARER_TOKEN"]
+          def once(i):
+              rid=30000+i
+              body=json.dumps({"jsonrpc":"2.0","id":rid,"method":"tools/list","params":{}},separators=(",",":")).encode()
+              attempts=[]
+              for n in range(1,4):
+                  req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+                      "Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/json",
+                      "MCP-Protocol-Version":"2026-07-28"})
+                  t=time.monotonic()
+                  try:
+                      with urllib.request.urlopen(req,timeout=60) as r:
+                          payload=json.loads(r.read().decode()); status=r.status; headers=dict(r.headers.items())
+                  except urllib.error.HTTPError as e:
+                      status=e.code; headers=dict(e.headers.items())
+                      raw=e.read().decode("utf-8","replace")
+                      try: payload=json.loads(raw)
+                      except Exception: payload={"raw":raw[:500]}
+                  elapsed=time.monotonic()-t
+                  attempts.append({"attempt":n,"status":status,"retry_after":headers.get("Retry-After"),
+                                   "elapsed_seconds":round(elapsed,3)})
+                  if status==200:
+                      return {"ok":payload.get("id")==rid and isinstance(payload.get("result"),dict),"attempts":attempts}
+                  if status!=429:return {"ok":False,"attempts":attempts}
+                  ra=headers.get("Retry-After")
+                  try: wait=float(ra) if ra is not None else min(2.0,0.25*(2**(n-1)))
+                  except Exception: wait=min(2.0,0.25*(2**(n-1)))
+                  time.sleep(max(0.05,min(wait,3.0)))
+              return {"ok":False,"attempts":attempts}
+          with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+              rows=list(ex.map(once,range(16)))
+          bad=[x for x in rows if not x["ok"]]
+          first429=sum(1 for x in rows if x["attempts"][0]["status"]==429)
+          all429=sum(1 for x in rows for a in x["attempts"] if a["status"]==429)
+          lat=[a["elapsed_seconds"] for x in rows for a in x["attempts"] if a["status"]==200]
+          if bad:raise SystemExit("MCP_BURST_UNHANDLED:"+json.dumps(bad,sort_keys=True)[:2500])
+          print(json.dumps({"status":"VERIFIED","total_requests":16,"max_concurrency":4,
+                            "unhandled_failures":0,"first_attempt_429":first429,"all_429_attempts":all429,
+                            "latency_ms_p50":round(statistics.median(lat)*1000,1),
+                            "latency_ms_max":round(max(lat)*1000,1)},sort_keys=True))
+          PY
