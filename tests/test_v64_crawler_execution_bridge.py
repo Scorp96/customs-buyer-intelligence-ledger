@@ -361,6 +361,14 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
             receipt["fallback_search_plan"]["contact_conclusion_if_unresolved"],
             "NOT_VERIFIED",
         )
+        self.assertIn(
+            'site:facebook.com "Ferreterias La Quinta Inc"',
+            receipt["fallback_search_plan"]["queries"],
+        )
+        self.assertNotIn(
+            'site:facebook.com "PR"',
+            receipt["fallback_search_plan"]["queries"],
+        )
 
     def test_rejects_non_http_seed(self) -> None:
         backend = FakeBackend({})
