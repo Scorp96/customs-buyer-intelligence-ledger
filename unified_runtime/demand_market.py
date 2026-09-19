@@ -17,6 +17,10 @@ _DIRECT_PROCUREMENT_SOURCES = {
 }
 
 
+def is_direct_procurement_source(source_type: str) -> bool:
+    return str(source_type or "").strip().upper() in _DIRECT_PROCUREMENT_SOURCES
+
+
 def _canonical_hash(payload: dict[str, Any], prefix: str) -> str:
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
     return f"{prefix}-{hashlib.sha256(raw).hexdigest()[:20].upper()}"
