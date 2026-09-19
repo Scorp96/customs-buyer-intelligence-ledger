@@ -129,6 +129,32 @@ class BrowserEscalationTests(unittest.TestCase):
         self.assertFalse(diag["retry_attempts"][0]["success"])
         self.assertTrue(diag["retry_attempts"][1]["success"])
 
+    def test_resilient_backend_classifies_meta_temporary_block_and_retries(self) -> None:
+        url = "https://www.facebook.com/ferreteriaslaquintainc/"
+        blocked = CrawlPage(
+            url=url,
+            text="You’re Temporarily Blocked. It looks like you were misusing this feature by going too fast.",
+            links=(),
+            success=True,
+        )
+        inner = SequenceBackend("meta", [blocked, blocked])
+        backend = ResilientCrawlerBackend(
+            inner,
+            timeout_seconds=1,
+            max_retries=1,
+            retry_delay_seconds=0,
+        )
+
+        page = run(backend.fetch(url))
+
+        self.assertFalse(page.success)
+        self.assertEqual(page.error, "source_throttled:META_TEMPORARILY_BLOCKED")
+        diag = backend.diagnostics()
+        self.assertEqual(len(diag["retry_attempts"]), 2)
+        self.assertTrue(diag["retry_attempts"][0]["source_throttled"])
+        self.assertTrue(diag["retry_attempts"][1]["source_throttled"])
+        self.assertEqual(len(inner.calls), 2)
+
     def test_resilient_backend_timeout_is_fail_closed(self) -> None:
         backend = ResilientCrawlerBackend(
             SlowBackend(),
