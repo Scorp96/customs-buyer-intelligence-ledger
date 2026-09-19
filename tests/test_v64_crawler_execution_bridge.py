@@ -286,6 +286,44 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
         self.assertIn('"Ferreterias La Quinta Inc" email', queries)
         self.assertIn('site:facebook.com "ferreteriaslaquintainc"', queries)
 
+    def test_source_timeout_is_unavailable_with_fallback_not_negative(self) -> None:
+        url = "https://www.facebook.com/ferreteriaslaquintainc/"
+        backend = FakeBackend({
+            url: CrawlPage(
+                url=url,
+                text="",
+                links=(),
+                success=False,
+                error="timeout_after_25s",
+            )
+        })
+        bridge = CrawlExecutionBridge(backend)
+        receipt = run(
+            bridge.execute(
+                {
+                    "task_id": "V63CONTACT-FB-TIMEOUT",
+                    "source_family": "public_social",
+                    "company_name": "Ferreterias La Quinta Inc",
+                },
+                seed_url=url,
+                official_domain_verified=False,
+            )
+        )
+
+        self.assertEqual(receipt["result"], "BLOCKED")
+        self.assertEqual(receipt["source_status"], "SOURCE_UNAVAILABLE")
+        self.assertTrue(receipt["retryable"])
+        self.assertTrue(receipt["fallback_required"])
+        self.assertFalse(receipt["negative_contact_conclusion_allowed"])
+        self.assertEqual(
+            receipt["fallback_search_plan"]["reason"],
+            "SOURCE_UNAVAILABLE",
+        )
+        self.assertEqual(
+            receipt["fallback_search_plan"]["contact_conclusion_if_unresolved"],
+            "NOT_VERIFIED",
+        )
+
     def test_rejects_non_http_seed(self) -> None:
         backend = FakeBackend({})
         bridge = CrawlExecutionBridge(backend)
