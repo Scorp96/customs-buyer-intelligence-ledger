@@ -1,0 +1,49 @@
+name: CBI Facebook email tool discovery
+
+on:
+  push:
+    branches:
+      - cbi-facebook-email-tool-discovery-20260919
+    paths:
+      - '.github/workflows/cbi-facebook-email-tool-discovery.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  discovery:
+    name: List production CBI tools
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read tools list
+        env:
+          CBI_URL: https://cbi-v61-preview.onrender.com
+          CBI_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,urllib.request
+          base=os.environ["CBI_URL"].rstrip("/")
+          token=os.environ["CBI_TOKEN"]
+          body=json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}},separators=(",",":")).encode()
+          req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+              "Authorization":"Bearer "+token,
+              "Content-Type":"application/json",
+              "Accept":"application/json",
+              "MCP-Protocol-Version":"2026-07-28"})
+          with urllib.request.urlopen(req,timeout=45) as r:
+              p=json.loads(r.read().decode())
+          tools=((p.get("result") or {}).get("tools") or [])
+          out=[]
+          for t in tools:
+              out.append({
+                  "name":t.get("name"),
+                  "description":t.get("description"),
+                  "inputSchema":t.get("inputSchema"),
+                  "annotations":t.get("annotations"),
+                  "contract":t.get("contract")
+              })
+          print(json.dumps({"tools":out},ensure_ascii=False,sort_keys=True))
+          PY
