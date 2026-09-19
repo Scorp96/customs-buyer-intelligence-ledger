@@ -229,7 +229,15 @@ class V63ProductionIntegrationBindingMixin:
         path = Path(self.store.root) / f"{investigation_id}.jsonl"
         stat = path.stat()
         events = self._read_v63_durable_events(investigation_id)
-        projected = project_product_opportunities(events)
+        projection_error = None
+        try:
+            projected = project_product_opportunities(events)
+        except RuntimeError as exc:
+            if str(exc).startswith("V63_ANCHOR_PROMOTION_WITHOUT_CREATED_OPPORTUNITY:"):
+                projected = {"opportunities": []}
+                projection_error = "ORPHAN_PROMOTION_WITHOUT_CREATED_OPPORTUNITY"
+            else:
+                raise
         opportunities = [
             {
                 "opportunity_id": str(row.get("opportunity_id") or ""),
@@ -244,6 +252,7 @@ class V63ProductionIntegrationBindingMixin:
             "file_size": int(stat.st_size),
             "mtime_ns": int(stat.st_mtime_ns),
             "opportunities": opportunities,
+            "projection_error": projection_error,
         }
 
     def _load_v63_locator_index_unlocked(self, path: Path) -> dict[str, Any]:
