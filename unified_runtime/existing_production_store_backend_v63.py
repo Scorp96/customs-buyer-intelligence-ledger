@@ -30,7 +30,16 @@ class ExistingProductionStoreBackend:
         append = getattr(store, 'append', None)
         if not callable(append):
             raise RuntimeError('V63_EXISTING_PRODUCTION_STORE_APPEND_UNAVAILABLE')
-        return append(investigation_id, event_type, copy.deepcopy(payload))
+        event = append(investigation_id, event_type, copy.deepcopy(payload))
+        observer = getattr(runtime, '_observe_v63_durable_append', None)
+        if callable(observer):
+            try:
+                observer(investigation_id, event)
+            except Exception:
+                marker = getattr(runtime, '_mark_v63_opportunity_index_dirty', None)
+                if callable(marker):
+                    marker()
+        return event
 
     def append_candidate_discovery(self, runtime: Any, arguments: dict[str, Any]) -> dict[str, Any]:
         args = copy.deepcopy(dict(arguments or {}))
