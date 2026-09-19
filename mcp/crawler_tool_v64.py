@@ -19,6 +19,7 @@ CRAWLER_TOOL_NAME = "execute_public_crawl"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off", ""}
 _MAX_PRODUCTION_PAGES = 12
+_MAX_ATTEMPT_ENVELOPE_SECONDS = 30.0
 
 
 def _env_enabled() -> bool:
@@ -61,9 +62,20 @@ def _crawler_acquire_timeout() -> float:
 
 
 def _crawler_max_wall_seconds() -> float:
-    # Keep a material margin below the observed outer HTTP gateway timeout so
-    # the MCP tool can return a structured fail-closed receipt instead of 502.
-    return _env_float("CBI_CRAWLER_MAX_WALL_SECONDS", 80.0, 15.0, 100.0)
+    # This is a soft cross-page budget. Individual third-party fetch stacks can
+    # delay cancellation, so the per-page attempt envelope below supplies the
+    # second bound needed to stay materially below the outer HTTP gateway.
+    return _env_float("CBI_CRAWLER_MAX_WALL_SECONDS", 50.0, 15.0, 55.0)
+
+
+def _validate_attempt_envelope(timeout_seconds: float, max_retries: int) -> float:
+    envelope = float(timeout_seconds) * (int(max_retries) + 1)
+    if envelope > _MAX_ATTEMPT_ENVELOPE_SECONDS:
+        raise ValueError(
+            "timeout_seconds * (max_retries + 1) must be <= "
+            f"{_MAX_ATTEMPT_ENVELOPE_SECONDS:g} seconds"
+        )
+    return envelope
 
 
 _CRAWLER_CONCURRENCY_LIMIT = _crawler_max_concurrency()
@@ -102,6 +114,7 @@ def crawler_runtime_status() -> dict[str, Any]:
         "max_concurrency": _CRAWLER_CONCURRENCY_LIMIT,
         "acquire_timeout_seconds": _crawler_acquire_timeout(),
         "max_wall_seconds": _crawler_max_wall_seconds(),
+        "max_attempt_envelope_seconds": _MAX_ATTEMPT_ENVELOPE_SECONDS,
     }
 
 
@@ -147,7 +160,7 @@ def crawler_tool_descriptor() -> dict[str, Any]:
                     "type": "number",
                     "minimum": 2,
                     "maximum": 30,
-                    "default": 20,
+                    "default": 15,
                 },
                 "max_retries": {
                     "type": "integer",
@@ -175,6 +188,7 @@ def crawler_tool_descriptor() -> dict[str, Any]:
             "bounded_concurrency": True,
             "bounded_pages": True,
             "bounded_wall_clock": True,
+            "bounded_attempt_envelope": True,
             "partial_failure_fail_closed": True,
             "source_throttle_fail_closed": True,
             "source_throttle_retry_backoff": True,
@@ -226,13 +240,14 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
     if max_pages < 1 or max_pages > _MAX_PRODUCTION_PAGES:
         raise ValueError(f"max_pages must be between 1 and {_MAX_PRODUCTION_PAGES}")
 
-    timeout_seconds = float(arguments.get("timeout_seconds", 20.0))
+    timeout_seconds = float(arguments.get("timeout_seconds", 15.0))
     if timeout_seconds < 2 or timeout_seconds > 30:
         raise ValueError("timeout_seconds must be between 2 and 30")
 
     max_retries = int(arguments.get("max_retries", 1))
     if max_retries < 0 or max_retries > 2:
         raise ValueError("max_retries must be between 0 and 2")
+    _validate_attempt_envelope(timeout_seconds, max_retries)
 
     browser_escalation = browser_requested
 
