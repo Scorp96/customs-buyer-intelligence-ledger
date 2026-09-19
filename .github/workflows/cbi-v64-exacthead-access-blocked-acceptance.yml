@@ -1,0 +1,102 @@
+name: CBI v6.4 exact-head access-blocked acceptance
+
+on:
+  push:
+    branches:
+      - cbi-v64-source-access-blocked-exacthead-evidence-20260919
+    paths:
+      - '.github/workflows/cbi-v64-exacthead-access-blocked-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Exact-head 403 + entity-aware fallback acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify final exact-head semantics
+        env:
+          CBI_ACCEPTANCE_URL: https://cbi-v63-r2-acceptance-20260903-r01.onrender.com
+          CBI_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: 7da58d5fb351ff354cebd7b58f08a90586fc2ee6
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.error, urllib.request, time
+
+          base=os.environ["CBI_ACCEPTANCE_URL"].rstrip("/")
+          token=os.environ["CBI_ACCEPTANCE_BEARER_TOKEN"]
+          expected=os.environ["EXPECTED_SHA"].lower()
+
+          def http(req, timeout=90):
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as r:
+                      return r.status, json.loads(r.read().decode())
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try: payload=json.loads(raw)
+                  except Exception: payload={"raw":raw[:1000]}
+                  return e.code,payload
+
+          s,h=http(urllib.request.Request(base+"/healthz",headers={"Accept":"application/json"}),30)
+          if s!=200 or h.get("status")!="ok":
+              raise SystemExit("ACCEPTANCE_HEALTH_NOT_OK")
+          observed=str((h.get("deployment_identity") or {}).get("git_sha") or "").lower()
+          if observed!=expected:
+              raise SystemExit(f"ACCEPTANCE_SHA_MISMATCH:{observed}")
+
+          body=json.dumps({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+              "name":"execute_public_crawl","arguments":{
+                  "task":{"task_id":"ACCEPT-403-FINDGLOCAL-FINAL","source_family":"public_directory",
+                          "company_name":"Ferreterias La Quinta Inc",
+                          "query":"Ferreterias La Quinta Mayaguez contact phone"},
+                  "seed_url":"https://www.findglocal.com/PR/Mayaguez/751821588200868/Ferreterias-La-Quinta%2C-Mayaguez",
+                  "max_pages":1,"browser_escalation":False,"timeout_seconds":20,"max_retries":0}}},separators=(",",":")).encode()
+
+          req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+              "Authorization":"Bearer "+token,
+              "Content-Type":"application/json",
+              "Accept":"application/json",
+              "MCP-Protocol-Version":"2026-07-28"})
+
+          t=time.monotonic(); status,p=http(req,70); elapsed=time.monotonic()-t
+          if status!=200 or p.get("id")!=1 or p.get("error"):
+              raise SystemExit("RPC_FAILED:"+json.dumps({"status":status,"payload":p},sort_keys=True)[:1500])
+
+          r=(p.get("result") or {}).get("structuredContent") or {}
+          plan=r.get("fallback_search_plan") or {}
+          queries=plan.get("queries") or []
+
+          receipt={
+              "status":r.get("status"),
+              "result":r.get("result"),
+              "source_status":r.get("source_status"),
+              "fallback_required":r.get("fallback_required"),
+              "negative_contact_conclusion_allowed":r.get("negative_contact_conclusion_allowed"),
+              "retryable":r.get("retryable"),
+              "fallback_reason":plan.get("reason"),
+              "fallback_queries":queries,
+              "fallback_host_action":plan.get("host_action"),
+              "contact_conclusion_if_unresolved":plan.get("contact_conclusion_if_unresolved"),
+              "elapsed_seconds":round(elapsed,3),
+              "production_route_ownership_promoted":r.get("production_route_ownership_promoted"),
+          }
+          print(json.dumps(receipt,sort_keys=True))
+
+          if r.get("status")!="SOURCE_ACCESS_BLOCKED": raise SystemExit("EXPECTED_SOURCE_ACCESS_BLOCKED")
+          if r.get("result")!="BLOCKED": raise SystemExit("ACCESS_BLOCK_RESULT_NOT_BLOCKED")
+          if r.get("fallback_required") is not True: raise SystemExit("ACCESS_BLOCK_FALLBACK_NOT_REQUIRED")
+          if r.get("negative_contact_conclusion_allowed") is not False: raise SystemExit("ACCESS_BLOCK_FALSE_NEGATIVE_ALLOWED")
+          if plan.get("reason")!="SOURCE_ACCESS_BLOCKED": raise SystemExit("ACCESS_BLOCK_REASON_MISMATCH")
+          if plan.get("host_action")!="WEB_SEARCH_AND_PUBLIC_SOURCE_FALLBACK": raise SystemExit("ACCESS_BLOCK_HOST_FALLBACK_MISSING")
+          if plan.get("contact_conclusion_if_unresolved")!="NOT_VERIFIED": raise SystemExit("ACCESS_BLOCK_NOT_VERIFIED_POLICY_MISSING")
+          if 'site:facebook.com "Ferreterias La Quinta Inc"' not in queries:
+              raise SystemExit("ENTITY_AWARE_FACEBOOK_PIVOT_MISSING")
+          if 'site:facebook.com "PR"' in queries:
+              raise SystemExit("BROAD_PATH_FACEBOOK_PIVOT_STILL_PRESENT")
+          if r.get("production_route_ownership_promoted") is not False:
+              raise SystemExit("ACCESS_BLOCK_ROUTE_OWNERSHIP_PROMOTED")
+          PY
