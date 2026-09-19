@@ -29,6 +29,13 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
         blockers.append("V63_DEMAND_EXPANSION_NOT_LIVE")
         v63 = {}
 
+    if v63.get("runtime_read_model_bindings_complete") is not True:
+        blockers.append("V63_READ_MODEL_BINDINGS_INCOMPLETE")
+    if str(v63.get("runtime_read_model_binding_status") or "") != "BOUND":
+        blockers.append("V63_READ_MODEL_BINDING_STATUS_NOT_BOUND")
+    if v63.get("read_model_tool_surface_complete_v6_3") is not True:
+        blockers.append("V63_READ_MODEL_TOOL_SURFACE_INCOMPLETE")
+
     active_mcp_tools = {str(v) for v in (payload.get("active_mcp_tool_names") or [])}
     missing_active_mcp_tools = sorted(_REQUIRED_ACTIVE_MCP_TOOLS - active_mcp_tools)
     if missing_active_mcp_tools:
@@ -105,6 +112,15 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
     acceptance_snapshot = str(payload.get("live_v63_backend_correlation_acceptance_snapshot_sha256") or "").lower()
     recovery_acceptance_snapshot = str(payload.get("live_v63_recovery_overlay_acceptance_snapshot_sha256") or "").lower()
     current_snapshot = str(payload.get("current_production_source_snapshot_sha256") or "").lower()
+    mcp_inventory_snapshot = str(payload.get("live_v63_mcp_tool_inventory_snapshot_sha256") or "").lower()
+    if not bool(payload.get("live_v63_mcp_tool_inventory_verified")):
+        blockers.append("V63_LIVE_MCP_TOOL_INVENTORY_NOT_VERIFIED")
+    if (
+        len(mcp_inventory_snapshot) != 64
+        or len(current_snapshot) != 64
+        or mcp_inventory_snapshot != current_snapshot
+    ):
+        blockers.append("V63_LIVE_MCP_TOOL_INVENTORY_SOURCE_DRIFT")
     if (
         len(acceptance_snapshot) != 64
         or len(current_snapshot) != 64
@@ -130,6 +146,8 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
         "checked_exact_v63_recovery_acceptance": bool(payload.get("exact_v63_recovery_acceptance_verified")),
         "checked_live_v63_backend_correlation_acceptance": bool(payload.get("live_v63_backend_correlation_acceptance_verified")),
         "checked_live_v63_recovery_overlay_acceptance": bool(payload.get("live_v63_recovery_overlay_acceptance_verified")),
+        "checked_live_v63_mcp_tool_inventory": bool(payload.get("live_v63_mcp_tool_inventory_verified")),
+        "live_v63_mcp_tool_inventory_snapshot_sha256": mcp_inventory_snapshot,
         "live_backend_correlation_acceptance_snapshot_sha256": acceptance_snapshot,
         "live_recovery_overlay_acceptance_snapshot_sha256": recovery_acceptance_snapshot,
         "current_production_source_snapshot_sha256": current_snapshot,
