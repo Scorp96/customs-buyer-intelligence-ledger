@@ -1,0 +1,102 @@
+name: CBI v6.4 wall-clock exact-head acceptance
+
+on:
+  push:
+    branches:
+      - cbi-v64-wallclock-evidence-20260919
+    paths:
+      - '.github/workflows/cbi-v64-wallclock-exacthead-acceptance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Acceptance bounded wall-clock no outer 502
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Verify exact-head bounded crawl
+        env:
+          CBI_ACCEPTANCE_URL: https://cbi-v63-r2-acceptance-20260903-r01.onrender.com
+          CBI_ACCEPTANCE_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: cf8ca064584e9dadba3006d29d580afa5121fb97
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,time,urllib.error,urllib.request
+          base=os.environ["CBI_ACCEPTANCE_URL"].rstrip("/")
+          token=os.environ["CBI_ACCEPTANCE_BEARER_TOKEN"]
+          expected=os.environ["EXPECTED_SHA"].lower()
+
+          def http(req,timeout=115):
+              started=time.monotonic()
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as r:
+                      raw=r.read().decode()
+                      return r.status,json.loads(raw),time.monotonic()-started
+              except urllib.error.HTTPError as e:
+                  raw=e.read().decode("utf-8","replace")
+                  try:p=json.loads(raw)
+                  except Exception:p={"raw":raw[:1200]}
+                  return e.code,p,time.monotonic()-started
+
+          s,h,_=http(urllib.request.Request(base+"/healthz",headers={"Accept":"application/json"}),30)
+          if s!=200 or h.get("status")!="ok":
+              raise SystemExit("ACCEPTANCE_HEALTH_NOT_OK")
+          observed=str((h.get("deployment_identity") or {}).get("git_sha") or "").lower()
+          if observed!=expected:
+              raise SystemExit(f"ACCEPTANCE_SHA_MISMATCH:{observed}")
+          cr=h.get("crawler_runtime") or {}
+          wall=float(cr.get("max_wall_seconds") or 0)
+          if not (15 <= wall <= 100):
+              raise SystemExit("WALL_CLOCK_RUNTIME_CONTRACT_MISSING")
+
+          rid=1
+          body=json.dumps({"jsonrpc":"2.0","id":rid,"method":"tools/call","params":{
+              "name":"execute_public_crawl","arguments":{
+                  "task":{"task_id":"WALLCLOCK-SLOW-HTTPBIN","source_family":"public_test",
+                          "company_name":"Wallclock Probe"},
+                  "seed_url":"https://httpbin.org/delay/60",
+                  "max_pages":1,
+                  "browser_escalation":False,
+                  "timeout_seconds":45,
+                  "max_retries":2
+              }}},separators=(",",":")).encode()
+          req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
+              "Authorization":"Bearer "+token,
+              "Content-Type":"application/json",
+              "Accept":"application/json",
+              "MCP-Protocol-Version":"2026-07-28"
+          })
+          status,payload,elapsed=http(req,115)
+          if status!=200:
+              raise SystemExit("OUTER_HTTP_FAILURE:"+json.dumps({"status":status,"elapsed":elapsed,"payload":payload},sort_keys=True)[:2000])
+          if payload.get("id")!=rid or payload.get("error"):
+              raise SystemExit("RPC_FAILURE:"+json.dumps(payload,sort_keys=True)[:2000])
+          r=(payload.get("result") or {}).get("structuredContent") or {}
+          receipt={
+              "status":r.get("status"),
+              "result":r.get("result"),
+              "source_status":r.get("source_status"),
+              "execution_budget_seconds":r.get("execution_budget_seconds"),
+              "execution_budget_exhausted":r.get("execution_budget_exhausted"),
+              "fallback_required":r.get("fallback_required"),
+              "negative_contact_conclusion_allowed":r.get("negative_contact_conclusion_allowed"),
+              "elapsed_seconds":round(elapsed,3),
+              "failed_urls":r.get("failed_urls"),
+          }
+          print(json.dumps(receipt,sort_keys=True))
+          if elapsed >= 105:
+              raise SystemExit("CALL_NOT_BOUNDED_BELOW_GATEWAY")
+          if r.get("status") not in {"SOURCE_UNAVAILABLE","CRAWL_EXECUTED","SOURCE_THROTTLED","SOURCE_ACCESS_BLOCKED"}:
+              raise SystemExit("UNEXPECTED_STRUCTURED_STATUS")
+          if r.get("status")=="SOURCE_UNAVAILABLE":
+              if r.get("result")!="BLOCKED":
+                  raise SystemExit("UNAVAILABLE_NOT_BLOCKED")
+              if r.get("fallback_required") is not True:
+                  raise SystemExit("UNAVAILABLE_FALLBACK_MISSING")
+              if r.get("negative_contact_conclusion_allowed") is not False:
+                  raise SystemExit("UNAVAILABLE_FALSE_NEGATIVE_ALLOWED")
+          PY
