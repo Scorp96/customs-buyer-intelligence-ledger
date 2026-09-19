@@ -129,6 +129,244 @@ class V63DemandExpansionMixin:
             "persistent_mutation_performed": False,
         }
 
+
+    def _v63_durable_events_for_projection(self, investigation_id: str) -> list[dict[str, Any]]:
+        investigation = str(investigation_id or "").strip()
+        if not investigation:
+            raise ValueError("INVESTIGATION_ID_REQUIRED")
+        reader = getattr(self, "_read_v63_durable_events", None)
+        if not callable(reader):
+            raise RuntimeError("V63_DURABLE_EVENT_READER_NOT_BOUND")
+        events = reader(investigation)
+        if events is None:
+            return []
+        if not isinstance(events, (list, tuple)):
+            raise RuntimeError("V63_DURABLE_EVENT_READER_INVALID_RESULT")
+        return [copy.deepcopy(row) for row in events if isinstance(row, dict)]
+
+    def _v63_query_opportunity_events(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
+        query = getattr(self, "_query_v63_opportunity_events", None)
+        if not callable(query):
+            raise RuntimeError("V63_OPPORTUNITY_EVENT_QUERY_NOT_BOUND")
+        result = query(copy.deepcopy(filters))
+        if result is None:
+            return []
+        if not isinstance(result, (list, tuple)):
+            raise RuntimeError("V63_OPPORTUNITY_EVENT_QUERY_INVALID_RESULT")
+        return [copy.deepcopy(row) for row in result if isinstance(row, dict)]
+
+    def _v63_validate_evidence_owner(self, investigation_id: str, account_id: str, evidence_ids: list[str]) -> None:
+        verifier = getattr(self, "_validate_v63_evidence_ownership", None)
+        if not callable(verifier):
+            raise RuntimeError("V63_EVIDENCE_OWNERSHIP_VERIFIER_NOT_BOUND")
+        result = verifier(str(investigation_id), str(account_id), list(evidence_ids))
+        valid = bool(result.get("valid")) if isinstance(result, dict) else bool(result)
+        if not valid:
+            raise ValueError("EVIDENCE_OWNER_MISMATCH")
+
+    def _v63_validate_evidence_provenance(self, investigation_id: str, evidence_ids: list[str], source_type: str) -> None:
+        verifier = getattr(self, "_validate_v63_evidence_provenance", None)
+        if not callable(verifier):
+            raise RuntimeError("V63_EVIDENCE_PROVENANCE_VERIFIER_NOT_BOUND")
+        result = verifier(str(investigation_id), list(evidence_ids), str(source_type).upper())
+        valid = bool(result.get("valid")) if isinstance(result, dict) else bool(result)
+        if not valid:
+            raise ValueError(f"{str(source_type).upper()}_EVIDENCE_PROVENANCE_MISMATCH")
+
+    def _v63_validate_opportunity_evidence_binding(
+        self, investigation_id: str, opportunity: dict[str, Any], evidence_ids: list[str]
+    ) -> None:
+        verifier = getattr(self, "_validate_v63_opportunity_evidence_binding", None)
+        if not callable(verifier):
+            raise RuntimeError("V63_OPPORTUNITY_EVIDENCE_VERIFIER_NOT_BOUND")
+        result = verifier(str(investigation_id), copy.deepcopy(opportunity), list(evidence_ids))
+        valid = bool(result.get("valid")) if isinstance(result, dict) else bool(result)
+        if not valid:
+            raise ValueError("EVIDENCE_OPPORTUNITY_BINDING_MISMATCH")
+
+    def _v63_join_opportunity_runtime_view(self, investigation_id: str, opportunity: dict[str, Any]) -> dict[str, Any]:
+        row = copy.deepcopy(opportunity)
+        durable_stage = str(row.get("stage") or row.get("lifecycle_stage") or "OPPORTUNITY_CREATED").strip().upper()
+        row["durable_stage"] = durable_stage
+        provider = getattr(self, "_derive_v63_opportunity_runtime_view", None)
+        if not callable(provider):
+            row["derived_state_joined"] = False
+            row["derived_state_status"] = "UNBOUND"
+            return row
+        view = provider(str(investigation_id), copy.deepcopy(row))
+        if view in (None, {}):
+            row["derived_state_joined"] = False
+            row["derived_state_status"] = "NO_DERIVED_STATE"
+            return row
+        if not isinstance(view, dict):
+            raise RuntimeError("V63_DERIVED_OPPORTUNITY_VIEW_INVALID_RESULT")
+        identity_fields = ("opportunity_id", "account_id", "product_profile_id", "product_profile_version", "product_profile_sha256")
+        for field in identity_fields:
+            if field in view and view.get(field) not in (None, ""):
+                left = str(row.get(field) or "")
+                right = str(view.get(field) or "")
+                if field in {"product_profile_id", "product_profile_sha256"}:
+                    left, right = left.upper(), right.upper()
+                if left and left != right:
+                    raise ValueError(f"V63_DERIVED_VIEW_IDENTITY_CONFLICT:{field}")
+
+        evidence_ids = [str(v).strip() for v in view.get("commercial_evidence_ids", []) if str(v).strip()]
+        target_stage = str(view.get("lifecycle_stage") or view.get("lifecycle_target") or "").strip().upper()
+        has_commercial_assertion = any(
+            key in view and view.get(key) not in (None, "")
+            for key in ("commercial_value_grade", "commercial_value_score", "commercial_score")
+        )
+        advances_to_qualified = (
+            target_stage in _V63_LIFECYCLE_STAGES
+            and _V63_LIFECYCLE_STAGES.index(target_stage) >= _V63_LIFECYCLE_STAGES.index("QUALIFIED_TARGET")
+        )
+        if (has_commercial_assertion or advances_to_qualified) and not evidence_ids:
+            raise ValueError("V63_DERIVED_VIEW_COMMERCIAL_EVIDENCE_REQUIRED")
+        if evidence_ids:
+            self._v63_validate_evidence_owner(
+                str(investigation_id),
+                str(row.get("account_id") or ""),
+                evidence_ids,
+            )
+            self._v63_validate_opportunity_evidence_binding(
+                str(investigation_id), row, evidence_ids
+            )
+
+        allowed = {
+            "commercial_value_grade", "commercial_value_score", "commercial_score",
+            "commercial_evidence_ids", "research_confidence", "outreach_readiness",
+            "company_route_status", "named_route_status", "contact_exhaustion_state",
+            "research_state", "commercial_state", "anchor_eligibility", "expansion_state",
+            "market_acceptance", "relative_class", "relative_score_delta",
+            "derived_from_existing_evidence", "derived_basis", "current_routes",
+        }
+        for field in allowed:
+            if field in view:
+                row[field] = copy.deepcopy(view[field])
+
+        if target_stage:
+            if target_stage not in _V63_LIFECYCLE_STAGES:
+                raise ValueError("V63_DERIVED_VIEW_INVALID_LIFECYCLE_STAGE")
+            if durable_stage not in _V63_LIFECYCLE_STAGES:
+                raise ValueError("V63_DURABLE_VIEW_INVALID_LIFECYCLE_STAGE")
+            durable_index = _V63_LIFECYCLE_STAGES.index(durable_stage)
+            target_index = _V63_LIFECYCLE_STAGES.index(target_stage)
+            row["lifecycle_stage"] = _V63_LIFECYCLE_STAGES[max(durable_index, target_index)]
+        else:
+            row["lifecycle_stage"] = durable_stage
+        row["derived_state_joined"] = True
+        row["derived_state_status"] = "RECONSTRUCTED_FROM_EXISTING_EVIDENCE_AND_POLICY"
+        return row
+
+    def get_product_opportunities(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        args = dict(arguments or {})
+        investigation_id = str(args.get("investigation_id") or "").strip()
+        if investigation_id:
+            events = self._v63_durable_events_for_projection(investigation_id)
+            projection_scope = "INVESTIGATION"
+        else:
+            events = self._v63_query_opportunity_events({
+                "account_id": args.get("account_id"),
+                "opportunity_id": args.get("opportunity_id"),
+                "product_profile_id": args.get("product_profile_id"),
+            })
+            projection_scope = "VISIBLE_PORTFOLIO_QUERY"
+        result = _project_product_opportunities(
+            events,
+            account_id=args.get("account_id"),
+            opportunity_id=args.get("opportunity_id"),
+            product_profile_id=args.get("product_profile_id"),
+        )
+        normalized_rows = []
+        for raw_row in result["opportunities"]:
+            row = copy.deepcopy(raw_row)
+            row_investigation_id = str(row.get("investigation_id") or investigation_id).strip()
+            if not row_investigation_id:
+                raise RuntimeError("V63_GLOBAL_OPPORTUNITY_EVENT_MISSING_INVESTIGATION_ID")
+            row["investigation_id"] = row_investigation_id
+            normalized_rows.append(self._v63_join_opportunity_runtime_view(row_investigation_id, row))
+        result["opportunities"] = normalized_rows
+        result["projection_scope"] = projection_scope
+        result["derived_state_join_enabled"] = callable(getattr(self, "_derive_v63_opportunity_runtime_view", None))
+        return result
+
+    def _v63_resolve_opportunity(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        supplied = arguments.get("opportunity")
+        investigation_id = str(arguments.get("investigation_id") or "").strip()
+        opportunity_id = str(arguments.get("opportunity_id") or "").strip()
+
+        if investigation_id or opportunity_id:
+            if not investigation_id or not opportunity_id:
+                raise ValueError("INVESTIGATION_ID_AND_OPPORTUNITY_ID_REQUIRED")
+            projected = self.get_product_opportunities({
+                "investigation_id": investigation_id,
+                "opportunity_id": opportunity_id,
+            })
+            rows = list(projected.get("opportunities") or [])
+            if len(rows) != 1:
+                raise ValueError("OPPORTUNITY_NOT_FOUND")
+            durable = copy.deepcopy(rows[0])
+            for field in ("account_id", "product_profile_id", "product_profile_version", "product_profile_sha256"):
+                if arguments.get(field) not in (None, "") and str(arguments.get(field)).upper() != str(durable.get(field) or "").upper():
+                    raise ValueError(f"OPPORTUNITY_CONTEXT_IDENTITY_CONFLICT:{field}")
+            if isinstance(supplied, dict) and supplied:
+                for field in ("opportunity_id", "account_id", "product_profile_id", "product_profile_version", "product_profile_sha256"):
+                    if supplied.get(field) not in (None, "") and str(supplied.get(field)).upper() != str(durable.get(field) or "").upper():
+                        raise ValueError(f"SUPPLIED_OPPORTUNITY_IDENTITY_CONFLICT:{field}")
+            return durable
+
+        if isinstance(supplied, dict) and supplied:
+            return copy.deepcopy(supplied)
+        raise ValueError("INVESTIGATION_ID_AND_OPPORTUNITY_ID_REQUIRED")
+
+    def get_demand_anchors(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        args = dict(arguments or {})
+        seeds = list(args.get("seeds") or [])
+        anchors = [self.derive_demand_anchor(dict(seed)) for seed in seeds if isinstance(seed, dict)]
+        return {
+            "status": "READY",
+            "anchors": anchors,
+            "derived_view": True,
+            "requires_immutable_evidence_inputs": True,
+            "persistent_mutation_performed": False,
+        }
+
+    def get_market_cells(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        args = dict(arguments or {})
+        cells = []
+        for item in list(args.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            cells.append(_derive_market_cell(
+                dict(item.get("anchor") or {}),
+                list(item.get("application_ids") or []),
+                list(item.get("buyer_archetype_ids") or []),
+                channel=item.get("channel"),
+            ))
+        return {
+            "status": "READY",
+            "market_cells": cells,
+            "derived_view": True,
+            "persistent_mutation_performed": False,
+        }
+
+    def evaluate_market_acceptance(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        result = _evaluate_market_acceptance(list(dict(arguments or {}).get("anchors") or []))
+        result["derived_view"] = True
+        result["persistent_mutation_performed"] = False
+        return result
+
+    def get_expansion_state(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        args = dict(arguments or {})
+        opportunities = self.get_product_opportunities(args)
+        return {
+            "status": "READY",
+            "product_opportunities": opportunities["opportunities"],
+            "product_opportunity_count": opportunities["projected_opportunity_count"],
+            "legacy_projection": copy.deepcopy(args.get("legacy_projection")),
+            "persistent_mutation_performed": False,
+        }
+
     def get_capability_profile(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         args = dict(arguments or {})
         profile_id = str(args.get("product_profile_id") or "PVC").strip().upper()
