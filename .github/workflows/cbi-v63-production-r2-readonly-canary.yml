@@ -1,0 +1,96 @@
+name: CBI v6.3 production R2 read-only Canary
+
+on:
+  push:
+    branches:
+      - cbi-v63-production-integration-completion-20260919
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbi-v63-production-r2-readonly-canary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canary:
+    name: Tesoro Van Nhan production R2 read-only reconstruction
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact integration SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Assert exact integration branch and SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "cbi-v63-production-integration-completion-20260919"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+
+      - name: Capture production branch baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/cbi-v6-cloud-runtime-20260901:refs/remotes/origin/cbi-v6-cloud-runtime-20260901
+          baseline="$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)"
+          test -n "$baseline"
+          echo "CBI_PRODUCTION_BASELINE=$baseline" >> "$GITHUB_ENV"
+          echo "PRODUCTION_BRANCH_BASELINE=$baseline"
+
+      - name: Compile production R2 read-only Canary runner
+        run: python -m py_compile scripts/run_v63_production_r2_readonly_canary.py
+
+      - name: Run production R2 read-only Canary
+        env:
+          CBI_V63_R2_ENDPOINT: ${{ secrets.CBI_V63_R2_ENDPOINT }}
+          CBI_V63_R2_BUCKET: ${{ secrets.CBI_V63_R2_BUCKET }}
+          CBI_V63_R2_ACCESS_KEY_ID: ${{ secrets.CBI_V63_R2_ACCESS_KEY_ID }}
+          CBI_V63_R2_SECRET_ACCESS_KEY: ${{ secrets.CBI_V63_R2_SECRET_ACCESS_KEY }}
+          CBI_V63_R2_REGION: ${{ secrets.CBI_V63_R2_REGION }}
+          CBI_V63_PRODUCTION_R2_PREFIX: cbi-v61
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/v63-production-r2-readonly-canary"
+          mkdir -p "$RUNNER_TEMP/v63-production-r2-readonly-canary"
+          python scripts/run_v63_production_r2_readonly_canary.py             --output "$RUNNER_TEMP/v63-production-r2-readonly-canary/receipt.json"
+
+      - name: Verify production branch baseline is unchanged
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$CBI_PRODUCTION_BASELINE"
+          test -n "$expected"
+          git fetch origin refs/heads/cbi-v6-cloud-runtime-20260901:refs/remotes/origin/cbi-v6-cloud-runtime-20260901
+          actual="$(git rev-parse refs/remotes/origin/cbi-v6-cloud-runtime-20260901)"
+          if [ "$actual" != "$expected" ]; then
+            echo "PRODUCTION_BRANCH_CHANGED expected=$expected actual=$actual" >&2
+            exit 1
+          fi
+          echo "PRODUCTION_BRANCH_UNCHANGED=$actual"
+
+      - name: Upload sanitized Canary receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cbi-v63-production-r2-readonly-canary-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/v63-production-r2-readonly-canary/receipt.json
+
+      - name: Confirm production isolation
+        if: ${{ always() }}
+        run: |
+          echo 'READ_ONLY_PRODUCTION_R2_CANARY: production Render unchanged; production R2 write API not exposed'
