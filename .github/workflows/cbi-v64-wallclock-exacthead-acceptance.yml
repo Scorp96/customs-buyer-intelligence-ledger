@@ -61,7 +61,7 @@ jobs:
                   "seed_url":"https://httpbin.org/delay/60",
                   "max_pages":1,
                   "browser_escalation":False,
-                  "timeout_seconds":45,
+                  "timeout_seconds":30,
                   "max_retries":2
               }}},separators=(",",":")).encode()
           req=urllib.request.Request(base+"/mcp",data=body,method="POST",headers={
