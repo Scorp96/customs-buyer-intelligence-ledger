@@ -60,6 +60,12 @@ def _crawler_acquire_timeout() -> float:
     return _env_float("CBI_CRAWLER_ACQUIRE_TIMEOUT_SECONDS", 2.0, 0.0, 15.0)
 
 
+def _crawler_max_wall_seconds() -> float:
+    # Keep a material margin below the observed outer HTTP gateway timeout so
+    # the MCP tool can return a structured fail-closed receipt instead of 502.
+    return _env_float("CBI_CRAWLER_MAX_WALL_SECONDS", 80.0, 15.0, 100.0)
+
+
 _CRAWLER_CONCURRENCY_LIMIT = _crawler_max_concurrency()
 _CRAWLER_SEMAPHORE = threading.BoundedSemaphore(_CRAWLER_CONCURRENCY_LIMIT)
 
@@ -95,6 +101,7 @@ def crawler_runtime_status() -> dict[str, Any]:
         "max_pages_per_call": _MAX_PRODUCTION_PAGES,
         "max_concurrency": _CRAWLER_CONCURRENCY_LIMIT,
         "acquire_timeout_seconds": _crawler_acquire_timeout(),
+        "max_wall_seconds": _crawler_max_wall_seconds(),
     }
 
 
@@ -167,6 +174,8 @@ def crawler_tool_descriptor() -> dict[str, Any]:
             "route_ownership_promoted": False,
             "bounded_concurrency": True,
             "bounded_pages": True,
+            "bounded_wall_clock": True,
+            "partial_failure_fail_closed": True,
             "source_throttle_fail_closed": True,
             "source_throttle_retry_backoff": True,
             "host_fallback_plan_on_throttle": True,
@@ -256,6 +265,7 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
                     task,
                     seed_url=seed_url,
                     official_domain_verified=False,
+                    max_elapsed_seconds=_crawler_max_wall_seconds(),
                 )
         else:
             backend = ResilientCrawlerBackend(
@@ -269,6 +279,7 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
                 task,
                 seed_url=seed_url,
                 official_domain_verified=False,
+                max_elapsed_seconds=_crawler_max_wall_seconds(),
             )
 
     return _finalize_receipt(receipt)
