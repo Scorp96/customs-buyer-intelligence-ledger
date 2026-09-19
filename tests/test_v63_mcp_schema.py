@@ -131,7 +131,7 @@ class V63ExactMutationPayloadSchemaTests(unittest.TestCase):
         schema = tool["inputSchema"]
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         self.assertEqual(schema["additionalProperties"], False)
-        self.assertEqual(set(schema["required"]), {"account_id", "opportunity_id", "source_type", "source_evidence_ids", "product_profile_id", "geography"})
+        self.assertEqual(set(schema["required"]), {"investigation_id", "account_id", "opportunity_id", "source_type", "source_evidence_ids", "product_profile_id", "geography"})
         self.assertNotIn("idempotency_key", schema["properties"])
         self.assertEqual(schema["properties"]["source_evidence_ids"]["minItems"], 1)
 
