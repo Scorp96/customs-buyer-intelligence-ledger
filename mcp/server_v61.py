@@ -1015,6 +1015,21 @@ def _v63_get_product_profiles_handler(arguments):
 def _v63_get_capability_profile_handler(arguments):
     return _server.RUNTIME.get_capability_profile(arguments)
 
+def _v63_get_product_opportunities_handler(arguments):
+    return _server.RUNTIME.get_product_opportunities(arguments)
+
+def _v63_get_demand_anchors_handler(arguments):
+    return _server.RUNTIME.get_demand_anchors(arguments)
+
+def _v63_get_market_cells_handler(arguments):
+    return _server.RUNTIME.get_market_cells(arguments)
+
+def _v63_evaluate_market_acceptance_handler(arguments):
+    return _server.RUNTIME.evaluate_market_acceptance(arguments)
+
+def _v63_get_expansion_state_handler(arguments):
+    return _server.RUNTIME.get_expansion_state(arguments)
+
 def _v63_evaluate_capability_fit_handler(arguments):
     return _server.RUNTIME.evaluate_capability_fit(arguments)
 
@@ -1082,6 +1097,11 @@ _MUTATING_TOOLS.update({'append_candidate_discovery', 'promote_opportunity_ancho
 _server.tool_descriptors = _v63_tool_descriptors
 _server.TOOL_HANDLERS['get_product_profiles'] = _v63_get_product_profiles_handler
 _server.TOOL_HANDLERS['get_capability_profile'] = _v63_get_capability_profile_handler
+_server.TOOL_HANDLERS['get_product_opportunities'] = _v63_get_product_opportunities_handler
+_server.TOOL_HANDLERS['get_demand_anchors'] = _v63_get_demand_anchors_handler
+_server.TOOL_HANDLERS['get_market_cells'] = _v63_get_market_cells_handler
+_server.TOOL_HANDLERS['evaluate_market_acceptance'] = _v63_evaluate_market_acceptance_handler
+_server.TOOL_HANDLERS['get_expansion_state'] = _v63_get_expansion_state_handler
 _server.TOOL_HANDLERS['evaluate_capability_fit'] = _v63_evaluate_capability_fit_handler
 _server.TOOL_HANDLERS['assess_candidate_researchability'] = _v63_assess_candidate_researchability_handler
 _server.TOOL_HANDLERS['rank_candidate_research_queue'] = _v63_rank_candidate_research_queue_handler

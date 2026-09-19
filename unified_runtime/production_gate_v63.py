@@ -59,6 +59,13 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
     if str(v63.get("recovery_overlay_binding") or "") != "BOUND_ACTIVE_PRODUCTION_OVERLAY_CHAIN":
         blockers.append("V63_RECOVERY_OVERLAY_NOT_BOUND")
 
+    if v63.get("runtime_read_model_bindings_complete") is not True:
+        blockers.append("V63_READ_MODEL_BINDINGS_INCOMPLETE")
+    if str(v63.get("runtime_read_model_binding_status") or "") != "BOUND":
+        blockers.append("V63_READ_MODEL_BINDING_STATUS_NOT_BOUND")
+    if v63.get("read_model_tool_surface_complete_v6_3") is not True:
+        blockers.append("V63_READ_MODEL_TOOL_SURFACE_INCOMPLETE")
+
     if str(v63.get("runtime_durable_backend_binding") or "") != "BOUND_EXISTING_DURABLE_STORE":
         blockers.append("V63_RUNTIME_DURABLE_BACKEND_NOT_BOUND")
     backend_policy_safe = (
@@ -102,8 +109,11 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
         blockers.append("V63_LIVE_BACKEND_CORRELATION_ACCEPTANCE_NOT_VERIFIED")
     if not bool(payload.get("live_v63_recovery_overlay_acceptance_verified")):
         blockers.append("V63_LIVE_RECOVERY_OVERLAY_ACCEPTANCE_NOT_VERIFIED")
+    if not bool(payload.get("live_v63_mcp_tool_inventory_verified")):
+        blockers.append("V63_LIVE_MCP_TOOL_INVENTORY_NOT_VERIFIED")
     acceptance_snapshot = str(payload.get("live_v63_backend_correlation_acceptance_snapshot_sha256") or "").lower()
     recovery_acceptance_snapshot = str(payload.get("live_v63_recovery_overlay_acceptance_snapshot_sha256") or "").lower()
+    mcp_inventory_snapshot = str(payload.get("live_v63_mcp_tool_inventory_snapshot_sha256") or "").lower()
     current_snapshot = str(payload.get("current_production_source_snapshot_sha256") or "").lower()
     if (
         len(acceptance_snapshot) != 64
@@ -117,12 +127,21 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
         or recovery_acceptance_snapshot != current_snapshot
     ):
         blockers.append("V63_RECOVERY_OVERLAY_ACCEPTANCE_SOURCE_DRIFT")
+    if (
+        len(mcp_inventory_snapshot) != 64
+        or len(current_snapshot) != 64
+        or mcp_inventory_snapshot != current_snapshot
+    ):
+        blockers.append("V63_LIVE_MCP_TOOL_INVENTORY_SOURCE_DRIFT")
 
     return {
         "production_ready": not blockers,
         "status": "PRODUCTION_READY" if not blockers else "NOT_PRODUCTION_READY",
         "blockers": blockers,
         "required_v63_mutations": sorted(_REQUIRED_MUTATIONS),
+        "checked_read_model_bindings": v63.get("runtime_read_model_bindings_complete") is True,
+        "checked_read_model_tool_surface": v63.get("read_model_tool_surface_complete_v6_3") is True,
+        "read_model_runtime_bindings": dict(v63.get("read_model_runtime_bindings_v6_3") or {}),
         "required_active_mcp_tools": sorted(_REQUIRED_ACTIVE_MCP_TOOLS),
         "missing_active_mcp_tools": missing_active_mcp_tools,
         "checked_render_r2_pvc_acceptance": bool(payload.get("render_r2_pvc_acceptance_verified")),
@@ -130,6 +149,8 @@ def evaluate_v63_production_gate(payload: dict[str, Any]) -> dict[str, Any]:
         "checked_exact_v63_recovery_acceptance": bool(payload.get("exact_v63_recovery_acceptance_verified")),
         "checked_live_v63_backend_correlation_acceptance": bool(payload.get("live_v63_backend_correlation_acceptance_verified")),
         "checked_live_v63_recovery_overlay_acceptance": bool(payload.get("live_v63_recovery_overlay_acceptance_verified")),
+        "checked_live_v63_mcp_tool_inventory": bool(payload.get("live_v63_mcp_tool_inventory_verified")),
+        "live_v63_mcp_tool_inventory_snapshot_sha256": mcp_inventory_snapshot,
         "live_backend_correlation_acceptance_snapshot_sha256": acceptance_snapshot,
         "live_recovery_overlay_acceptance_snapshot_sha256": recovery_acceptance_snapshot,
         "current_production_source_snapshot_sha256": current_snapshot,

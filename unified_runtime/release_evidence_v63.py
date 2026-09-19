@@ -266,6 +266,10 @@ def evaluate_v63_release_evidence_bundle(bundle: dict[str, Any]) -> dict[str, An
         ).lower(),
         "current_production_source_snapshot_sha256": current_snapshot,
         "active_mcp_tool_names": list(mcp_surface.get("tool_names") or []) if mcp_surface.get("verified") else [],
+        "live_v63_mcp_tool_inventory_verified": bool(mcp_surface.get("verified")),
+        "live_v63_mcp_tool_inventory_snapshot_sha256": str(
+            mcp_surface.get("production_source_snapshot_sha256") or ""
+        ).lower(),
     }
     gate = evaluate_v63_production_gate(gate_payload)
 

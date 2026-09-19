@@ -6,6 +6,11 @@ from typing import Any
 V63_READ_ONLY_TOOL_NAMES = (
     "get_product_profiles",
     "get_capability_profile",
+    "get_product_opportunities",
+    "get_demand_anchors",
+    "get_market_cells",
+    "evaluate_market_acceptance",
+    "get_expansion_state",
     "evaluate_capability_fit",
     "assess_candidate_researchability",
     "rank_candidate_research_queue",
@@ -45,6 +50,11 @@ _PLANNERS = frozenset({
 _DESCRIPTIONS = {
     "get_product_profiles": "List version-pinned v6.3 product profiles and PVC-first portfolio metadata.",
     "get_capability_profile": "Read seller manufacturing capability profile without inferring unsupported technical claims.",
+    "get_product_opportunities": "Rebuild Account × Product Opportunity read models from the existing append-only investigation event chain.",
+    "get_demand_anchors": "Derive demand-anchor views from immutable evidence inputs without persistence.",
+    "get_market_cells": "Derive market-cell views from demand anchors without persistence.",
+    "evaluate_market_acceptance": "Evaluate M0-M5 market acceptance from verified demand-anchor views without persistence.",
+    "get_expansion_state": "Return the read-only v6.3 expansion projection for an investigation.",
     "evaluate_capability_fit": "Compare verified seller capability against a product demand without inventing unsupported specifications or certifications.",
     "assess_candidate_researchability": "Keep discovery high-recall: classify D1-D4 candidates for continued research without treating missing canonical identity, procurement proof, or contact as rejection.",
     "rank_candidate_research_queue": "Rank D1-D4 discovery candidates for further research without requiring a commercial grade; evidence tier and portfolio weight affect research order only.",
@@ -139,8 +149,9 @@ def _derived_view_schema(name: str) -> dict[str, Any]:
         return {
             "type": "object",
             "additionalProperties": False,
-            "required": ["account_id", "opportunity_id", "source_type", "source_evidence_ids", "product_profile_id", "geography"],
+            "required": ["investigation_id", "account_id", "opportunity_id", "source_type", "source_evidence_ids", "product_profile_id", "geography"],
             "properties": {
+                "investigation_id": {"type": "string", "minLength": 1},
                 "account_id": {"type": "string", "minLength": 1},
                 "opportunity_id": {"type": "string", "minLength": 1},
                 "source_type": {"type": "string", "minLength": 1},
