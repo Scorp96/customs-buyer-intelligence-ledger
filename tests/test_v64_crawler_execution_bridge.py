@@ -451,6 +451,59 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
             )
         )
 
+    def test_cancellation_resistant_backend_overrun_is_recorded_fail_closed(self) -> None:
+        root = "https://example.com/"
+
+        class CancellationResistantBackend:
+            name = "cancellation-resistant"
+
+            async def fetch(self, url: str) -> CrawlPage:
+                try:
+                    await asyncio.sleep(0.2)
+                except asyncio.CancelledError:
+                    # Reproduce a third-party crawler that delays/suppresses
+                    # cancellation and later returns a lower-level source error.
+                    await asyncio.sleep(0.03)
+                    return CrawlPage(
+                        url=url,
+                        text="",
+                        links=(),
+                        success=False,
+                        error="Blocked by anti-bot protection: HTTP 403",
+                    )
+                return CrawlPage(
+                    url=url,
+                    text="",
+                    links=(),
+                    success=False,
+                    error="unexpected_fast_return",
+                )
+
+        bridge = CrawlExecutionBridge(CancellationResistantBackend(), max_pages=1)
+        receipt = run(
+            bridge.execute(
+                {"task_id": "V63CONTACT-CANCEL-RESIST", "source_family": "official_contact"},
+                seed_url=root,
+                official_domain_verified=False,
+                max_elapsed_seconds=0.05,
+            )
+        )
+
+        self.assertEqual(receipt["result"], "BLOCKED")
+        self.assertEqual(receipt["source_status"], "SOURCE_UNAVAILABLE")
+        self.assertTrue(receipt["execution_budget_exhausted"])
+        self.assertTrue(receipt["fallback_required"])
+        self.assertFalse(receipt["negative_contact_conclusion_allowed"])
+        self.assertTrue(
+            any(
+                str(row.get("error") or "").startswith("execution_budget_exceeded_after_")
+                for row in receipt["failed_urls"]
+            )
+        )
+        self.assertTrue(
+            any("HTTP 403" in str(row.get("error") or "") for row in receipt["failed_urls"])
+        )
+
     def test_public_source_positive_evidence_survives_trailing_link_failure(self) -> None:
         root = "https://example.com/"
         broken = "https://example.com/broken"
