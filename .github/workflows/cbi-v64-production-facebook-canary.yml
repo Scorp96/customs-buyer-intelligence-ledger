@@ -1,0 +1,166 @@
+name: CBI v6.4 production Facebook source-access canary
+
+on:
+  push:
+    branches:
+      - cbi-v64-production-source-access-canary-20260919
+    paths:
+      - '.github/workflows/cbi-v64-production-facebook-canary.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Production Facebook source-access canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Verify production deployment and Facebook fail-closed semantics
+        env:
+          CBI_PRODUCTION_URL: https://cbi-v61-preview.onrender.com
+          CBI_PRODUCTION_BEARER_TOKEN: ${{ secrets.CBI_V63_ACCEPTANCE_BEARER_TOKEN }}
+          EXPECTED_SHA: 9ec63f627fb7d8d8796f5cab3a4bdfdd9bbe723f
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error
+
+          base = os.environ["CBI_PRODUCTION_URL"].rstrip("/")
+          token = os.environ.get("CBI_PRODUCTION_BEARER_TOKEN", "")
+          expected = os.environ["EXPECTED_SHA"].lower()
+          if len(token) < 32:
+              raise SystemExit("PRODUCTION_BEARER_SECRET_UNAVAILABLE")
+
+          def open_json(req, timeout=210):
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return json.loads(resp.read().decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  detail = exc.read().decode("utf-8", "replace")[:1000]
+                  raise SystemExit(f"HTTP_{exc.code}:{detail}")
+
+          health = open_json(urllib.request.Request(
+              base + "/healthz", method="GET", headers={"Accept":"application/json"}
+          ))
+          identity = health.get("deployment_identity") or {}
+          if health.get("status") != "ok":
+              raise SystemExit("PRODUCTION_HEALTH_NOT_OK")
+          observed = str(identity.get("git_sha") or "").lower()
+          if observed != expected:
+              raise SystemExit(f"PRODUCTION_SHA_MISMATCH:expected={expected}:observed={observed}")
+
+          next_id = 1
+          def rpc(method, params, timeout=210):
+              global next_id
+              rid = next_id
+              next_id += 1
+              body = json.dumps(
+                  {"jsonrpc":"2.0","id":rid,"method":method,"params":params},
+                  separators=(",",":"),
+              ).encode()
+              payload = open_json(
+                  urllib.request.Request(
+                      base + "/mcp",
+                      data=body,
+                      method="POST",
+                      headers={
+                          "Authorization":"Bearer " + token,
+                          "Content-Type":"application/json",
+                          "Accept":"application/json",
+                          "MCP-Protocol-Version":"2026-07-28",
+                      },
+                  ),
+                  timeout=timeout,
+              )
+              if payload.get("id") != rid:
+                  raise SystemExit("RPC_ID_MISMATCH")
+              if isinstance(payload.get("error"), dict):
+                  raise SystemExit("RPC_ERROR:" + json.dumps(payload["error"], sort_keys=True)[:1000])
+              result = payload.get("result")
+              if not isinstance(result, dict):
+                  raise SystemExit("RPC_RESULT_INVALID")
+              return result
+
+          listed = rpc("tools/list", {})
+          tools = {row.get("name"): row for row in listed.get("tools", []) if isinstance(row, dict)}
+          desc = tools.get("execute_public_crawl")
+          if not isinstance(desc, dict):
+              raise SystemExit("CRAWLER_TOOL_MISSING")
+          contract = desc.get("contract") or {}
+          for key in (
+              "source_throttle_fail_closed",
+              "source_throttle_retry_backoff",
+              "host_fallback_plan_on_throttle",
+              "source_unavailable_fail_closed",
+              "host_fallback_plan_on_unavailable",
+          ):
+              if contract.get(key) is not True:
+                  raise SystemExit("PRODUCTION_SOURCE_ACCESS_CONTRACT_MISSING:" + key)
+
+          call = rpc(
+              "tools/call",
+              {
+                  "name":"execute_public_crawl",
+                  "arguments":{
+                      "task":{
+                          "task_id":"PROD-FB-ACCESS-FERRETERIAS-LA-QUINTA",
+                          "source_family":"public_social",
+                          "company_name":"Ferreterias La Quinta Inc",
+                          "query":"Ferreterias La Quinta Mayaguez email phone whatsapp",
+                      },
+                      "seed_url":"https://www.facebook.com/ferreteriaslaquintainc/",
+                      "max_pages":1,
+                      "browser_escalation":True,
+                      "timeout_seconds":25,
+                      "max_retries":2,
+                  },
+              },
+              timeout=240,
+          )
+          result = call.get("structuredContent") or {}
+          status = result.get("status")
+          outcome = result.get("result")
+          routes = result.get("route_candidates") or []
+
+          if result.get("production_route_ownership_promoted") is not False:
+              raise SystemExit("ROUTE_OWNERSHIP_PROMOTED")
+
+          if status in {"SOURCE_THROTTLED", "SOURCE_UNAVAILABLE"}:
+              if outcome != "BLOCKED":
+                  raise SystemExit("BLOCKED_SOURCE_RESULT_INVALID")
+              if result.get("fallback_required") is not True:
+                  raise SystemExit("BLOCKED_SOURCE_FALLBACK_REQUIRED")
+              if result.get("negative_contact_conclusion_allowed") is not False:
+                  raise SystemExit("FALSE_NEGATIVE_STILL_ALLOWED")
+              plan = result.get("fallback_search_plan") or {}
+              if plan.get("host_action") != "WEB_SEARCH_AND_PUBLIC_SOURCE_FALLBACK":
+                  raise SystemExit("FALLBACK_PLAN_MISSING")
+              if plan.get("contact_conclusion_if_unresolved") != "NOT_VERIFIED":
+                  raise SystemExit("NOT_VERIFIED_POLICY_MISSING")
+              if plan.get("reason") != status:
+                  raise SystemExit("FALLBACK_REASON_MISMATCH")
+          elif status == "CRAWL_EXECUTED":
+              if outcome != "POSITIVE" or not routes:
+                  raise SystemExit("FALSE_NEGATIVE_NOT_ALLOWED")
+          else:
+              raise SystemExit("UNEXPECTED_CRAWLER_STATUS:" + str(status))
+
+          print(json.dumps({
+              "status":"PASS",
+              "production_git_sha":expected,
+              "crawler_status":status,
+              "crawler_result":outcome,
+              "pages_crawled":result.get("pages_crawled"),
+              "route_count":len(routes),
+              "source_status":result.get("source_status"),
+              "retryable":result.get("retryable"),
+              "fallback_required":result.get("fallback_required"),
+              "negative_contact_conclusion_allowed":result.get("negative_contact_conclusion_allowed"),
+              "failed_urls":result.get("failed_urls"),
+              "fallback_search_plan":result.get("fallback_search_plan"),
+              "backend_diagnostics":result.get("backend_diagnostics"),
+              "production_route_ownership_promoted":result.get("production_route_ownership_promoted"),
+          }, sort_keys=True))
+          PY
