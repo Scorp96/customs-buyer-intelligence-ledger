@@ -81,6 +81,7 @@ def _require_explicit_durable_root() -> Path:
 
 _ACCEPTANCE_PIN_REQUIRED = _env_flag("CBI_V63_ACCEPTANCE_PIN_DEPLOYMENT_SHA")
 _DEPLOYMENT_GIT_SHA = _resolve_deployment_git_sha(pin_required=_ACCEPTANCE_PIN_REQUIRED)
+_DEPLOYMENT_INSTANCE_ID = str(os.environ.get("RENDER_INSTANCE_ID") or "").strip() or None
 _EXPECTED_ROOT = _require_explicit_durable_root()
 _LIVE_ROOT = _EXPECTED_ROOT.parent
 
@@ -195,6 +196,7 @@ def _deployment_identity(persistence_health: dict[str, Any]) -> dict[str, Any]:
         "schema": _DEPLOYMENT_IDENTITY_SCHEMA,
         "git_sha": _DEPLOYMENT_GIT_SHA,
         "git_sha_source": "RENDER_GIT_COMMIT" if _DEPLOYMENT_GIT_SHA else None,
+        "instance_id": _DEPLOYMENT_INSTANCE_ID,
         "acceptance_pin_required": _ACCEPTANCE_PIN_REQUIRED,
         "remote_entrypoint": "mcp/server_v61_remote.py",
         "runtime_entrypoint": "mcp/server_v61_backup_recovery.py",
