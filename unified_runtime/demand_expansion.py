@@ -4,6 +4,10 @@ import copy
 from typing import Any
 
 from .contact_exhaustion import plan_contact_exhaustion as _plan_contact_exhaustion
+from .contact_source_execution import (
+    evaluate_contact_coverage as _evaluate_contact_coverage,
+    plan_contact_source_tasks as _plan_contact_source_tasks,
+)
 from .capability_profile import evaluate_capability_fit as _evaluate_capability_fit
 from .capability_binding_v63 import bind_private_capability_bundle as _bind_private_capability_bundle
 from .candidate_research_gate import (
@@ -493,6 +497,25 @@ class V63DemandExpansionMixin:
         opportunity = self._v63_resolve_opportunity(arguments)
         current_routes = dict(arguments.get("current_routes") or {})
         return _plan_contact_exhaustion(opportunity, current_routes)
+
+    def plan_contact_source_tasks(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        result = _plan_contact_source_tasks(
+            str(arguments.get("opportunity_id") or ""),
+            str(arguments.get("company_name") or ""),
+            dict(arguments.get("contact_plan") or {}),
+            named_route_material=bool(arguments.get("named_route_material", False)),
+            max_tasks=int(arguments.get("max_tasks") or 100),
+        )
+        result["persistent_mutation_performed"] = False
+        return result
+
+    def evaluate_contact_coverage(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        result = _evaluate_contact_coverage(
+            dict(arguments.get("plan") or {}),
+            list(arguments.get("receipts") or []),
+        )
+        result["persistent_mutation_performed"] = False
+        return result
 
     def evaluate_expansion_saturation(self, arguments: dict[str, Any]) -> dict[str, Any]:
         return _evaluate_expansion_saturation(arguments)

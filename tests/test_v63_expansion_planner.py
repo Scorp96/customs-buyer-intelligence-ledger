@@ -201,3 +201,33 @@ class V63HighRecallSaturationTests(unittest.TestCase):
             "cycle_dedup_complete": True,
         })
         self.assertTrue(result["expansion_saturated"])
+
+
+class V63CelukaDiscoveryOverlayRegressionTests(unittest.TestCase):
+    def test_default_celuka_discovery_retains_sign_display_routes_without_profile_mutation(self):
+        from unified_runtime.expansion_planner import generate_discovery_queries
+        result = generate_discovery_queries({
+            "product_profile_id": "PVC",
+            "product_variant": "CELUKA",
+            "geography": "Indonesia",
+            "limit": 200,
+        })
+        joined = " ".join(row["query"] for row in result["queries"]).upper()
+        self.assertTrue(result["variant_discovery_overlay_applied"])
+        self.assertFalse(result["version_pinned_product_profile_mutated"])
+        self.assertIn("SIGN MATERIAL DISTRIBUTOR", joined)
+        self.assertTrue("SIGNAGE" in joined or "POP DISPLAY" in joined or "DISPLAY" in joined)
+
+    def test_explicit_celuka_scope_is_not_overridden_by_discovery_overlay(self):
+        from unified_runtime.expansion_planner import generate_discovery_queries
+        result = generate_discovery_queries({
+            "product_profile_id": "PVC",
+            "product_variant": "CELUKA",
+            "applications": ["CABINETRY"],
+            "buyer_archetypes": ["CABINET_MANUFACTURER"],
+            "geography": "Indonesia",
+            "limit": 200,
+        })
+        joined = " ".join(row["query"] for row in result["queries"]).upper()
+        self.assertFalse(result["variant_discovery_overlay_applied"])
+        self.assertNotIn("SIGN MATERIAL DISTRIBUTOR", joined)

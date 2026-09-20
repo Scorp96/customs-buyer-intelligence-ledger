@@ -142,15 +142,39 @@ def named_role_relevant(product_profile_id: str, buyer_archetypes: list[str], ro
 
 
 def contact_exhaustion_complete(plan_state: dict[str, Any]) -> bool:
-    if str(plan_state.get("named_route_status") or "") in {"NAMED_ROUTE_READY", "FOLLOW_UP_READY", "SEND_READY"}:
+    named_status = str(plan_state.get("named_route_status") or "")
+    company_status = str(plan_state.get("company_route_status") or "")
+    named_exhaustive = bool(plan_state.get("named_route_exhaustive")) or (
+        str(plan_state.get("named_route_policy") or "").strip().upper() == "EXHAUSTIVE"
+    )
+
+    if named_status in {"NAMED_ROUTE_READY", "FOLLOW_UP_READY", "SEND_READY"}:
         return True
-    if str(plan_state.get("company_route_status") or "") in {"COMPANY_ROUTE_READY", "FOLLOW_UP_READY", "SEND_READY"}:
+    if company_status in {"COMPANY_ROUTE_READY", "FOLLOW_UP_READY", "SEND_READY"} and not named_exhaustive:
         return True
 
     receipts = list(plan_state.get("applicable_material_source_receipts") or [])
     if not receipts:
         return False
     terminal = {"NEGATIVE_EXHAUSTED", "NOT_APPLICABLE_JUSTIFIED"}
+
+    if named_exhaustive:
+        expected_sources = [
+            str(value)
+            for value in (
+                plan_state.get("named_route_source_families")
+                or NAMED_ROUTE_SOURCE_FAMILIES
+            )
+            if str(value).strip()
+        ]
+        terminal_sources = {
+            str(receipt.get("source_family") or "")
+            for receipt in receipts
+            if isinstance(receipt, dict)
+            and str(receipt.get("result") or "").upper() in terminal
+        }
+        return bool(expected_sources) and all(source in terminal_sources for source in expected_sources)
+
     for receipt in receipts:
         if not isinstance(receipt, dict):
             return False

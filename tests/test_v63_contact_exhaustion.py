@@ -142,3 +142,47 @@ class V63RouteFreshnessReadinessTests(unittest.TestCase):
         })
         self.assertEqual(result["outreach_readiness"], "NAMED_ROUTE_READY")
         self.assertFalse(result["commercial_grade_mutated"])
+
+
+class V63ExhaustiveNamedRouteCompletionRegressionTests(unittest.TestCase):
+    def _a_plus_plan(self):
+        return plan_contact_exhaustion({
+            "commercial_value_grade": "A+",
+            "outreach_readiness": "IDENTITY_ONLY",
+            "product_profile_id": "PVC",
+            "buyer_archetypes": ["SIGN_MATERIAL_DISTRIBUTOR"],
+        }, {})
+
+    def test_a_plus_company_route_alone_does_not_close_exhaustive_named_research(self):
+        plan = self._a_plus_plan()
+        self.assertFalse(contact_exhaustion_complete({
+            **plan,
+            "company_route_status": "COMPANY_ROUTE_READY",
+            "named_route_status": "IDENTITY_ONLY",
+            "applicable_material_source_receipts": [],
+        }))
+
+    def test_one_terminal_named_source_does_not_fake_exhaustive_completion(self):
+        plan = self._a_plus_plan()
+        self.assertFalse(contact_exhaustion_complete({
+            **plan,
+            "company_route_status": "COMPANY_ROUTE_READY",
+            "named_route_status": "IDENTITY_ONLY",
+            "applicable_material_source_receipts": [{
+                "source_family": plan["named_route_source_families"][0],
+                "result": "NEGATIVE_EXHAUSTED",
+            }],
+        }))
+
+    def test_every_named_source_terminal_can_close_exhaustive_completion(self):
+        plan = self._a_plus_plan()
+        receipts = [{
+            "source_family": source_family,
+            "result": "NEGATIVE_EXHAUSTED",
+        } for source_family in plan["named_route_source_families"]]
+        self.assertTrue(contact_exhaustion_complete({
+            **plan,
+            "company_route_status": "COMPANY_ROUTE_READY",
+            "named_route_status": "IDENTITY_ONLY",
+            "applicable_material_source_receipts": receipts,
+        }))

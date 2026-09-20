@@ -382,3 +382,44 @@ class V63CandidateResearchQueueRuntimeTests(unittest.TestCase):
         self.assertGreater(result["candidates"][0]["research_priority"], 0)
         self.assertFalse(result["persistent_mutation_performed"])
         self.assertEqual(self.runtime.state, before)
+
+
+class V63ContactCoverageRuntimeSurfaceTests(unittest.TestCase):
+    def setUp(self):
+        self.runtime = Runtime()
+
+    def test_runtime_a_plus_company_route_does_not_close_required_named_tasks(self):
+        before = copy.deepcopy(self.runtime.state)
+        contact_plan = self.runtime.plan_contact_exhaustion({
+            "opportunity": {
+                "opportunity_id": "OPP-C500-PVC-PRIMARY",
+                "account_id": "C500",
+                "product_profile_id": "PVC",
+                "commercial_value_grade": "A+",
+                "outreach_readiness": "IDENTITY_ONLY",
+            },
+        })
+        plan = self.runtime.plan_contact_source_tasks({
+            "opportunity_id": "OPP-C500-PVC-PRIMARY",
+            "company_name": "Example Materials LLC",
+            "contact_plan": contact_plan,
+        })
+        company_task = next(task for task in plan["tasks"] if task["route_target"] == "COMPANY")
+        coverage = self.runtime.evaluate_contact_coverage({
+            "plan": plan,
+            "receipts": [{
+                "task_id": company_task["task_id"],
+                "result": "POSITIVE",
+                "completed_at": "2026-09-20T00:00:00Z",
+                "raw_result_locator": "synthetic:company",
+                "route_evidence_ids": ["E-SYNTH-ROUTE-1"],
+                "verified": True,
+                "guessed": False,
+                "owner_scope": "ACCOUNT",
+            }],
+        })
+        self.assertFalse(coverage["contact_exhaustion_complete"])
+        self.assertGreater(coverage["open_required_task_count"], 0)
+        self.assertFalse(plan["persistent_mutation_performed"])
+        self.assertFalse(coverage["persistent_mutation_performed"])
+        self.assertEqual(self.runtime.state, before)

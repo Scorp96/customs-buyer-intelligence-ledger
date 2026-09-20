@@ -76,6 +76,27 @@ _MARKET_MODIFIER = {
     "M5": 1.25,
 }
 
+# Discovery overlays widen search recall without mutating the version-pinned
+# product profile. This preserves historical opportunity SHA pins while letting
+# observed market use-cases improve discovery behavior.
+_VARIANT_DISCOVERY_OVERLAYS: dict[tuple[str, str], dict[str, Any]] = {
+    ("PVC", "CELUKA"): {
+        "applications": (
+            "SIGNAGE",
+            "EXHIBITION_DISPLAY",
+            "POP_DISPLAY",
+            "DISPLAY",
+        ),
+        "buyer_archetypes": (
+            "SIGN_MATERIAL_DISTRIBUTOR",
+            "SIGN_MAKER",
+            "DISPLAY_MANUFACTURER",
+            "ADVERTISING_FABRICATOR",
+        ),
+        "reason": "CELUKA_MULTI_APPLICATION_SIGN_DISPLAY_DISCOVERY",
+    },
+}
+
 
 def _market_branches(level: str) -> tuple[str, ...]:
     if level in {"M0", "M1"}:
@@ -193,6 +214,8 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
     geography = str(context.get("geography") or "").strip()
     if not geography:
         raise ValueError("geography is required for discovery query generation")
+    applications_explicit = bool([v for v in context.get("applications", []) if str(v).strip()])
+    archetypes_explicit = bool([v for v in context.get("buyer_archetypes", []) if str(v).strip()])
     applications = [str(v).upper() for v in context.get("applications", []) if str(v).strip()]
     archetypes = [str(v).upper() for v in context.get("buyer_archetypes", []) if str(v).strip()]
     variant = str(context.get("product_variant") or "").upper()
@@ -205,13 +228,34 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("limit must be >= 1")
     limit = min(limit, 1000)
 
+    overlay = _VARIANT_DISCOVERY_OVERLAYS.get((profile_id, variant))
+    overlay_applied = False
+    overlay_reason = None
     if variant:
         mapping = (profile.get("variant_application_map") or {}).get(variant)
         if mapping:
-            if not applications:
+            if not applications_explicit:
                 applications = list(mapping.get("applications") or [])
-            if not archetypes:
+            if not archetypes_explicit:
                 archetypes = list(mapping.get("buyer_archetypes") or [])
+
+        if overlay:
+            if not applications_explicit:
+                existing = {value.casefold() for value in applications}
+                for value in overlay.get("applications", ()):
+                    if str(value).casefold() not in existing:
+                        applications.append(str(value))
+                        existing.add(str(value).casefold())
+                        overlay_applied = True
+            if not archetypes_explicit:
+                existing = {value.casefold() for value in archetypes}
+                for value in overlay.get("buyer_archetypes", ()):
+                    if str(value).casefold() not in existing:
+                        archetypes.append(str(value))
+                        existing.add(str(value).casefold())
+                        overlay_applied = True
+            if overlay_applied:
+                overlay_reason = str(overlay.get("reason") or "") or None
 
     archetype_priority_applied = False
     if archetypes:
@@ -298,4 +342,7 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         "localized_terms_are_planning_only": True,
         "archetype_priority_applied": archetype_priority_applied,
         "ordered_buyer_archetypes": list(archetypes),
+        "variant_discovery_overlay_applied": overlay_applied,
+        "variant_discovery_overlay_reason": overlay_reason,
+        "version_pinned_product_profile_mutated": False,
     }

@@ -1051,6 +1051,12 @@ def _v63_evaluate_relative_opportunity_handler(arguments):
 def _v63_plan_contact_exhaustion_handler(arguments):
     return _server.RUNTIME.plan_contact_exhaustion(arguments)
 
+def _v63_plan_contact_source_tasks_handler(arguments):
+    return _server.RUNTIME.plan_contact_source_tasks(arguments)
+
+def _v63_evaluate_contact_coverage_handler(arguments):
+    return _server.RUNTIME.evaluate_contact_coverage(arguments)
+
 def _v63_evaluate_expansion_saturation_handler(arguments):
     return _server.RUNTIME.evaluate_expansion_saturation(arguments)
 
@@ -1109,6 +1115,8 @@ _server.TOOL_HANDLERS['preview_customs_seed_expansion'] = _v63_preview_customs_s
 _server.TOOL_HANDLERS['plan_candidate_expansion'] = _v63_plan_candidate_expansion_handler
 _server.TOOL_HANDLERS['evaluate_relative_opportunity'] = _v63_evaluate_relative_opportunity_handler
 _server.TOOL_HANDLERS['plan_contact_exhaustion'] = _v63_plan_contact_exhaustion_handler
+_server.TOOL_HANDLERS['plan_contact_source_tasks'] = _v63_plan_contact_source_tasks_handler
+_server.TOOL_HANDLERS['evaluate_contact_coverage'] = _v63_evaluate_contact_coverage_handler
 _server.TOOL_HANDLERS['evaluate_expansion_saturation'] = _v63_evaluate_expansion_saturation_handler
 _server.TOOL_HANDLERS['project_legacy_peer_receipt'] = _v63_project_legacy_peer_receipt_handler
 _server.TOOL_HANDLERS['preview_recursive_anchor_expansion'] = _v63_preview_recursive_anchor_expansion_handler

@@ -206,3 +206,27 @@ class V63CandidateResearchQueueSchemaTests(unittest.TestCase):
         tool = tools["rank_candidate_research_queue"]
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         self.assertNotIn("idempotency_key", tool["inputSchema"].get("required", []))
+
+
+class V63ContactCoverageMcpSurfaceTests(unittest.TestCase):
+    def test_contact_task_planner_and_coverage_evaluator_are_read_only_tools(self):
+        tools = {tool["name"]: tool for tool in build_v63_tool_descriptors()}
+        planner = tools["plan_contact_source_tasks"]
+        evaluator = tools["evaluate_contact_coverage"]
+        self.assertTrue(planner["annotations"]["readOnlyHint"])
+        self.assertFalse(planner["contract"]["planning_is_execution_proof"])
+        self.assertTrue(planner["contract"]["host_execution_required"])
+        self.assertEqual(
+            set(planner["inputSchema"]["required"]),
+            {"opportunity_id", "company_name", "contact_plan"},
+        )
+        self.assertTrue(evaluator["annotations"]["readOnlyHint"])
+        self.assertEqual(set(evaluator["inputSchema"]["required"]), {"plan", "receipts"})
+
+    def test_live_v61_server_registers_contact_task_handlers(self):
+        from mcp import server_v61
+        self.assertIn("plan_contact_source_tasks", server_v61._server.TOOL_HANDLERS)
+        self.assertIn("evaluate_contact_coverage", server_v61._server.TOOL_HANDLERS)
+        names = {row["name"] for row in server_v61._server.tool_descriptors()}
+        self.assertIn("plan_contact_source_tasks", names)
+        self.assertIn("evaluate_contact_coverage", names)

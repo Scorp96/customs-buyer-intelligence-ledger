@@ -18,6 +18,8 @@ V63_READ_ONLY_TOOL_NAMES = (
     "plan_candidate_expansion",
     "evaluate_relative_opportunity",
     "plan_contact_exhaustion",
+    "plan_contact_source_tasks",
+    "evaluate_contact_coverage",
     "evaluate_expansion_saturation",
     "project_legacy_peer_receipt",
     "preview_recursive_anchor_expansion",
@@ -41,6 +43,7 @@ _PLANNERS = frozenset({
     "preview_customs_seed_expansion",
     "plan_candidate_expansion",
     "plan_contact_exhaustion",
+    "plan_contact_source_tasks",
     "preview_recursive_anchor_expansion",
     "schedule_expansion_research",
     "plan_local_outreach",
@@ -62,6 +65,8 @@ _DESCRIPTIONS = {
     "plan_candidate_expansion": "Plan six-group buyer opportunity expansion and public-source work; planning is not execution proof.",
     "evaluate_relative_opportunity": "Compare a candidate opportunity to its reference anchor without mutating commercial evidence.",
     "plan_contact_exhaustion": "Plan grade-aware company/named-route research for a qualified product opportunity.",
+    "plan_contact_source_tasks": "Turn a grade-aware contact plan into executable company/named public-source tasks with per-task completion requirements; planning is not execution proof.",
+    "evaluate_contact_coverage": "Evaluate exact contact-task receipts and close contact exhaustion only when required tasks are proven by verified routes or terminal negative evidence.",
     "evaluate_expansion_saturation": "Evaluate expansion blockers separately from Decision Saturation and Source Coverage.",
     "project_legacy_peer_receipt": "Project legacy peer state into a read-only v6.3 compatibility signal.",
     "preview_recursive_anchor_expansion": "Preview recursive expansion from a promoted v6.3 opportunity anchor with cycle dedup.",
@@ -329,11 +334,43 @@ def _mutation_schema(name: str) -> dict[str, Any]:
     }
 
 
+def _contact_execution_schema(name: str) -> dict[str, Any]:
+    if name == "plan_contact_source_tasks":
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["opportunity_id", "company_name", "contact_plan"],
+            "properties": {
+                "opportunity_id": {"type": "string", "minLength": 1},
+                "company_name": {"type": "string", "minLength": 1},
+                "contact_plan": {"type": "object", "additionalProperties": True},
+                "named_route_material": {"type": "boolean"},
+                "max_tasks": {"type": "integer", "minimum": 1, "maximum": 1000},
+            },
+        }
+    if name == "evaluate_contact_coverage":
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["plan", "receipts"],
+            "properties": {
+                "plan": {"type": "object", "additionalProperties": True},
+                "receipts": {
+                    "type": "array",
+                    "items": {"type": "object", "additionalProperties": True},
+                },
+            },
+        }
+    raise KeyError(name)
+
+
 def _descriptor(name: str, *, read_only: bool) -> dict[str, Any]:
     planner = name in _PLANNERS
     if read_only:
         if name in {"derive_demand_anchor", "evaluate_product_opportunity"}:
             input_schema = _derived_view_schema(name)
+        elif name in {"plan_contact_source_tasks", "evaluate_contact_coverage"}:
+            input_schema = _contact_execution_schema(name)
         else:
             input_schema = {
                 "type": "object",
