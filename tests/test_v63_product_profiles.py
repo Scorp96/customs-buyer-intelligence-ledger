@@ -49,12 +49,20 @@ if __name__ == "__main__":
     unittest.main()
 
 class V63ProductApplicationMappingTests(unittest.TestCase):
-    def test_celuka_maps_to_cabinet_and_furniture_archetypes(self):
+    def test_celuka_maps_to_cabinet_furniture_sign_and_display_archetypes(self):
         pvc = get_product_profile("PVC")
         mapping = pvc["variant_application_map"]["CELUKA"]
         self.assertIn("CABINETRY", mapping["applications"])
         self.assertIn("CABINET_MANUFACTURER", mapping["buyer_archetypes"])
         self.assertIn("BATHROOM_VANITY_MANUFACTURER", mapping["buyer_archetypes"])
+        self.assertTrue(
+            {"SIGNAGE", "DISPLAY", "EXHIBITION_DISPLAY", "POP_DISPLAY"}
+            <= set(mapping["applications"])
+        )
+        self.assertTrue(
+            {"SIGN_MAKER", "SIGN_MATERIAL_DISTRIBUTOR", "DISPLAY_MANUFACTURER"}
+            <= set(mapping["buyer_archetypes"])
+        )
 
     def test_free_foam_maps_to_signage_display_archetypes(self):
         pvc = get_product_profile("PVC")
