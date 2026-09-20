@@ -13,17 +13,20 @@ from .opportunity_domain import build_opportunity_id, relative_opportunity, vali
 from .product_profiles import get_product_profile
 
 
-def _variant_mapping(profile: dict[str, Any], variant: str) -> tuple[list[str], list[str], bool]:
+def _variant_mapping(
+    profile: dict[str, Any],
+    variant: str,
+) -> tuple[list[str], list[str], bool, bool]:
     variant = str(variant or "").strip().upper()
     if not variant:
-        return [], [], True
+        return [], [], True, False
     mapping = (profile.get("variant_application_map") or {}).get(variant)
     if not mapping:
-        return [], [], True
+        return [], [], True, False
     applications = list(mapping.get("applications") or [])
     archetypes = list(mapping.get("buyer_archetypes") or [])
     requires_research = bool(mapping.get("technical_identity_requires_verification", False))
-    return applications, archetypes, requires_research
+    return applications, archetypes, requires_research, True
 
 
 def plan_customs_seed_expansion(seed: dict[str, Any]) -> dict[str, Any]:
@@ -32,7 +35,7 @@ def plan_customs_seed_expansion(seed: dict[str, Any]) -> dict[str, Any]:
     profile_id = str(seed.get("product_profile_id") or "").strip().upper()
     profile = get_product_profile(profile_id)
     variant = str(seed.get("product_variant") or "").strip().upper()
-    applications, archetypes, mapping_requires_research = _variant_mapping(profile, variant)
+    applications, archetypes, mapping_requires_research, mapping_found = _variant_mapping(profile, variant)
 
     anchor_payload = dict(seed)
     anchor_payload["source_type"] = "CUSTOMS"
@@ -64,6 +67,8 @@ def plan_customs_seed_expansion(seed: dict[str, Any]) -> dict[str, Any]:
     discovery_plan = generate_discovery_queries({
         **expansion_context,
         "product_variant": variant or None,
+        "applications_from_variant_prior": bool(mapping_found and applications),
+        "buyer_archetypes_from_variant_prior": bool(mapping_found and archetypes),
         "local_language_terms": list(seed.get("local_language_terms") or []),
         "locale": seed.get("locale"),
         "limit": seed.get("query_limit", 100),
