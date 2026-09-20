@@ -34,6 +34,40 @@ _OAUTH_TOKEN_PREFIX = "cbi_oauth_v1"
 _DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 8 * 60 * 60
 
 
+def chatgpt_oauth_security_schemes() -> list[dict[str, Any]]:
+    """Return a fresh MCP tool-level OAuth declaration for ChatGPT clients."""
+
+    return [{"type": "oauth2", "scopes": list(_OAUTH_SCOPES)}]
+
+
+def decorate_tools_list_for_chatgpt(value: Any) -> Any:
+    """Add tool-level OAuth metadata on the remote ChatGPT transport only.
+
+    The compatibility stdio/tunnel descriptor stays conservative because older
+    relays can reject richer descriptor fields. The direct remote transport,
+    however, should advertise OAuth explicitly on every tool and mirror the
+    declaration in _meta.securitySchemes for older ChatGPT clients.
+    """
+
+    if not isinstance(value, dict) or not isinstance(value.get("tools"), list):
+        return value
+    result = dict(value)
+    tools: list[Any] = []
+    for raw_tool in value["tools"]:
+        if not isinstance(raw_tool, dict):
+            tools.append(raw_tool)
+            continue
+        tool = dict(raw_tool)
+        tool["securitySchemes"] = chatgpt_oauth_security_schemes()
+        raw_meta = raw_tool.get("_meta")
+        meta = dict(raw_meta) if isinstance(raw_meta, dict) else {}
+        meta["securitySchemes"] = chatgpt_oauth_security_schemes()
+        tool["_meta"] = meta
+        tools.append(tool)
+    result["tools"] = tools
+    return result
+
+
 def _shared_github_verifier(logins: tuple[str, ...], api_url: str) -> GitHubOAuthVerifier:
     normalized = tuple(sorted({value.strip().lower() for value in logins if value.strip()}))
     key = (normalized, api_url)

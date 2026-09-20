@@ -92,7 +92,10 @@ from mcp import server_v61_backup_recovery as _production  # noqa: E402
 from mcp.authoritative_source_evidence_v64 import (  # noqa: E402
     install_remote_authoritative_source_evidence_tool,
 )
-from mcp.chatgpt_oauth_transport import main as _remote_transport_main  # noqa: E402
+from mcp.chatgpt_oauth_transport import (  # noqa: E402
+    decorate_tools_list_for_chatgpt,
+    main as _remote_transport_main,
+)
 from mcp.object_store_recovery_v63 import (  # noqa: E402
     RecoveryObjectStoreStateManagerV63,
 )
@@ -143,6 +146,8 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
     ephemeral instance. This post-call sync remains necessary to mirror the
     terminal COMMITTED/COMMITTED_ERROR receipt after ordinary completion.
     """
+    if method == "tools/list":
+        return decorate_tools_list_for_chatgpt(_BASE_DISPATCH(method, params))
     if method != "tools/call":
         return _BASE_DISPATCH(method, params)
     try:
