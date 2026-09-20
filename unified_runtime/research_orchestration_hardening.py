@@ -735,15 +735,44 @@ class V61ResearchOrchestrationHardeningMixin:
 
         identities: dict[str, dict[str, Any]] = {}
         scan_errors: list[dict[str, str]] = []
+
+        registry_accounts: dict[str, dict[str, Any]] = {}
+        canonical_registry = getattr(self, "canonical_registry", None)
+        registry_entries = getattr(canonical_registry, "entries", None)
+        if callable(registry_entries):
+            for entry in registry_entries():
+                if not isinstance(entry, dict):
+                    continue
+                registry_account_id = str(entry.get("account_id") or "").strip()
+                registry_account = entry.get("account")
+                if registry_account_id and isinstance(registry_account, dict):
+                    registry_accounts[registry_account_id.casefold()] = dict(registry_account)
+
         for row in full_rows:
             investigation_id = str(row.get("investigation_id") or "").strip()
             account_id = str(row.get("account_id") or "").strip()
             if not investigation_id or not account_id or account_id in identities:
                 continue
+
+            registry_account = registry_accounts.get(account_id.casefold())
+            if registry_account is not None:
+                account = dict(registry_account)
+                account.setdefault("account_id", account_id)
+                identities[account_id] = account
+                continue
+
             try:
-                account_state = super().get_account_state(
-                    {"investigation_id": investigation_id}
-                )
+                store = getattr(self, "store", None)
+                snapshot_scope = getattr(store, "verified_read_snapshot", None)
+                if callable(snapshot_scope):
+                    with snapshot_scope(investigation_id):
+                        account_state = super().get_account_state(
+                            {"investigation_id": investigation_id}
+                        )
+                else:
+                    account_state = super().get_account_state(
+                        {"investigation_id": investigation_id}
+                    )
                 account = dict(account_state.get("account") or {})
                 account.setdefault("account_id", account_id)
                 identities[account_id] = account

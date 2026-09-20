@@ -546,5 +546,114 @@ class CrawlExecutionBridgeTests(unittest.TestCase):
             )
 
 
+class ImportInfoStructuredContactRegressionTests(unittest.TestCase):
+    def test_third_party_manifest_keeps_target_routes_separate_from_source_site_support(self) -> None:
+        page_url = "https://example.com/target-graphics-llc"
+        page_text = (
+            "Consignee Name: TARGET GRAPHICS LLC\n"
+            "COMM Number Qualifier: EM\n"
+            "COMM Number: BUYER@EXAMPLEBUYER.COM\n"
+            "COMM Number Qualifier: TE\n"
+            "COMM Number: 17872251913\n"
+            "Contact support@example.com\n"
+        )
+        backend = FakeBackend({
+            page_url: CrawlPage(url=page_url, text=page_text, links=()),
+        })
+        receipt = run(
+            CrawlExecutionBridge(backend, max_pages=1).execute(
+                {
+                    "task_id": "V63CONTACT-IMPORTINFO-MANIFEST",
+                    "source_family": "trade_history",
+                    "company_name": "Target Graphics LLC",
+                },
+                seed_url=page_url,
+                official_domain_verified=False,
+            )
+        )
+
+        routes = {row["value"]: row for row in receipt["route_candidates"]}
+        self.assertEqual(
+            routes["buyer@examplebuyer.com"]["candidate_owner_scope"],
+            "TARGET_ASSOCIATED",
+        )
+        self.assertTrue(routes["buyer@examplebuyer.com"]["current_company_association"])
+        self.assertEqual(routes["17872251913"]["candidate_owner_scope"], "TARGET_ASSOCIATED")
+        self.assertTrue(routes["17872251913"]["current_company_association"])
+        self.assertEqual(routes["support@example.com"]["candidate_owner_scope"], "SOURCE_SITE")
+        self.assertFalse(routes["support@example.com"]["current_company_association"])
+        self.assertFalse(receipt["verified"])
+        self.assertEqual(receipt["owner_scope"], "UNVERIFIED")
+
+    def test_public_source_query_can_supply_target_name_for_manifest_association(self) -> None:
+        page_url = "https://example.com/target-graphics-llc"
+        backend = FakeBackend({
+            page_url: CrawlPage(
+                url=page_url,
+                text=(
+                    "Consignee Name: TARGET GRAPHICS LLC\n"
+                    "COMM Number Qualifier: EM\n"
+                    "COMM Number: BUYER@EXAMPLEBUYER.COM\n"
+                ),
+                links=(),
+            ),
+        })
+        receipt = run(
+            CrawlExecutionBridge(backend, max_pages=1).execute(
+                {
+                    "call_id": "PWEB-IMPORTINFO-MANIFEST",
+                    "source_family": "trade_history",
+                    "query": '"Target Graphics LLC" "Example Region" trade history',
+                },
+                seed_url=page_url,
+                official_domain_verified=False,
+            )
+        )
+
+        routes = {row["value"]: row for row in receipt["route_candidates"]}
+        self.assertEqual(
+            routes["buyer@examplebuyer.com"]["candidate_owner_scope"],
+            "TARGET_ASSOCIATED",
+        )
+        self.assertTrue(
+            routes["buyer@examplebuyer.com"]["current_company_association"]
+        )
+        self.assertFalse(receipt["verified"])
+        self.assertEqual(receipt["owner_scope"], "UNVERIFIED")
+
+    def test_crawl4ai_backend_recovers_visible_table_text_from_cleaned_html(self) -> None:
+        from types import SimpleNamespace
+        from unified_runtime.crawler_execution_bridge import Crawl4AIBackend
+
+        class FakeCrawler:
+            async def arun(self, *, url):
+                return SimpleNamespace(
+                    success=True,
+                    error_message=None,
+                    markdown="Support support@example.com",
+                    cleaned_html=(
+                        "<table>"
+                        "<tr><td>Consignee Name:</td><td>TARGET GRAPHICS LLC</td></tr>"
+                        "<tr><td>COMM Number Qualifier:</td><td>EM</td></tr>"
+                        "<tr><td>COMM Number:</td><td>BUYER@EXAMPLEBUYER.COM</td></tr>"
+                        "<tr><td>COMM Number Qualifier:</td><td>TE</td></tr>"
+                        "<tr><td>COMM Number:</td><td>17872251913</td></tr>"
+                        "</table>"
+                    ),
+                    fit_html="",
+                    html="",
+                    links={},
+                    url=url,
+                )
+
+        backend = Crawl4AIBackend()
+        backend._crawler = FakeCrawler()
+        page = run(backend.fetch("https://example.com/target-graphics-llc"))
+
+        self.assertIn("BUYER@EXAMPLEBUYER.COM", page.text)
+        self.assertIn("17872251913", page.text)
+        self.assertIn("support@example.com", page.text)
+
+
 if __name__ == "__main__":
     unittest.main()
