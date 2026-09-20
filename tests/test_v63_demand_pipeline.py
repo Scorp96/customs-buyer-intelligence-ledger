@@ -146,6 +146,8 @@ class V63LocalizedDemandPipelineTests(unittest.TestCase):
         joined = "\n".join(row["query"] for row in result["discovery_plan"]["queries"]).casefold()
         self.assertIn("tấm pvc foam", joined)
         self.assertIn("tủ bếp", joined)
+        self.assertEqual(result["discovery_plan"]["queries"][0]["basis"], "PRODUCT_X_LOCAL_TERM_X_GEOGRAPHY")
+        self.assertTrue(result["discovery_plan"]["variant_prior_cross_product_suppressed"])
         self.assertEqual(result["discovery_plan"]["locale_pack_status"], "CURATED")
         self.assertFalse(result["discovery_plan"]["planning_is_execution_proof"])
 
