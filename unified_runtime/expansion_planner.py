@@ -195,10 +195,12 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("geography is required for discovery query generation")
     applications = [str(v).upper() for v in context.get("applications", []) if str(v).strip()]
     archetypes = [str(v).upper() for v in context.get("buyer_archetypes", []) if str(v).strip()]
-    explicit_applications = bool(applications)
-    explicit_archetypes = bool(archetypes)
-    variant_prior_applications_applied = False
-    variant_prior_archetypes_applied = False
+    applications_from_variant_prior = bool(context.get("applications_from_variant_prior", False))
+    archetypes_from_variant_prior = bool(context.get("buyer_archetypes_from_variant_prior", False))
+    explicit_applications = bool(applications) and not applications_from_variant_prior
+    explicit_archetypes = bool(archetypes) and not archetypes_from_variant_prior
+    variant_prior_applications_applied = bool(applications) and applications_from_variant_prior
+    variant_prior_archetypes_applied = bool(archetypes) and archetypes_from_variant_prior
     variant = str(context.get("product_variant") or "").upper()
     local_terms = [str(v).strip() for v in context.get("local_language_terms", []) if str(v).strip()]
     locale = str(context.get("locale") or "").strip()
