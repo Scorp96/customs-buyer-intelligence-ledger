@@ -219,6 +219,10 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
                 archetypes = list(mapping.get("buyer_archetypes") or [])
                 variant_prior_archetypes_applied = True
 
+    variant_prior_cross_product_suppressed = (
+        variant_prior_applications_applied and variant_prior_archetypes_applied
+    )
+
     archetype_priority_applied = False
     if archetypes:
         ranked_archetypes = rank_buyer_archetypes(profile_id, archetypes)
@@ -271,19 +275,35 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
             "search_execution_performed": False,
         })
 
-    for product in product_terms:
-        for archetype in archetypes or [""]:
-            for application in applications or [""]:
-                add(
-                    f'{product} {_readable_token(archetype)} {_readable_token(application)} {geography}',
-                    "PRODUCT_X_ARCHETYPE_X_APPLICATION_X_GEOGRAPHY",
-                )
-        for term in commercial_terms:
-            add(f'{product} "{term}" {geography}', "PRODUCT_X_COMMERCIAL_TERM_X_GEOGRAPHY")
-
+    # Curated local-language pivots are high-yield and must survive truncation.
     for term in local_terms:
         add(f'{profile_id} "{term}" {geography}', "PRODUCT_X_LOCAL_TERM_X_GEOGRAPHY")
         add(f'"{term}" {geography}', "LOCAL_TERM_X_GEOGRAPHY")
+
+    for product in product_terms:
+        if variant_prior_cross_product_suppressed:
+            # A broad static variant prior should not manufacture implausible
+            # archetype x application pairs (for example cabinet maker x signage).
+            # Keep both dimensions discoverable without the Cartesian explosion.
+            for archetype in archetypes:
+                add(
+                    f'{product} {_readable_token(archetype)} {geography}',
+                    "PRODUCT_X_ARCHETYPE_X_GEOGRAPHY",
+                )
+            for application in applications:
+                add(
+                    f'{product} {_readable_token(application)} {geography}',
+                    "PRODUCT_X_APPLICATION_X_GEOGRAPHY",
+                )
+        else:
+            for archetype in archetypes or [""]:
+                for application in applications or [""]:
+                    add(
+                        f'{product} {_readable_token(archetype)} {_readable_token(application)} {geography}',
+                        "PRODUCT_X_ARCHETYPE_X_APPLICATION_X_GEOGRAPHY",
+                    )
+        for term in commercial_terms:
+            add(f'{product} "{term}" {geography}', "PRODUCT_X_COMMERCIAL_TERM_X_GEOGRAPHY")
 
     candidate_count = len(rows)
     returned = rows[:limit]
@@ -313,6 +333,7 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         ) if variant else False,
         "variant_prior_applications_applied": variant_prior_applications_applied,
         "variant_prior_archetypes_applied": variant_prior_archetypes_applied,
+        "variant_prior_cross_product_suppressed": variant_prior_cross_product_suppressed,
         "explicit_applications_override_variant_prior": explicit_applications,
         "explicit_archetypes_override_variant_prior": explicit_archetypes,
     }
