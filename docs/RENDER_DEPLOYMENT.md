@@ -198,11 +198,45 @@ The MCP endpoint is:
 https://<render-service-subdomain>.onrender.com/mcp
 ```
 
-It requires:
+It always supports the private administrator bearer:
 
 ```text
 Authorization: Bearer <CBI_REMOTE_BEARER_TOKEN>
 ```
+
+### ChatGPT OAuth connection mode
+
+The public Render deployment also exposes MCP OAuth discovery endpoints and can
+authenticate an allowlisted GitHub identity. The production Blueprint pins:
+
+```text
+CBI_REMOTE_PUBLIC_BASE_URL=https://cbi-v61-preview.onrender.com
+CBI_REMOTE_GITHUB_ALLOWED_LOGINS=Scorp96
+```
+
+The OAuth integration intentionally uses the **pre-registered client** path
+supported by ChatGPT rather than CIMD or dynamic client registration. When
+creating the custom MCP app in a supported ChatGPT Developer Mode workspace:
+
+1. use the MCP endpoint
+   `https://cbi-v61-preview.onrender.com/mcp`;
+2. choose OAuth authentication;
+3. provide the client ID and client secret from the GitHub OAuth App used for
+   this CBI connection;
+4. configure that GitHub OAuth App callback URL as
+   `https://cbi-v61-preview.onrender.com/oauth/callback`;
+5. run **Scan Tools** and complete the GitHub authorization as an allowlisted
+   login.
+
+The MCP resource is exactly
+`https://cbi-v61-preview.onrender.com/mcp`. Authorization and token requests
+must carry that exact `resource` value. CBI binds the resulting access and
+refresh credentials to that resource before accepting them at `/mcp`, so a
+credential cannot be replayed against another MCP resource.
+
+Do not paste the GitHub OAuth client secret into GitHub, Render source files,
+issues, logs, or chat transcripts. The client secret belongs in the ChatGPT app
+configuration / secure workspace secret handling only.
 
 ## Cutover rule
 
