@@ -30,6 +30,8 @@ _OAUTH_SCOPES = ("read:user", "offline_access")
 _GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 _GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 _STATE_TTL_SECONDS = 10 * 60
+_OAUTH_TOKEN_PREFIX = "cbi_oauth_v1"
+_DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 8 * 60 * 60
 
 
 def _shared_github_verifier(logins: tuple[str, ...], api_url: str) -> GitHubOAuthVerifier:
@@ -55,12 +57,25 @@ def _public_base_url() -> str:
     return raw
 
 
+def _expected_resource(public_base: str) -> str:
+    return f"{public_base}/mcp"
+
+
+def _validated_resource(raw: str, public_base: str) -> str:
+    value = str(raw or "").strip()
+    expected = _expected_resource(public_base)
+    if value != expected:
+        raise ValueError(f"resource must equal {expected}")
+    return expected
+
+
 def _protected_resource_metadata(public_base: str) -> dict[str, Any]:
     return {
-        "resource": f"{public_base}/mcp",
+        "resource": _expected_resource(public_base),
         "authorization_servers": [public_base],
         "scopes_supported": list(_OAUTH_SCOPES),
         "bearer_methods_supported": ["header"],
+        "code_challenge_methods_supported": ["S256"],
         "resource_name": "Customs Buyer Intelligence v6.1",
     }
 
@@ -86,6 +101,76 @@ def _oauth_state_key() -> bytes:
     return value
 
 
+def _pack_resource_token(
+    *,
+    kind: str,
+    github_token: str,
+    resource: str,
+    expires_in: int,
+    now: int | None = None,
+) -> str:
+    if kind not in {"access", "refresh"}:
+        raise ValueError("unsupported OAuth token kind")
+    token = str(github_token or "").strip()
+    if not token:
+        raise ValueError("GitHub OAuth token is missing")
+    ttl = int(expires_in)
+    if ttl <= 0:
+        raise ValueError("OAuth token expiry must be positive")
+    issued = int(time.time() if now is None else now)
+    payload = {
+        "v": 1,
+        "kind": kind,
+        "resource": str(resource),
+        "github_token": token,
+        "iat": issued,
+        "exp": issued + ttl,
+    }
+    raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    signature = hmac.new(_oauth_state_key(), b"cbi-oauth-token-v1\x00" + raw, hashlib.sha256).digest()
+    return f"{_OAUTH_TOKEN_PREFIX}.{_b64url_encode(raw)}.{_b64url_encode(signature)}"
+
+
+def _unpack_resource_token(
+    token: str,
+    *,
+    kind: str,
+    resource: str,
+    now: int | None = None,
+) -> str:
+    supplied = str(token or "").strip()
+    try:
+        prefix, raw_part, sig_part = supplied.split(".", 2)
+        if prefix != _OAUTH_TOKEN_PREFIX:
+            raise ValueError("invalid OAuth token prefix")
+        raw = _b64url_decode(raw_part)
+        signature = _b64url_decode(sig_part)
+    except Exception as exc:
+        raise ValueError("invalid CBI OAuth token") from exc
+    expected = hmac.new(_oauth_state_key(), b"cbi-oauth-token-v1\x00" + raw, hashlib.sha256).digest()
+    if not hmac.compare_digest(signature, expected):
+        raise ValueError("invalid CBI OAuth token signature")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise ValueError("invalid CBI OAuth token payload") from exc
+    if int(payload.get("v") or 0) != 1:
+        raise ValueError("unsupported CBI OAuth token version")
+    if str(payload.get("kind") or "") != kind:
+        raise ValueError("CBI OAuth token kind mismatch")
+    if str(payload.get("resource") or "") != resource:
+        raise ValueError("CBI OAuth token resource mismatch")
+    issued = int(payload.get("iat") or 0)
+    expires = int(payload.get("exp") or 0)
+    current = int(time.time() if now is None else now)
+    if issued <= 0 or expires <= issued or current < issued or current >= expires:
+        raise ValueError("expired CBI OAuth token")
+    github_token = str(payload.get("github_token") or "").strip()
+    if not github_token:
+        raise ValueError("CBI OAuth token is missing GitHub credential")
+    return github_token
+
+
 def _b64url_encode(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
@@ -94,10 +179,17 @@ def _b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * ((4 - len(value) % 4) % 4))
 
 
-def _pack_oauth_state(*, client_state: str, redirect_uri: str, now: int | None = None) -> str:
+def _pack_oauth_state(
+    *,
+    client_state: str,
+    redirect_uri: str,
+    resource: str,
+    now: int | None = None,
+) -> str:
     payload = {
         "state": client_state,
         "redirect_uri": redirect_uri,
+        "resource": resource,
         "iat": int(time.time() if now is None else now),
         "nonce": secrets.token_urlsafe(18),
     }
@@ -129,6 +221,8 @@ def _unpack_oauth_state(token: str, *, now: int | None = None) -> dict[str, Any]
         raise ValueError("OAuth redirect URI is not allowed")
     if not str(payload.get("state") or ""):
         raise ValueError("OAuth client state is missing")
+    if not str(payload.get("resource") or ""):
+        raise ValueError("OAuth resource is missing")
     return payload
 
 
@@ -175,9 +269,9 @@ class ChatGPTRemoteAuthConfig:
             raise RuntimeError("CBI_REMOTE_AUTH_MODE must be bearer, mixed, github_oauth, or none")
 
         token = str(os.environ.get("CBI_REMOTE_BEARER_TOKEN") or "").strip()
-        if mode in {"bearer", "mixed"} and len(token) < 32:
+        if mode in {"bearer", "mixed", "github_oauth"} and len(token) < 32:
             raise RuntimeError(
-                "CBI_REMOTE_BEARER_TOKEN must contain at least 32 characters when static bearer auth is enabled"
+                "CBI_REMOTE_BEARER_TOKEN must contain at least 32 characters for static bearer or OAuth signing"
             )
 
         origins = tuple(
@@ -203,6 +297,17 @@ class ChatGPTRemoteAuthConfig:
             github_api_url=api_url,
         )
 
+    def _verify_github_token(self, token: str) -> str:
+        verifier = _shared_github_verifier(self.github_allowed_logins, self.github_api_url)
+        try:
+            return verifier.verify(token)
+        except GitHubOAuthInvalid as exc:
+            raise base.RemoteTransportError(str(exc), http_status=401, rpc_code=-32001) from exc
+        except GitHubOAuthForbidden as exc:
+            raise base.RemoteTransportError(str(exc), http_status=403, rpc_code=-32001) from exc
+        except GitHubOAuthUnavailable as exc:
+            raise base.RemoteTransportError(str(exc), http_status=503, rpc_code=-32003) from exc
+
     def authorize(self, headers: Mapping[str, str]) -> None:
         origin = str(headers.get("Origin") or headers.get("origin") or "").strip()
         if origin and self.allowed_origins and origin not in self.allowed_origins:
@@ -218,24 +323,26 @@ class ChatGPTRemoteAuthConfig:
         if not supplied:
             raise base.RemoteTransportError("Bearer authentication required", http_status=401, rpc_code=-32001)
 
-        # Preserve the existing private admin bearer exactly. When a GitHub
-        # allowlist is configured, a non-matching bearer can additionally be a
-        # ChatGPT-acquired GitHub OAuth token. The fallback remains fail-closed
-        # to the explicit GitHub login allowlist.
+        # Preserve the existing private admin bearer exactly. OAuth access
+        # tokens are resource-bound CBI wrappers around the upstream GitHub
+        # credential. Raw GitHub OAuth tokens remain accepted as a compatibility
+        # fallback only for an explicitly configured GitHub allowlist.
         if self.mode in {"bearer", "mixed"} and hmac.compare_digest(supplied, self.bearer_token):
             return
         if self.mode == "bearer" and not self.github_allowed_logins:
             raise base.RemoteTransportError("Invalid bearer credential", http_status=401, rpc_code=-32001)
 
-        verifier = _shared_github_verifier(self.github_allowed_logins, self.github_api_url)
-        try:
-            verifier.verify(supplied)
-        except GitHubOAuthInvalid as exc:
-            raise base.RemoteTransportError(str(exc), http_status=401, rpc_code=-32001) from exc
-        except GitHubOAuthForbidden as exc:
-            raise base.RemoteTransportError(str(exc), http_status=403, rpc_code=-32001) from exc
-        except GitHubOAuthUnavailable as exc:
-            raise base.RemoteTransportError(str(exc), http_status=503, rpc_code=-32003) from exc
+        github_token = supplied
+        if supplied.startswith(f"{_OAUTH_TOKEN_PREFIX}."):
+            try:
+                github_token = _unpack_resource_token(
+                    supplied,
+                    kind="access",
+                    resource=_expected_resource(_public_base_url()),
+                )
+            except ValueError as exc:
+                raise base.RemoteTransportError(str(exc), http_status=401, rpc_code=-32001) from exc
+        self._verify_github_token(github_token)
 
 
 class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
@@ -295,6 +402,7 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
                 if not client_state:
                     raise ValueError("state is required")
                 scope = _validated_scope(str(query.get("scope") or ""))
+                resource = _validated_resource(str(query.get("resource") or ""), self.public_base)
                 challenge = str(query.get("code_challenge") or "").strip()
                 challenge_method = str(query.get("code_challenge_method") or "").strip()
                 if challenge and challenge_method != "S256":
@@ -302,7 +410,11 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
                 if challenge_method and not challenge:
                     raise ValueError("code_challenge is required when code_challenge_method is present")
 
-                proxy_state = _pack_oauth_state(client_state=client_state, redirect_uri=redirect_uri)
+                proxy_state = _pack_oauth_state(
+                    client_state=client_state,
+                    redirect_uri=redirect_uri,
+                    resource=resource,
+                )
                 github_query = {
                     "client_id": client_id,
                     "redirect_uri": f"{self.public_base}/oauth/callback",
@@ -322,6 +434,7 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
             try:
                 query = self._query()
                 payload = _unpack_oauth_state(str(query.get("state") or ""))
+                _validated_resource(str(payload.get("resource") or ""), self.public_base)
                 response = {
                     "state": str(payload["state"]),
                     "iss": self.public_base,
@@ -363,13 +476,13 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
             grant_type = str(values.get("grant_type") or "authorization_code")
             if grant_type not in {"authorization_code", "refresh_token"}:
                 raise ValueError("unsupported grant_type")
+            resource = _validated_resource(str(values.get("resource") or ""), self.public_base)
             allowed = {
                 "client_id",
                 "client_secret",
                 "code",
                 "code_verifier",
                 "grant_type",
-                "refresh_token",
             }
             upstream = {key: value for key, value in values.items() if key in allowed and value != ""}
             upstream["grant_type"] = grant_type
@@ -379,8 +492,15 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
                 if not upstream.get("code"):
                     raise ValueError("authorization code is required")
                 upstream["redirect_uri"] = f"{self.public_base}/oauth/callback"
-            elif not upstream.get("refresh_token"):
-                raise ValueError("refresh_token is required")
+            else:
+                wrapped_refresh = str(values.get("refresh_token") or "").strip()
+                if not wrapped_refresh:
+                    raise ValueError("refresh_token is required")
+                upstream["refresh_token"] = _unpack_resource_token(
+                    wrapped_refresh,
+                    kind="refresh",
+                    resource=resource,
+                )
 
             request = urllib.request.Request(
                 _GITHUB_TOKEN_URL,
@@ -404,7 +524,40 @@ class ChatGPTOAuthRequestHandler(base.RemoteMcpRequestHandler):
             except Exception:
                 payload = {"error": "server_error", "error_description": "GitHub token endpoint returned invalid JSON"}
                 status = HTTPStatus.BAD_GATEWAY
+
+            if 200 <= status < 300 and isinstance(payload, dict) and payload.get("access_token"):
+                access_token = str(payload.get("access_token") or "").strip()
+                auth = self.app._auth  # type: ignore[attr-defined]
+                if not isinstance(auth, ChatGPTRemoteAuthConfig):
+                    raise RuntimeError("unexpected remote auth configuration")
+                auth._verify_github_token(access_token)
+                access_ttl = int(payload.get("expires_in") or _DEFAULT_ACCESS_TOKEN_TTL_SECONDS)
+                wrapped: dict[str, Any] = dict(payload)
+                wrapped["access_token"] = _pack_resource_token(
+                    kind="access",
+                    github_token=access_token,
+                    resource=resource,
+                    expires_in=access_ttl,
+                )
+                wrapped["expires_in"] = access_ttl
+                upstream_refresh = str(payload.get("refresh_token") or "").strip()
+                if upstream_refresh:
+                    refresh_ttl = int(payload.get("refresh_token_expires_in") or 180 * 24 * 60 * 60)
+                    wrapped["refresh_token"] = _pack_resource_token(
+                        kind="refresh",
+                        github_token=upstream_refresh,
+                        resource=resource,
+                        expires_in=refresh_ttl,
+                    )
+                    wrapped["refresh_token_expires_in"] = refresh_ttl
+                payload = wrapped
             self._send_json(status, payload)
+        except base.RemoteTransportError as exc:
+            oauth_error = "temporarily_unavailable" if exc.http_status == 503 else "invalid_grant"
+            self._send_json(
+                exc.http_status,
+                {"error": oauth_error, "error_description": str(exc)},
+            )
         except (UnicodeDecodeError, ValueError) as exc:
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
