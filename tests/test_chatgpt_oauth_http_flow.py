@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import threading
 import unittest
 from unittest import mock
@@ -39,6 +40,15 @@ class _FakeGithubTokenResponse:
 
 class ChatGPTOAuthHttpFlowTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.env = mock.patch.dict(
+            os.environ,
+            {
+                "CBI_REMOTE_BEARER_TOKEN": "k" * 48,
+                "CBI_REMOTE_PUBLIC_BASE_URL": "https://cbi.example",
+            },
+            clear=False,
+        )
+        self.env.start()
         auth = ChatGPTRemoteAuthConfig(
             mode="bearer",
             bearer_token="k" * 48,
@@ -63,6 +73,7 @@ class ChatGPTOAuthHttpFlowTests(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
+        self.env.stop()
 
     def _request(
         self,
