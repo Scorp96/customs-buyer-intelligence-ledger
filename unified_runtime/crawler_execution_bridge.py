@@ -5,6 +5,8 @@ import hashlib
 import heapq
 import re
 import time
+from html import unescape
+from html.parser import HTMLParser
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Protocol
@@ -16,6 +18,19 @@ from .public_network_guard import is_public_http_url, validate_public_http_url
 EMAIL_RE = re.compile(r"(?<![A-Z0-9._%+-])([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})(?![A-Z0-9._%+-])", re.I)
 PHONE_RE = re.compile(r"(?<!\w)(\+?\d[\d\s().\-/]{7,}\d)(?!\w)")
 PHONE_CONTEXT_RE = re.compile(r"\b(?:phone|tel|telephone|mobile|cell|call|telefono|teléfono|telefone|celular|whatsapp)\b", re.I)
+MANIFEST_PHONE_CONTEXT_RE = re.compile(
+    r"(?:COMM\s+Number\s+Qualifier\s*[:|]?\s*(?:TE|FX)|COMM\s+Number\s*[:|])",
+    re.I,
+)
+MANIFEST_PARTY_FIELD_RE = re.compile(
+    r"(?i)^(?:Consignee|Importer|Buyer|Notify\s+Party)\s+Name\s*(?::|\|)?\s*(.*)$"
+)
+MANIFEST_QUALIFIER_FIELD_RE = re.compile(
+    r"(?i)^COMM\s+Number\s+Qualifier\s*(?::|\|)?\s*(.*)$"
+)
+MANIFEST_NUMBER_FIELD_RE = re.compile(
+    r"(?i)^COMM\s+Number\s*(?::|\|)?\s*(.*)$"
+)
 
 # Round 1 intentionally stays deterministic and local. These terms only rank
 # same-site links; they are not evidence by themselves.
@@ -210,7 +225,7 @@ class Crawl4AIBackend:
 
         success = bool(getattr(result, "success", True))
         error = getattr(result, "error_message", None) or getattr(result, "error", None)
-        markdown = _markdown_text(getattr(result, "markdown", ""))
+        markdown = _combined_result_text(result)
         links, link_hints = _result_link_data(getattr(result, "links", None), url)
         final_url = str(getattr(result, "url", None) or url)
         if self.public_network_only:
@@ -249,6 +264,73 @@ def _markdown_text(value: Any) -> str:
         if isinstance(candidate, str) and candidate:
             return candidate
     return str(value)
+
+
+class _VisibleHTMLTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._skip_depth = 0
+        self._parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in {"script", "style", "template"}:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"script", "style", "template"} and self._skip_depth:
+            self._skip_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        cleaned = " ".join(unescape(str(data or "")).split())
+        if cleaned:
+            self._parts.append(cleaned)
+
+    def text(self) -> str:
+        return "\n".join(self._parts)
+
+
+def _html_visible_text(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    parser = _VisibleHTMLTextParser()
+    try:
+        parser.feed(value)
+        parser.close()
+    except Exception:
+        return ""
+    return parser.text()
+
+
+def _combined_result_text(result: Any) -> str:
+    """Preserve markdown and recover visible HTML omitted by markdown extraction."""
+    candidates: list[str] = []
+    markdown = _markdown_text(getattr(result, "markdown", ""))
+    if markdown.strip():
+        candidates.append(markdown.strip())
+
+    structured_html_texts: list[str] = []
+    for attr in ("cleaned_html", "fit_html"):
+        html_text = _html_visible_text(getattr(result, attr, ""))
+        if html_text.strip():
+            structured_html_texts.append(html_text.strip())
+            candidates.append(html_text.strip())
+
+    if not structured_html_texts:
+        raw_html_text = _html_visible_text(getattr(result, "html", ""))
+        if raw_html_text.strip():
+            candidates.append(raw_html_text.strip())
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in candidates:
+        fingerprint = hashlib.sha256(value.encode("utf-8")).hexdigest()
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        unique.append(value)
+    return "\n\n".join(unique)
 
 
 def _result_link_data(value: Any, base_url: str) -> tuple[list[str], list[tuple[str, str]]]:
@@ -404,41 +486,203 @@ def _aggregate_sha(pages: list[CrawlPage]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _route_candidates(page: CrawlPage) -> list[dict[str, Any]]:
+def _normalize_entity_name(value: Any) -> str:
+    return "".join(ch for ch in str(value or "").casefold() if ch.isalnum())
+
+
+def _target_name_matches(observed: str, expected: str) -> bool:
+    left = _normalize_entity_name(observed)
+    right = _normalize_entity_name(expected)
+    return bool(left and right and (left in right or right in left))
+
+
+def _page_host(page: CrawlPage) -> str:
+    return (urlsplit(page.url).hostname or "").lower().removeprefix("www.")
+
+
+def _email_domain(value: str) -> str:
+    if "@" not in value:
+        return ""
+    return value.rsplit("@", 1)[-1].lower().removeprefix("www.")
+
+
+def _manifest_lines(text: str) -> list[str]:
+    rows: list[str] = []
+    for raw in str(text or "").splitlines():
+        cleaned = raw.strip().strip("|").strip()
+        cleaned = re.sub(r"[*_`#>]", "", cleaned)
+        cleaned = " ".join(cleaned.split())
+        if cleaned:
+            rows.append(cleaned)
+    return rows
+
+
+def _manifest_field_value(
+    rows: list[str],
+    index: int,
+    field_pattern: re.Pattern[str],
+) -> tuple[str | None, int]:
+    match = field_pattern.match(rows[index])
+    if not match:
+        return None, index
+    inline = str(match.group(1) or "").strip().strip("|").strip()
+    if inline:
+        return inline, index
+    if index + 1 >= len(rows):
+        return "", index
+    next_row = rows[index + 1]
+    if (
+        MANIFEST_PARTY_FIELD_RE.match(next_row)
+        or MANIFEST_QUALIFIER_FIELD_RE.match(next_row)
+        or MANIFEST_NUMBER_FIELD_RE.match(next_row)
+    ):
+        return "", index
+    return next_row, index + 1
+
+
+def _task_company_name(task: dict[str, Any]) -> str:
+    for key in ("company_name", "account_name", "legal_name", "buyer_name", "entity_name"):
+        value = " ".join(str(task.get(key) or "").split())
+        if value:
+            return value
+    query = str(task.get("query") or "")
+    quoted = re.search(r'"([^"\r\n]{2,180})"', query)
+    return " ".join(quoted.group(1).split()) if quoted else ""
+
+
+def _manifest_route_candidates(page: CrawlPage, task: dict[str, Any]) -> list[dict[str, Any]]:
+    company_name = _task_company_name(task)
+    rows = _manifest_lines(page.text)
+    active_party = ""
     candidates: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+
+    index = 0
+    while index < len(rows):
+        party_value, party_index = _manifest_field_value(
+            rows, index, MANIFEST_PARTY_FIELD_RE
+        )
+        if party_value is not None:
+            active_party = " ".join(party_value.split())
+            index = max(index, party_index) + 1
+            continue
+
+        qualifier_value, qualifier_index = _manifest_field_value(
+            rows, index, MANIFEST_QUALIFIER_FIELD_RE
+        )
+        if qualifier_value is None:
+            index += 1
+            continue
+
+        qualifier = qualifier_value.upper().strip()
+        search_index = qualifier_index + 1
+        raw_value = ""
+        consumed_index = qualifier_index
+        if search_index < len(rows):
+            number_value, number_index = _manifest_field_value(
+                rows, search_index, MANIFEST_NUMBER_FIELD_RE
+            )
+            if number_value is not None:
+                raw_value = number_value.strip()
+                consumed_index = max(consumed_index, number_index)
+
+        target_associated = _target_name_matches(active_party, company_name)
+        kind = ""
+        value = ""
+        if qualifier == "EM":
+            email_match = EMAIL_RE.search(raw_value)
+            if email_match:
+                kind = "EMAIL"
+                value = _normalize_email(email_match.group(1))
+        elif qualifier in {"TE", "FX"}:
+            kind = "PHONE"
+            value = _normalize_phone(raw_value)
+
+        key = (kind, value)
+        if kind and value and key not in seen:
+            seen.add(key)
+            candidates.append({
+                "kind": kind,
+                "value": value,
+                "source_url": page.url,
+                "evidence_id": _evidence_id(kind, value, page.url),
+                "candidate_owner_scope": (
+                    "TARGET_ASSOCIATED" if target_associated else "UNVERIFIED"
+                ),
+                "current_company_association": bool(target_associated),
+                "association_basis": [
+                    "STRUCTURED_MANIFEST_PARTY",
+                    f"PARTY_NAME={active_party}",
+                    f"COMM_QUALIFIER={qualifier}",
+                ],
+            })
+        index = max(index, consumed_index) + 1
+
+    return candidates
+
+
+def _route_candidates(page: CrawlPage, task: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    manifest_candidates = _manifest_route_candidates(page, task)
+    manifest_by_key = {
+        (row["kind"], row["value"]): row for row in manifest_candidates
+    }
 
     for match in EMAIL_RE.finditer(page.text):
         email = _normalize_email(match.group(1))
         key = ("EMAIL", email)
-        if email and key not in seen:
-            seen.add(key)
-            candidates.append({
-                "kind": "EMAIL",
-                "value": email,
-                "source_url": page.url,
-                "evidence_id": _evidence_id("EMAIL", email, page.url),
-            })
+        if not email or key in seen:
+            continue
+        seen.add(key)
+        structured = manifest_by_key.get(key)
+        if structured is not None:
+            candidates.append(structured)
+            continue
+        source_site = _email_domain(email) == _page_host(page)
+        candidates.append({
+            "kind": "EMAIL",
+            "value": email,
+            "source_url": page.url,
+            "evidence_id": _evidence_id("EMAIL", email, page.url),
+            "candidate_owner_scope": "SOURCE_SITE" if source_site else "UNVERIFIED",
+            "current_company_association": False,
+            "association_basis": ["GENERIC_TEXT_ROUTE"],
+        })
 
     for match in PHONE_RE.finditer(page.text):
         raw_phone = match.group(1)
         phone = _normalize_phone(raw_phone)
-        context_start = max(0, match.start() - 40)
-        context_end = min(len(page.text), match.end() + 20)
+        context_start = max(0, match.start() - 80)
+        context_end = min(len(page.text), match.end() + 40)
         context = page.text[context_start:context_end]
-        # A leading + is strong syntax evidence for an international number.
-        # Local-looking digit groups require nearby phone/channel context so
-        # dates, dimensions and order numbers are not promoted as routes.
-        phone_context_ok = raw_phone.lstrip().startswith("+") or bool(PHONE_CONTEXT_RE.search(context))
+        phone_context_ok = (
+            raw_phone.lstrip().startswith("+")
+            or bool(PHONE_CONTEXT_RE.search(context))
+            or bool(MANIFEST_PHONE_CONTEXT_RE.search(context))
+        )
         key = ("PHONE", phone)
         if phone and phone_context_ok and key not in seen:
             seen.add(key)
-            candidates.append({
-                "kind": "PHONE",
-                "value": phone,
-                "source_url": page.url,
-                "evidence_id": _evidence_id("PHONE", phone, page.url),
-            })
+            structured = manifest_by_key.get(key)
+            if structured is not None:
+                candidates.append(structured)
+            else:
+                candidates.append({
+                    "kind": "PHONE",
+                    "value": phone,
+                    "source_url": page.url,
+                    "evidence_id": _evidence_id("PHONE", phone, page.url),
+                    "candidate_owner_scope": "UNVERIFIED",
+                    "current_company_association": False,
+                    "association_basis": ["GENERIC_TEXT_ROUTE"],
+                })
+
+    for structured in manifest_candidates:
+        key = (structured["kind"], structured["value"])
+        if key not in seen:
+            seen.add(key)
+            candidates.append(structured)
 
     for link in page.links:
         phone = _whatsapp_phone(link)
@@ -451,6 +695,9 @@ def _route_candidates(page: CrawlPage) -> list[dict[str, Any]]:
                 "source_url": page.url,
                 "channel_url": link,
                 "evidence_id": _evidence_id("WHATSAPP", phone, page.url),
+                "candidate_owner_scope": "SOURCE_SITE",
+                "current_company_association": False,
+                "association_basis": ["PUBLIC_WHATSAPP_LINK"],
             })
 
     return candidates
@@ -689,7 +936,7 @@ class CrawlExecutionBridge:
         route_candidates: list[dict[str, Any]] = []
         seen_routes: set[tuple[str, str]] = set()
         for page in pages:
-            for candidate in _route_candidates(page):
+            for candidate in _route_candidates(page, task):
                 key = (candidate["kind"], candidate["value"])
                 if key not in seen_routes:
                     seen_routes.add(key)
