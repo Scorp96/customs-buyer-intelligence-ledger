@@ -195,6 +195,8 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("geography is required for discovery query generation")
     applications = [str(v).upper() for v in context.get("applications", []) if str(v).strip()]
     archetypes = [str(v).upper() for v in context.get("buyer_archetypes", []) if str(v).strip()]
+    application_input_source = "EXPLICIT_CONTEXT" if applications else "NONE"
+    buyer_archetype_input_source = "EXPLICIT_CONTEXT" if archetypes else "NONE"
     variant = str(context.get("product_variant") or "").upper()
     local_terms = [str(v).strip() for v in context.get("local_language_terms", []) if str(v).strip()]
     locale = str(context.get("locale") or "").strip()
@@ -210,8 +212,12 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         if mapping:
             if not applications:
                 applications = list(mapping.get("applications") or [])
+                if applications:
+                    application_input_source = "VARIANT_PRIOR"
             if not archetypes:
                 archetypes = list(mapping.get("buyer_archetypes") or [])
+                if archetypes:
+                    buyer_archetype_input_source = "VARIANT_PRIOR"
 
     archetype_priority_applied = False
     if archetypes:
@@ -297,5 +303,11 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         "locale_pack_version": locale_pack_version,
         "localized_terms_are_planning_only": True,
         "archetype_priority_applied": archetype_priority_applied,
+        "ordered_applications": list(applications),
         "ordered_buyer_archetypes": list(archetypes),
+        "application_input_source": application_input_source,
+        "buyer_archetype_input_source": buyer_archetype_input_source,
+        "explicit_context_precedence_over_variant_prior": True,
+        "variant_prior_is_discovery_fallback_only": True,
+        "variant_prior_is_negative_evidence": False,
     }
