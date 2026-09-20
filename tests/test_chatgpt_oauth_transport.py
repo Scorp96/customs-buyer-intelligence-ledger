@@ -9,10 +9,14 @@ from mcp.chatgpt_oauth_transport import (
     ChatGPTRemoteAuthConfig,
     _authorization_server_metadata,
     _is_chatgpt_redirect_uri,
+    _expected_resource,
     _pack_oauth_state,
+    _pack_resource_token,
     _protected_resource_metadata,
     _public_base_url,
     _unpack_oauth_state,
+    _unpack_resource_token,
+    _validated_resource,
     _validated_scope,
 )
 from mcp.github_oauth import GitHubOAuthForbidden, GitHubOAuthInvalid
@@ -123,6 +127,7 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
         self.assertEqual("https://cbi.example/mcp", protected["resource"])
         self.assertEqual([base_url], protected["authorization_servers"])
         self.assertEqual(["read:user", "offline_access"], protected["scopes_supported"])
+        self.assertEqual(["S256"], protected["code_challenge_methods_supported"])
         self.assertEqual(base_url, authorization["issuer"])
         self.assertEqual("https://cbi.example/oauth/authorize", authorization["authorization_endpoint"])
         self.assertEqual("https://cbi.example/oauth/token", authorization["token_endpoint"])
@@ -136,10 +141,12 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
             token = _pack_oauth_state(
                 client_state="chatgpt-state",
                 redirect_uri="https://chatgpt.com/connector_platform_oauth_redirect",
+                resource="https://cbi.example/mcp",
                 now=1000,
             )
             payload = _unpack_oauth_state(token, now=1001)
             self.assertEqual("chatgpt-state", payload["state"])
+            self.assertEqual("https://cbi.example/mcp", payload["resource"])
             self.assertEqual(
                 "https://chatgpt.com/connector_platform_oauth_redirect",
                 payload["redirect_uri"],
@@ -157,6 +164,79 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
         self.assertEqual("read:user offline_access", _validated_scope("offline_access read:user"))
         with self.assertRaises(ValueError):
             _validated_scope("repo")
+
+    def test_resource_binding_is_exact_and_fail_closed(self) -> None:
+        base_url = "https://cbi.example"
+        self.assertEqual("https://cbi.example/mcp", _expected_resource(base_url))
+        self.assertEqual(
+            "https://cbi.example/mcp",
+            _validated_resource("https://cbi.example/mcp", base_url),
+        )
+        with self.assertRaises(ValueError):
+            _validated_resource("", base_url)
+        with self.assertRaises(ValueError):
+            _validated_resource("https://cbi.example/other", base_url)
+        with self.assertRaises(ValueError):
+            _validated_resource("https://other.example/mcp", base_url)
+
+    def test_resource_token_rejects_tamper_expiry_kind_and_cross_resource_reuse(self) -> None:
+        with mock.patch.dict(os.environ, {"CBI_REMOTE_BEARER_TOKEN": "k" * 48}, clear=False):
+            token = _pack_resource_token(
+                kind="access",
+                github_token="gho_example",
+                resource="https://cbi.example/mcp",
+                expires_in=300,
+                now=1000,
+            )
+            self.assertEqual(
+                "gho_example",
+                _unpack_resource_token(
+                    token,
+                    kind="access",
+                    resource="https://cbi.example/mcp",
+                    now=1001,
+                ),
+            )
+            with self.assertRaises(ValueError):
+                _unpack_resource_token(
+                    token + "x",
+                    kind="access",
+                    resource="https://cbi.example/mcp",
+                    now=1001,
+                )
+            with self.assertRaises(ValueError):
+                _unpack_resource_token(
+                    token,
+                    kind="refresh",
+                    resource="https://cbi.example/mcp",
+                    now=1001,
+                )
+            with self.assertRaises(ValueError):
+                _unpack_resource_token(
+                    token,
+                    kind="access",
+                    resource="https://other.example/mcp",
+                    now=1001,
+                )
+            with self.assertRaises(ValueError):
+                _unpack_resource_token(
+                    token,
+                    kind="access",
+                    resource="https://cbi.example/mcp",
+                    now=1300,
+                )
+
+    def test_github_oauth_mode_requires_internal_signing_key(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "CBI_REMOTE_AUTH_MODE": "github_oauth",
+                "CBI_REMOTE_GITHUB_ALLOWED_LOGINS": "Scorp96",
+            },
+            clear=True,
+        ):
+            with self.assertRaises(RuntimeError):
+                ChatGPTRemoteAuthConfig.from_env()
 
     def test_public_base_url_can_be_pinned_for_render(self) -> None:
         with mock.patch.dict(
