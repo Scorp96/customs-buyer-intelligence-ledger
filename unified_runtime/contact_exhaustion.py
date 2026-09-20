@@ -142,9 +142,32 @@ def named_role_relevant(product_profile_id: str, buyer_archetypes: list[str], ro
 
 
 def contact_exhaustion_complete(plan_state: dict[str, Any]) -> bool:
-    if str(plan_state.get("named_route_status") or "") in {"NAMED_ROUTE_READY", "FOLLOW_UP_READY", "SEND_READY"}:
+    """Compatibility helper for terminal contact-research state.
+
+    Active source execution uses evaluate_contact_coverage. This helper must
+    mirror its fail-closed policy closely enough that a high-value opportunity
+    cannot be declared exhausted merely because a generic company route exists.
+    """
+
+    named_status = str(plan_state.get("named_route_status") or "").strip().upper()
+    company_status = str(plan_state.get("company_route_status") or "").strip().upper()
+
+    if named_status in {"NAMED_ROUTE_READY", "FOLLOW_UP_READY", "SEND_READY"}:
         return True
-    if str(plan_state.get("company_route_status") or "") in {"COMPANY_ROUTE_READY", "FOLLOW_UP_READY", "SEND_READY"}:
+
+    named_policy = str(plan_state.get("named_route_policy") or "").strip().upper()
+    grade = str(plan_state.get("commercial_value_grade") or "").strip().upper()
+    named_required = (
+        bool(plan_state.get("named_route_required_for_completion"))
+        or bool(plan_state.get("named_route_exhaustive"))
+        or named_policy == "EXHAUSTIVE"
+        or grade == "A+"
+    )
+
+    # COMPANY_ROUTE_READY remains a valid outreach-readiness state, but it is
+    # not a terminal contact-research state when named-person research is
+    # required (notably A+ / EXHAUSTIVE opportunities).
+    if company_status in {"COMPANY_ROUTE_READY", "FOLLOW_UP_READY", "SEND_READY"} and not named_required:
         return True
 
     receipts = list(plan_state.get("applicable_material_source_receipts") or [])
