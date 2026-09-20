@@ -354,6 +354,40 @@ PRODUCT_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
 }
 
 
+# Accepted historical content pins keep durable opportunities replayable after a
+# discovery-prior profile refinement. This is not a wildcard: only explicitly
+# recorded profile/version/hash triples are accepted, and unknown hashes remain
+# fail-closed.
+LEGACY_PRODUCT_PROFILE_SHA256: dict[str, dict[str, frozenset[str]]] = {
+    "PVC": {
+        "1": frozenset({
+            "17b7c762e04966088f700da8ce75670d519f1d2930d3d8f2e0b72d048b012eeb",
+        }),
+    },
+}
+
+
+def is_known_product_profile_pin(profile_id: str, version: str, sha256: str) -> bool:
+    key = str(profile_id or "").strip().upper()
+    version_key = str(version or "").strip()
+    supplied = str(sha256 or "").strip().lower()
+    if not key or not version_key or not supplied:
+        return False
+    try:
+        current = get_product_profile(key)
+    except KeyError:
+        return False
+    if (
+        version_key == str(current["profile_version"])
+        and supplied == str(current["profile_sha256"]).lower()
+    ):
+        return True
+    return supplied in LEGACY_PRODUCT_PROFILE_SHA256.get(key, {}).get(
+        version_key,
+        frozenset(),
+    )
+
+
 _MARKETING_ALIAS_INDEX = {
     alias.casefold(): profile_id
     for profile_id, profile in PRODUCT_PROFILE_REGISTRY.items()
