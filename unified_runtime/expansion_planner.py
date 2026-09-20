@@ -195,6 +195,10 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("geography is required for discovery query generation")
     applications = [str(v).upper() for v in context.get("applications", []) if str(v).strip()]
     archetypes = [str(v).upper() for v in context.get("buyer_archetypes", []) if str(v).strip()]
+    explicit_applications = bool(applications)
+    explicit_archetypes = bool(archetypes)
+    variant_prior_applications_applied = False
+    variant_prior_archetypes_applied = False
     variant = str(context.get("product_variant") or "").upper()
     local_terms = [str(v).strip() for v in context.get("local_language_terms", []) if str(v).strip()]
     locale = str(context.get("locale") or "").strip()
@@ -210,8 +214,10 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         if mapping:
             if not applications:
                 applications = list(mapping.get("applications") or [])
+                variant_prior_applications_applied = True
             if not archetypes:
                 archetypes = list(mapping.get("buyer_archetypes") or [])
+                variant_prior_archetypes_applied = True
 
     archetype_priority_applied = False
     if archetypes:
@@ -298,4 +304,15 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         "localized_terms_are_planning_only": True,
         "archetype_priority_applied": archetype_priority_applied,
         "ordered_buyer_archetypes": list(archetypes),
+        "variant_mapping_role": (
+            (profile.get("variant_application_map_policy") or {}).get("role")
+            if variant else None
+        ),
+        "variant_mapping_is_qualification_gate": bool(
+            (profile.get("variant_application_map_policy") or {}).get("qualification_gate")
+        ) if variant else False,
+        "variant_prior_applications_applied": variant_prior_applications_applied,
+        "variant_prior_archetypes_applied": variant_prior_archetypes_applied,
+        "explicit_applications_override_variant_prior": explicit_applications,
+        "explicit_archetypes_override_variant_prior": explicit_archetypes,
     }
