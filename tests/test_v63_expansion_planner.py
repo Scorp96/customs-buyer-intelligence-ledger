@@ -144,6 +144,47 @@ class V63DiscoveryQueryTests(unittest.TestCase):
         self.assertTrue(result["truncated"])
         self.assertEqual(result["returned_count"], 2)
 
+class V63VariantPriorPrecedenceTests(unittest.TestCase):
+    def test_celuka_variant_prior_covers_sign_and_display_when_context_is_empty(self):
+        from unified_runtime.expansion_planner import generate_discovery_queries
+        result = generate_discovery_queries({
+            "product_profile_id": "PVC",
+            "product_variant": "CELUKA",
+            "applications": [],
+            "buyer_archetypes": [],
+            "geography": "Synthetic Market",
+            "limit": 100,
+        })
+        self.assertEqual(result["application_input_source"], "VARIANT_PRIOR")
+        self.assertEqual(result["buyer_archetype_input_source"], "VARIANT_PRIOR")
+        self.assertTrue(
+            {"SIGNAGE", "DISPLAY", "EXHIBITION_DISPLAY", "POP_DISPLAY"}
+            <= set(result["ordered_applications"])
+        )
+        self.assertTrue(
+            {"SIGN_MAKER", "SIGN_MATERIAL_DISTRIBUTOR", "DISPLAY_MANUFACTURER"}
+            <= set(result["ordered_buyer_archetypes"])
+        )
+        self.assertFalse(result["variant_prior_is_negative_evidence"])
+
+    def test_explicit_context_wins_over_celuka_variant_prior(self):
+        from unified_runtime.expansion_planner import generate_discovery_queries
+        result = generate_discovery_queries({
+            "product_profile_id": "PVC",
+            "product_variant": "CELUKA",
+            "applications": ["CABINETRY"],
+            "buyer_archetypes": ["CABINET_MANUFACTURER"],
+            "geography": "Synthetic Market",
+            "limit": 20,
+        })
+        self.assertEqual(result["application_input_source"], "EXPLICIT_CONTEXT")
+        self.assertEqual(result["buyer_archetype_input_source"], "EXPLICIT_CONTEXT")
+        self.assertEqual(result["ordered_applications"], ["CABINETRY"])
+        self.assertEqual(result["ordered_buyer_archetypes"], ["CABINET_MANUFACTURER"])
+        self.assertTrue(result["explicit_context_precedence_over_variant_prior"])
+        self.assertTrue(result["variant_prior_is_discovery_fallback_only"])
+
+
 class V63ArchetypePriorityQueryTests(unittest.TestCase):
     def test_query_generation_applies_buyer_archetype_discovery_priority(self):
         from unified_runtime.expansion_planner import generate_discovery_queries
