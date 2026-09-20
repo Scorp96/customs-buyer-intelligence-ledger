@@ -101,6 +101,14 @@ class V61PortfolioHardeningMixin:
         return f"{account_id}::{scope}"
 
     def _portfolio_row(self, investigation_id: str) -> dict[str, Any]:
+        store = getattr(self, "store", None)
+        snapshot_scope = getattr(store, "verified_read_snapshot", None)
+        if callable(snapshot_scope):
+            with snapshot_scope(investigation_id):
+                return self._portfolio_row_from_verified_snapshot(investigation_id)
+        return self._portfolio_row_from_verified_snapshot(investigation_id)
+
+    def _portfolio_row_from_verified_snapshot(self, investigation_id: str) -> dict[str, Any]:
         state = self._v6_state(investigation_id)
         start = state["start"]
         account = self.get_account_state({"investigation_id": investigation_id})
