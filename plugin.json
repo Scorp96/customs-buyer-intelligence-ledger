@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "customs-buyer-intelligence",
+  "version": "6.4.0+codex.20260918",
+  "description": "One-shot customs buyer intelligence with historical backfill, validated six-branch network fission, CONTACT-FIRST public buyer research, cloud monitoring, and guarded CRM/outreach workflows.",
+  "author": {
+    "name": "Xinghuai Sales Intelligence"
+  },
+  "repository": "https://github.com/Scorp96/customs-buyer-intelligence-ledger",
+  "keywords": [
+    "customs buyer intelligence",
+    "customs data",
+    "buyer research",
+    "contact research",
+    "decision makers",
+    "trade intelligence",
+    "network fission",
+    "海关买家",
+    "外贸客户开发"
+  ]
+}
