@@ -49,11 +49,36 @@ class V63ContactExhaustionTests(unittest.TestCase):
             )
         )
 
-    def test_company_route_ready_is_terminal_for_company_requirement(self):
+    def test_company_route_ready_is_terminal_when_named_route_is_not_required(self):
         self.assertTrue(contact_exhaustion_complete({
+            "commercial_value_grade": "B+",
+            "named_route_policy": "EIV_DRIVEN",
             "company_route_status": "COMPANY_ROUTE_READY",
             "named_route_status": "IDENTITY_ONLY",
             "applicable_material_source_receipts": [],
+        }))
+
+    def test_a_plus_company_route_ready_does_not_complete_named_exhaustion(self):
+        self.assertFalse(contact_exhaustion_complete({
+            "commercial_value_grade": "A+",
+            "named_route_policy": "EXHAUSTIVE",
+            "named_route_exhaustive": True,
+            "company_route_status": "COMPANY_ROUTE_READY",
+            "named_route_status": "IDENTITY_ONLY",
+            "applicable_material_source_receipts": [],
+        }))
+
+    def test_a_plus_can_complete_after_all_material_sources_terminal(self):
+        self.assertTrue(contact_exhaustion_complete({
+            "commercial_value_grade": "A+",
+            "named_route_policy": "EXHAUSTIVE",
+            "named_route_exhaustive": True,
+            "company_route_status": "COMPANY_ROUTE_READY",
+            "named_route_status": "IDENTITY_ONLY",
+            "applicable_material_source_receipts": [
+                {"source_family": "linkedin_people", "result": "NEGATIVE_EXHAUSTED"},
+                {"source_family": "government_registry", "result": "NOT_APPLICABLE_JUSTIFIED"},
+            ],
         }))
 
     def test_blocked_receipts_do_not_complete_exhaustion(self):
