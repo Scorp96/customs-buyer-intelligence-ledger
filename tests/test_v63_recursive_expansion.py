@@ -35,6 +35,17 @@ class V63RecursiveExpansionTests(unittest.TestCase):
         self.assertFalse(result["planning_is_execution_proof"])
         self.assertFalse(result["persistent_mutation_performed"])
 
+    def test_market_cell_application_context_overrides_variant_prior(self):
+        payload = self._payload()
+        payload["promoted_anchor"]["product_variant"] = "CELUKA"
+        result = prepare_recursive_expansion(payload)
+        discovery = result["discovery_plan"]
+        self.assertEqual(discovery["application_input_source"], "EXPLICIT_CONTEXT")
+        self.assertEqual(discovery["buyer_archetype_input_source"], "EXPLICIT_CONTEXT")
+        self.assertEqual(discovery["ordered_applications"], ["CABINETRY"])
+        self.assertEqual(discovery["ordered_buyer_archetypes"], ["CABINET_MANUFACTURER"])
+        self.assertTrue(discovery["explicit_context_precedence_over_variant_prior"])
+
     def test_same_anchor_cannot_reexpand_in_same_cycle(self):
         payload = self._payload()
         payload["visited_anchor_ids"] = ["OPP-C501-PVC-PRIMARY"]
