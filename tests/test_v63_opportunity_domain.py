@@ -77,6 +77,28 @@ class V63OpportunityProfilePinningTests(unittest.TestCase):
                 "product_profile_version": "999",
             })
 
+    def test_explicit_legacy_profile_pin_replays_without_rewriting_identity(self):
+        legacy_sha = "17b7c762e04966088f700da8ce75670d519f1d2930d3d8f2e0b72d048b012eeb"
+        result = validate_product_opportunity({
+            "opportunity_id": "OPP-C500-PVC-LEGACY",
+            "account_id": "C500",
+            "product_profile_id": "PVC",
+            "product_profile_version": "1",
+            "product_profile_sha256": legacy_sha,
+        })
+        self.assertEqual(result["product_profile_version"], "1")
+        self.assertEqual(result["product_profile_sha256"], legacy_sha)
+
+    def test_unknown_profile_sha_still_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "product profile sha256 pin mismatch"):
+            validate_product_opportunity({
+                "opportunity_id": "OPP-C500-PVC-BADPIN",
+                "account_id": "C500",
+                "product_profile_id": "PVC",
+                "product_profile_version": "1",
+                "product_profile_sha256": "f" * 64,
+            })
+
     def test_lifecycle_transition_is_monotonic(self):
         from unified_runtime.opportunity_domain import validate_lifecycle_transition
         result = validate_lifecycle_transition("QUALIFIED_TARGET", "CONTACT_EXHAUSTION")
