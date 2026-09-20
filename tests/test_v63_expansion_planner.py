@@ -156,8 +156,13 @@ class V63CelukaDiscoveryPriorTests(unittest.TestCase):
         joined = "\n".join(row["query"].upper() for row in result["queries"])
         self.assertTrue(result["variant_prior_applications_applied"])
         self.assertTrue(result["variant_prior_archetypes_applied"])
+        self.assertTrue(result["variant_prior_cross_product_suppressed"])
         self.assertEqual(result["variant_mapping_role"], "DISCOVERY_PRIOR")
         self.assertFalse(result["variant_mapping_is_qualification_gate"])
+        self.assertFalse(any(
+            row["basis"] == "PRODUCT_X_ARCHETYPE_X_APPLICATION_X_GEOGRAPHY"
+            for row in result["queries"]
+        ))
         self.assertIn("SIGN MATERIAL DISTRIBUTOR", joined)
         self.assertIn("SIGNAGE", joined)
         self.assertIn("DISPLAY", joined)
@@ -175,6 +180,7 @@ class V63CelukaDiscoveryPriorTests(unittest.TestCase):
         joined = "\n".join(row["query"].upper() for row in result["queries"])
         self.assertFalse(result["variant_prior_applications_applied"])
         self.assertFalse(result["variant_prior_archetypes_applied"])
+        self.assertFalse(result["variant_prior_cross_product_suppressed"])
         self.assertTrue(result["explicit_applications_override_variant_prior"])
         self.assertTrue(result["explicit_archetypes_override_variant_prior"])
         self.assertIn("CABINET MANUFACTURER", joined)
