@@ -69,7 +69,7 @@ class HostSearchCrawlBridgeExecutionTests(unittest.TestCase):
             "route_candidates": [
                 {
                     "kind": "EMAIL",
-                    "value": "sales@example.test",
+                    "value": "sales@example.com",
                     "candidate_owner_scope": "UNVERIFIED",
                 }
             ],
