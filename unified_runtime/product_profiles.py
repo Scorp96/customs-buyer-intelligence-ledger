@@ -48,14 +48,44 @@ PRODUCT_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
             "SPACE_BOARD",
             "HONEYCOMB_BOARD",
         ],
+        "variant_application_map_policy": {
+            "role": "DISCOVERY_PRIOR",
+            "qualification_gate": False,
+            "proves_procurement": False,
+            "proves_application_fit": False,
+            "explicit_context_overrides_prior": True,
+            "verified_observed_evidence_overrides_prior": True,
+        },
         "variant_application_map": {
             "FREE_FOAM": {
                 "applications": ["SIGNAGE", "UV_PRINTING", "CNC_ROUTING", "EXHIBITION_DISPLAY", "POP_DISPLAY"],
                 "buyer_archetypes": ["SIGN_MAKER", "SIGN_MATERIAL_DISTRIBUTOR", "DISPLAY_MANUFACTURER", "UV_PRINTING_COMPANY", "CNC_FABRICATOR", "EXHIBITION_CONTRACTOR"],
             },
             "CELUKA": {
-                "applications": ["CABINETRY", "BATHROOM_VANITY", "FURNITURE", "INTERIOR_FITOUT", "CNC_ROUTING"],
-                "buyer_archetypes": ["CABINET_MANUFACTURER", "BATHROOM_VANITY_MANUFACTURER", "FURNITURE_MANUFACTURER", "INTERIOR_FITOUT_COMPANY", "CNC_FABRICATOR"],
+                "applications": [
+                    "SIGNAGE",
+                    "UV_PRINTING",
+                    "EXHIBITION_DISPLAY",
+                    "POP_DISPLAY",
+                    "DISPLAY",
+                    "CABINETRY",
+                    "BATHROOM_VANITY",
+                    "FURNITURE",
+                    "INTERIOR_FITOUT",
+                    "CNC_ROUTING",
+                ],
+                "buyer_archetypes": [
+                    "SIGN_MATERIAL_DISTRIBUTOR",
+                    "SIGN_MAKER",
+                    "DISPLAY_MANUFACTURER",
+                    "UV_PRINTING_COMPANY",
+                    "EXHIBITION_CONTRACTOR",
+                    "CABINET_MANUFACTURER",
+                    "BATHROOM_VANITY_MANUFACTURER",
+                    "FURNITURE_MANUFACTURER",
+                    "INTERIOR_FITOUT_COMPANY",
+                    "CNC_FABRICATOR",
+                ],
             },
             "CO_EXTRUDED": {
                 "applications": ["DISPLAY", "CABINETRY", "VEHICLE_INTERIOR", "FABRICATION"],
@@ -181,6 +211,9 @@ PRODUCT_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
             "sign supplies",
             "sign materials",
             "display materials",
+            "Celuka sign board",
+            "Celuka advertising board",
+            "PVC display board",
             "UV printing substrate",
             "CNC routing",
             "cabinet maker",
@@ -319,6 +352,40 @@ PRODUCT_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
         "technical_claim_boundaries": ["acrylic application overlap does not establish PVC demand"],
     },
 }
+
+
+# Accepted historical content pins keep durable opportunities replayable after a
+# discovery-prior profile refinement. This is not a wildcard: only explicitly
+# recorded profile/version/hash triples are accepted, and unknown hashes remain
+# fail-closed.
+LEGACY_PRODUCT_PROFILE_SHA256: dict[str, dict[str, frozenset[str]]] = {
+    "PVC": {
+        "1": frozenset({
+            "17b7c762e04966088f700da8ce75670d519f1d2930d3d8f2e0b72d048b012eeb",
+        }),
+    },
+}
+
+
+def is_known_product_profile_pin(profile_id: str, version: str, sha256: str) -> bool:
+    key = str(profile_id or "").strip().upper()
+    version_key = str(version or "").strip()
+    supplied = str(sha256 or "").strip().lower()
+    if not key or not version_key or not supplied:
+        return False
+    try:
+        current = get_product_profile(key)
+    except KeyError:
+        return False
+    if (
+        version_key == str(current["profile_version"])
+        and supplied == str(current["profile_sha256"]).lower()
+    ):
+        return True
+    return supplied in LEGACY_PRODUCT_PROFILE_SHA256.get(key, {}).get(
+        version_key,
+        frozenset(),
+    )
 
 
 _MARKETING_ALIAS_INDEX = {

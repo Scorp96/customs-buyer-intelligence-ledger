@@ -195,6 +195,12 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("geography is required for discovery query generation")
     applications = [str(v).upper() for v in context.get("applications", []) if str(v).strip()]
     archetypes = [str(v).upper() for v in context.get("buyer_archetypes", []) if str(v).strip()]
+    applications_from_variant_prior = bool(context.get("applications_from_variant_prior", False))
+    archetypes_from_variant_prior = bool(context.get("buyer_archetypes_from_variant_prior", False))
+    explicit_applications = bool(applications) and not applications_from_variant_prior
+    explicit_archetypes = bool(archetypes) and not archetypes_from_variant_prior
+    variant_prior_applications_applied = bool(applications) and applications_from_variant_prior
+    variant_prior_archetypes_applied = bool(archetypes) and archetypes_from_variant_prior
     variant = str(context.get("product_variant") or "").upper()
     local_terms = [str(v).strip() for v in context.get("local_language_terms", []) if str(v).strip()]
     locale = str(context.get("locale") or "").strip()
@@ -210,8 +216,14 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         if mapping:
             if not applications:
                 applications = list(mapping.get("applications") or [])
+                variant_prior_applications_applied = True
             if not archetypes:
                 archetypes = list(mapping.get("buyer_archetypes") or [])
+                variant_prior_archetypes_applied = True
+
+    variant_prior_cross_product_suppressed = (
+        variant_prior_applications_applied and variant_prior_archetypes_applied
+    )
 
     archetype_priority_applied = False
     if archetypes:
@@ -265,19 +277,35 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
             "search_execution_performed": False,
         })
 
-    for product in product_terms:
-        for archetype in archetypes or [""]:
-            for application in applications or [""]:
-                add(
-                    f'{product} {_readable_token(archetype)} {_readable_token(application)} {geography}',
-                    "PRODUCT_X_ARCHETYPE_X_APPLICATION_X_GEOGRAPHY",
-                )
-        for term in commercial_terms:
-            add(f'{product} "{term}" {geography}', "PRODUCT_X_COMMERCIAL_TERM_X_GEOGRAPHY")
-
+    # Curated local-language pivots are high-yield and must survive truncation.
     for term in local_terms:
         add(f'{profile_id} "{term}" {geography}', "PRODUCT_X_LOCAL_TERM_X_GEOGRAPHY")
         add(f'"{term}" {geography}', "LOCAL_TERM_X_GEOGRAPHY")
+
+    for product in product_terms:
+        if variant_prior_cross_product_suppressed:
+            # A broad static variant prior should not manufacture implausible
+            # archetype x application pairs (for example cabinet maker x signage).
+            # Keep both dimensions discoverable without the Cartesian explosion.
+            for archetype in archetypes:
+                add(
+                    f'{product} {_readable_token(archetype)} {geography}',
+                    "PRODUCT_X_ARCHETYPE_X_GEOGRAPHY",
+                )
+            for application in applications:
+                add(
+                    f'{product} {_readable_token(application)} {geography}',
+                    "PRODUCT_X_APPLICATION_X_GEOGRAPHY",
+                )
+        else:
+            for archetype in archetypes or [""]:
+                for application in applications or [""]:
+                    add(
+                        f'{product} {_readable_token(archetype)} {_readable_token(application)} {geography}',
+                        "PRODUCT_X_ARCHETYPE_X_APPLICATION_X_GEOGRAPHY",
+                    )
+        for term in commercial_terms:
+            add(f'{product} "{term}" {geography}', "PRODUCT_X_COMMERCIAL_TERM_X_GEOGRAPHY")
 
     candidate_count = len(rows)
     returned = rows[:limit]
@@ -298,4 +326,16 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         "localized_terms_are_planning_only": True,
         "archetype_priority_applied": archetype_priority_applied,
         "ordered_buyer_archetypes": list(archetypes),
+        "variant_mapping_role": (
+            (profile.get("variant_application_map_policy") or {}).get("role")
+            if variant else None
+        ),
+        "variant_mapping_is_qualification_gate": bool(
+            (profile.get("variant_application_map_policy") or {}).get("qualification_gate")
+        ) if variant else False,
+        "variant_prior_applications_applied": variant_prior_applications_applied,
+        "variant_prior_archetypes_applied": variant_prior_archetypes_applied,
+        "variant_prior_cross_product_suppressed": variant_prior_cross_product_suppressed,
+        "explicit_applications_override_variant_prior": explicit_applications,
+        "explicit_archetypes_override_variant_prior": explicit_archetypes,
     }

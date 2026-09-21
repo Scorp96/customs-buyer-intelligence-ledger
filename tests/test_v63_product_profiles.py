@@ -49,12 +49,28 @@ if __name__ == "__main__":
     unittest.main()
 
 class V63ProductApplicationMappingTests(unittest.TestCase):
-    def test_celuka_maps_to_cabinet_and_furniture_archetypes(self):
+    def test_celuka_maps_to_cabinet_and_sign_display_archetypes(self):
         pvc = get_product_profile("PVC")
         mapping = pvc["variant_application_map"]["CELUKA"]
         self.assertIn("CABINETRY", mapping["applications"])
         self.assertIn("CABINET_MANUFACTURER", mapping["buyer_archetypes"])
         self.assertIn("BATHROOM_VANITY_MANUFACTURER", mapping["buyer_archetypes"])
+        self.assertIn("SIGNAGE", mapping["applications"])
+        self.assertIn("UV_PRINTING", mapping["applications"])
+        self.assertIn("DISPLAY", mapping["applications"])
+        self.assertIn("POP_DISPLAY", mapping["applications"])
+        self.assertIn("SIGN_MATERIAL_DISTRIBUTOR", mapping["buyer_archetypes"])
+        self.assertIn("DISPLAY_MANUFACTURER", mapping["buyer_archetypes"])
+
+    def test_variant_application_map_is_discovery_prior_not_qualification_gate(self):
+        pvc = get_product_profile("PVC")
+        policy = pvc["variant_application_map_policy"]
+        self.assertEqual(policy["role"], "DISCOVERY_PRIOR")
+        self.assertFalse(policy["qualification_gate"])
+        self.assertFalse(policy["proves_procurement"])
+        self.assertFalse(policy["proves_application_fit"])
+        self.assertTrue(policy["explicit_context_overrides_prior"])
+        self.assertTrue(policy["verified_observed_evidence_overrides_prior"])
 
     def test_free_foam_maps_to_signage_display_archetypes(self):
         pvc = get_product_profile("PVC")

@@ -144,6 +144,71 @@ class V63DiscoveryQueryTests(unittest.TestCase):
         self.assertTrue(result["truncated"])
         self.assertEqual(result["returned_count"], 2)
 
+class V63CelukaDiscoveryPriorTests(unittest.TestCase):
+    def test_celuka_default_queries_include_sign_display_routes(self):
+        from unified_runtime.expansion_planner import generate_discovery_queries
+        result = generate_discovery_queries({
+            "product_profile_id": "PVC",
+            "product_variant": "CELUKA",
+            "geography": "Indonesia",
+            "limit": 1000,
+        })
+        joined = "\n".join(row["query"].upper() for row in result["queries"])
+        self.assertTrue(result["variant_prior_applications_applied"])
+        self.assertTrue(result["variant_prior_archetypes_applied"])
+        self.assertTrue(result["variant_prior_cross_product_suppressed"])
+        self.assertEqual(result["variant_mapping_role"], "DISCOVERY_PRIOR")
+        self.assertFalse(result["variant_mapping_is_qualification_gate"])
+        self.assertFalse(any(
+            row["basis"] == "PRODUCT_X_ARCHETYPE_X_APPLICATION_X_GEOGRAPHY"
+            for row in result["queries"]
+        ))
+        self.assertIn("SIGN MATERIAL DISTRIBUTOR", joined)
+        self.assertIn("SIGNAGE", joined)
+        self.assertIn("DISPLAY", joined)
+
+    def test_prepopulated_variant_prior_provenance_still_suppresses_cross_product(self):
+        from unified_runtime.expansion_planner import generate_discovery_queries
+        result = generate_discovery_queries({
+            "product_profile_id": "PVC",
+            "product_variant": "CELUKA",
+            "applications": ["SIGNAGE", "CABINETRY"],
+            "buyer_archetypes": ["SIGN_MATERIAL_DISTRIBUTOR", "CABINET_MANUFACTURER"],
+            "applications_from_variant_prior": True,
+            "buyer_archetypes_from_variant_prior": True,
+            "geography": "Vietnam",
+            "limit": 100,
+        })
+        self.assertTrue(result["variant_prior_applications_applied"])
+        self.assertTrue(result["variant_prior_archetypes_applied"])
+        self.assertTrue(result["variant_prior_cross_product_suppressed"])
+        self.assertFalse(result["explicit_applications_override_variant_prior"])
+        self.assertFalse(result["explicit_archetypes_override_variant_prior"])
+        self.assertFalse(any(
+            row["basis"] == "PRODUCT_X_ARCHETYPE_X_APPLICATION_X_GEOGRAPHY"
+            for row in result["queries"]
+        ))
+
+    def test_explicit_context_overrides_celuka_discovery_prior(self):
+        from unified_runtime.expansion_planner import generate_discovery_queries
+        result = generate_discovery_queries({
+            "product_profile_id": "PVC",
+            "product_variant": "CELUKA",
+            "applications": ["CABINETRY"],
+            "buyer_archetypes": ["CABINET_MANUFACTURER"],
+            "geography": "Vietnam",
+            "limit": 50,
+        })
+        joined = "\n".join(row["query"].upper() for row in result["queries"])
+        self.assertFalse(result["variant_prior_applications_applied"])
+        self.assertFalse(result["variant_prior_archetypes_applied"])
+        self.assertFalse(result["variant_prior_cross_product_suppressed"])
+        self.assertTrue(result["explicit_applications_override_variant_prior"])
+        self.assertTrue(result["explicit_archetypes_override_variant_prior"])
+        self.assertIn("CABINET MANUFACTURER", joined)
+        self.assertNotIn("SIGN MATERIAL DISTRIBUTOR", joined)
+
+
 class V63ArchetypePriorityQueryTests(unittest.TestCase):
     def test_query_generation_applies_buyer_archetype_discovery_priority(self):
         from unified_runtime.expansion_planner import generate_discovery_queries

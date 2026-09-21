@@ -4,7 +4,7 @@ import copy
 import re
 from typing import Any
 
-from .product_profiles import get_product_profile
+from .product_profiles import get_product_profile, is_known_product_profile_pin
 
 
 LIFECYCLE_STAGES = (
@@ -64,11 +64,22 @@ def validate_product_opportunity(payload: dict[str, Any]) -> dict[str, Any]:
     except KeyError as exc:
         raise ValueError(f"unknown product profile: {profile_id}") from exc
     supplied_version = payload.get("product_profile_version")
-    if supplied_version is not None and str(supplied_version) != str(profile["profile_version"]):
-        raise ValueError("product profile version pin mismatch")
     supplied_sha = payload.get("product_profile_sha256")
-    if supplied_sha is not None and str(supplied_sha).lower() != str(profile["profile_sha256"]).lower():
-        raise ValueError("product profile sha256 pin mismatch")
+    if supplied_version is not None and str(supplied_version) != str(profile["profile_version"]):
+        if supplied_sha is None or not is_known_product_profile_pin(
+            profile_id,
+            str(supplied_version),
+            str(supplied_sha),
+        ):
+            raise ValueError("product profile version pin mismatch")
+    if supplied_sha is not None:
+        pin_version = str(
+            supplied_version
+            if supplied_version is not None
+            else profile["profile_version"]
+        )
+        if not is_known_product_profile_pin(profile_id, pin_version, str(supplied_sha)):
+            raise ValueError("product profile sha256 pin mismatch")
     grade = payload.get("commercial_value_grade")
     if grade is not None and grade not in COMMERCIAL_GRADES:
         raise ValueError(f"invalid commercial grade: {grade}")
@@ -77,8 +88,16 @@ def validate_product_opportunity(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"invalid lifecycle stage: {stage}")
     result = copy.deepcopy(payload)
     result["product_profile_id"] = profile_id
-    result["product_profile_version"] = str(profile["profile_version"])
-    result["product_profile_sha256"] = str(profile["profile_sha256"])
+    result["product_profile_version"] = str(
+        supplied_version
+        if supplied_version is not None
+        else profile["profile_version"]
+    )
+    result["product_profile_sha256"] = str(
+        supplied_sha
+        if supplied_sha is not None
+        else profile["profile_sha256"]
+    ).lower()
     result["lifecycle_stage"] = stage
     return result
 
