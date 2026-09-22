@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ProductionLauncherRootBindingTests(unittest.TestCase):
     def test_mcp_launcher_explicitly_binds_standard_v6_session_root(self) -> None:
-        config = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        config = json.loads((ROOT / "deploy" / "local" / "mcp.windows.json").read_text(encoding="utf-8"))
         server = config["mcpServers"]["buyer-outreach-actions"]
         self.assertEqual(server["command"].casefold(), "powershell.exe")
         command = server["args"][-1]
@@ -24,7 +24,7 @@ class ProductionLauncherRootBindingTests(unittest.TestCase):
         )
 
     def test_launcher_does_not_bind_a_probe_or_candidate_root(self) -> None:
-        config = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        config = json.loads((ROOT / "deploy" / "local" / "mcp.windows.json").read_text(encoding="utf-8"))
         command = config["mcpServers"]["buyer-outreach-actions"]["args"][-1]
         lowered = command.casefold()
         self.assertNotIn("productioncandidate", lowered)
@@ -33,7 +33,7 @@ class ProductionLauncherRootBindingTests(unittest.TestCase):
         self.assertNotIn("goldenlifecycleprobe", lowered)
 
     def test_launcher_keeps_final_backup_recovery_entrypoint(self) -> None:
-        config = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        config = json.loads((ROOT / "deploy" / "local" / "mcp.windows.json").read_text(encoding="utf-8"))
         command = config["mcpServers"]["buyer-outreach-actions"]["args"][-1]
         self.assertIn("mcp\\server_v61_backup_recovery.py", command)
         self.assertTrue(command.rstrip().endswith("--stdio"))

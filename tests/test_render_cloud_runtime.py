@@ -41,6 +41,12 @@ class RenderCloudRuntimeTests(unittest.TestCase):
             (root / "export-manifest.json").write_text("{}\n", encoding="utf-8")
             self.assertEqual(render_bootstrap._state(root), "live")
 
+    def test_bootstrap_is_live_but_never_ready_for_production_traffic(self) -> None:
+        self.assertEqual(200, render_bootstrap._bootstrap_http_status("/healthz"))
+        self.assertEqual(503, render_bootstrap._bootstrap_http_status("/readyz"))
+        self.assertEqual(200, render_bootstrap._bootstrap_http_status("/"))
+        self.assertEqual(404, render_bootstrap._bootstrap_http_status("/missing"))
+
     def test_render_blueprint_is_free_fail_closed_preview(self) -> None:
         text = BLUEPRINT.read_text(encoding="utf-8-sig")
         for required in (
@@ -52,7 +58,7 @@ class RenderCloudRuntimeTests(unittest.TestCase):
             "dockerfilePath: ./deploy/cloud/Dockerfile",
             "dockerCommand: python -B -Xutf8 mcp/render_bootstrap.py",
             "autoDeployTrigger: checksPass",
-            "healthCheckPath: /healthz",
+            "healthCheckPath: /readyz",
             "CBI_RENDER_LIVE_ROOT",
             "value: /var/lib/cbi/live",
             "CBI_SESSION_ROOT",
@@ -83,6 +89,10 @@ class RenderCloudRuntimeTests(unittest.TestCase):
         self.assertIn("USER cbi", text)
         self.assertNotIn("ENV CBI_REMOTE_PORT=", text)
         self.assertIn("os.environ.get('PORT')", text)
+        self.assertIn("/readyz", text)
+        self.assertIn("d.get('status') == 'ok'", text)
+        self.assertNotIn("bootstrap_required'} else 1", text)
+        self.assertIn('CMD ["python", "-B", "-Xutf8", "mcp/render_bootstrap.py"]', text)
 
 
 if __name__ == "__main__":
