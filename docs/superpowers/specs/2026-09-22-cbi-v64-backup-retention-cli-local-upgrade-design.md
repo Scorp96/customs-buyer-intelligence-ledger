@@ -171,4 +171,3 @@ Stop at the current stage if any of these occurs:
 - The installed cache does not report the expected version.
 - Runtime health is not `READY`, errors are present, or production data identity
   changes unexpectedly.
-
