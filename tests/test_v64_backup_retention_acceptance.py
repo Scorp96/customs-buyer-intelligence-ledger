@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 from scripts.run_v64_backup_retention_acceptance import evaluate_backup_retention_acceptance
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+CLI_PATH = REPO_ROOT / "scripts" / "run_v64_backup_retention_acceptance.py"
 
 
 SNAPSHOT_ID = "SNAP-20260909T104000Z-abcdef123456"
@@ -57,6 +66,20 @@ def _payload(**overrides) -> dict:
     }
     value.update(overrides)
     return value
+
+
+def _run_cli(*args: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    return subprocess.run(
+        [sys.executable, str(CLI_PATH), *args],
+        cwd=REPO_ROOT,
+        env=env,
+        input=stdin,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 class BackupRetentionAcceptanceTests(unittest.TestCase):
@@ -121,6 +144,36 @@ class BackupRetentionAcceptanceTests(unittest.TestCase):
 
         self.assertFalse(result["verified"])
         self.assertIn("PRODUCTION_SOURCE_SNAPSHOT_INVALID", result["blockers"])
+
+
+class BackupRetentionAcceptanceCliTests(unittest.TestCase):
+    def test_help_runs_without_repository_pythonpath(self) -> None:
+        completed = _run_cli("--help")
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn(
+            "Evaluate sanitized v6.4 backup retention observations.",
+            completed.stdout,
+        )
+
+    def test_verified_payload_runs_through_real_cli(self) -> None:
+        completed = _run_cli(stdin=json.dumps(_payload()))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        evidence = json.loads(completed.stdout)
+        self.assertTrue(evidence["verified"], evidence["blockers"])
+        self.assertEqual(
+            evidence["schema"],
+            "cbi.v64-backup-retention-evidence.v1",
+        )
+
+    def test_invalid_json_fails_closed_through_real_cli(self) -> None:
+        completed = _run_cli(stdin="{not-json")
+
+        self.assertEqual(completed.returncode, 1, completed.stdout)
+        evidence = json.loads(completed.stdout)
+        self.assertFalse(evidence["verified"])
+        self.assertEqual(evidence["blockers"], ["ACCEPTANCE_INPUT_INVALID"])
 
 
 if __name__ == "__main__":
