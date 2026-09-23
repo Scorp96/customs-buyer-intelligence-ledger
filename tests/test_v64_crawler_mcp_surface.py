@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -198,7 +199,7 @@ class CrawlerMcpSurfaceTests(unittest.TestCase):
         self.assertTrue(status["configured_enabled"])
         self.assertFalse(status["runtime_ready"])
         self.assertIn("CRAWL4AI_NOT_IMPORTABLE", status["readiness_blockers"])
-        self.assertIn("PLAYWRIGHT_NOT_IMPORTABLE", status["readiness_blockers"])
+        self.assertIn("PLAYWRIGHT_NOT_IMPORTABLE", status["browser_readiness_blockers"])
         self.assertFalse(status["crawl4ai_present"])
         self.assertFalse(status["playwright_present"])
 
@@ -264,8 +265,94 @@ class CrawlerMcpSurfaceTests(unittest.TestCase):
         self.assertTrue(status["playwright_importable"])
         self.assertFalse(status["browser_executable_ready"])
         self.assertFalse(status["browser_escalation_supported"])
-        self.assertFalse(status["enabled"])
-        self.assertIn("PLAYWRIGHT_BROWSER_NOT_READY", status["readiness_blockers"])
+        self.assertTrue(status["runtime_ready"])
+        self.assertTrue(status["enabled"])
+        self.assertFalse(status["browser_runtime_ready"])
+        self.assertIn("PLAYWRIGHT_BROWSER_NOT_READY", status["browser_readiness_blockers"])
+
+    def test_crawl4ai_can_run_without_optional_browser_escalation(self) -> None:
+        def fake_import(module_name: str):
+            if module_name == "crawl4ai":
+                return SimpleNamespace(AsyncWebCrawler=lambda: None)
+            raise ImportError("browser escalation is not installed")
+
+        with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False), patch.object(
+            crawler_tool_v64.importlib.util,
+            "find_spec",
+            return_value=SimpleNamespace(submodule_search_locations=None),
+        ), patch.object(
+            crawler_tool_v64.importlib,
+            "import_module",
+            side_effect=fake_import,
+        ):
+            status = crawler_tool_v64.crawler_runtime_status()
+
+        self.assertTrue(status["crawl4ai_importable"])
+        self.assertFalse(status["playwright_importable"])
+        self.assertTrue(status["runtime_ready"])
+        self.assertTrue(status["enabled"])
+        self.assertFalse(status["browser_runtime_ready"])
+        self.assertFalse(status["browser_escalation_supported"])
+        self.assertNotIn("CRAWL4AI_NOT_IMPORTABLE", status["readiness_blockers"])
+        self.assertIn("PLAYWRIGHT_NOT_IMPORTABLE", status["browser_readiness_blockers"])
+
+    def test_execution_uses_core_crawler_when_browser_escalation_is_disabled(self) -> None:
+        class FakePrimary:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeBridge:
+            def __init__(self, backend, max_pages):
+                self.backend = backend
+                self.max_pages = max_pages
+
+            async def execute(self, task, *, seed_url, official_domain_verified, max_elapsed_seconds):
+                return {
+                    "result": "NEGATIVE_EXHAUSTED",
+                    "task_id": task.get("task_id"),
+                    "seed_url": seed_url,
+                    "pages_crawled": 0,
+                    "official_domain_verified": official_domain_verified,
+                    "max_elapsed_seconds": max_elapsed_seconds,
+                }
+
+        runtime = {
+            "interpreter_ready": True,
+            "crawl4ai_importable": True,
+            "browser_escalation_supported": False,
+            "enabled": True,
+        }
+        with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False), patch.object(
+            crawler_tool_v64,
+            "crawler_runtime_status",
+            return_value=runtime,
+        ), patch.object(
+            crawler_tool_v64,
+            "Crawl4AIBackend",
+            return_value=FakePrimary(),
+        ), patch.object(
+            crawler_tool_v64,
+            "CrawlExecutionBridge",
+            FakeBridge,
+        ), patch.object(
+            crawler_tool_v64,
+            "PlaywrightBrowserBackend",
+        ) as browser_backend:
+            result = asyncio.run(crawler_tool_v64._execute({
+                "task": {"task_id": "V64-CORE-ONLY"},
+                "seed_url": "https://8.8.8.8/",
+                "browser_escalation": False,
+                "max_pages": 1,
+                "timeout_seconds": 2,
+                "max_retries": 0,
+            }))
+
+        self.assertEqual(result["status"], "CRAWL_EXECUTED")
+        self.assertEqual(result["task_id"], "V64-CORE-ONLY")
+        browser_backend.assert_not_called()
 
     def test_unsupported_interpreter_is_not_runtime_ready(self) -> None:
         version_info = SimpleNamespace(major=3, minor=9)

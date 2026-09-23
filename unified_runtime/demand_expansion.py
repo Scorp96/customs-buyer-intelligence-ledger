@@ -106,6 +106,19 @@ class V63DemandExpansionMixin:
             "BOUND" if not blockers else "FAIL_CLOSED_INCOMPLETE"
         )
         result["demand_expansion_v6_3"]["runtime_binding_status_is_not_production_acceptance"] = True
+        result["demand_expansion_v6_3"]["legacy_evidence_bridge_v6_1"] = {
+            "schema": "cbi.v61-to-v63-evidence-bridge.v1",
+            "status": (
+                "BOUND_READ_ONLY"
+                if callable(getattr(self, "_v63_project_legacy_v61_opportunities", None))
+                else "UNBOUND"
+            ),
+            "projection_read_only": True,
+            "durable_event_authority_preserved": True,
+            "requires_v63_requalification": True,
+            "creates_product_opportunity_event": False,
+            "rewrites_v6_1_history": False,
+        }
         result["demand_expansion_v6_3"]["required_read_model_tools_v6_3"] = [
             "get_product_opportunities",
             "get_demand_anchors",
@@ -212,6 +225,10 @@ class V63DemandExpansionMixin:
 
         evidence_ids = [str(v).strip() for v in view.get("commercial_evidence_ids", []) if str(v).strip()]
         target_stage = str(view.get("lifecycle_stage") or view.get("lifecycle_target") or "").strip().upper()
+        if row.get("projection_read_only") and not row.get("durable_event_present"):
+            # Derived score/evidence may be shown, but the legacy bridge must
+            # not make a non-durable row appear to have advanced its lifecycle.
+            target_stage = ""
         has_commercial_assertion = any(
             key in view and view.get(key) not in (None, "")
             for key in ("commercial_value_grade", "commercial_value_score", "commercial_score")
@@ -286,6 +303,40 @@ class V63DemandExpansionMixin:
             row["investigation_id"] = row_investigation_id
             normalized_rows.append(self._v63_join_opportunity_runtime_view(row_investigation_id, row))
         result["opportunities"] = normalized_rows
+
+        # Surface eligible v6.1 evidence as a read-only migration projection
+        # only when the authoritative v6.3 event chain has no row for the
+        # session. The bridge never appends events or grants mutation authority.
+        legacy_projector = getattr(self, "_v63_project_legacy_v61_opportunities", None)
+        if callable(legacy_projector):
+            legacy_projection = legacy_projector({
+                "investigation_id": investigation_id,
+                "account_id": args.get("account_id"),
+                "opportunity_id": args.get("opportunity_id"),
+                "product_profile_id": args.get("product_profile_id"),
+            })
+            legacy_rows = list(legacy_projection.get("opportunities") or [])
+            durable_ids = {
+                str(row.get("opportunity_id") or "").strip()
+                for row in normalized_rows
+                if str(row.get("opportunity_id") or "").strip()
+            }
+            for raw_row in legacy_rows:
+                opportunity_key = str(raw_row.get("opportunity_id") or "").strip()
+                if not opportunity_key or opportunity_key in durable_ids:
+                    continue
+                row_investigation_id = str(raw_row.get("investigation_id") or investigation_id).strip()
+                if not row_investigation_id:
+                    raise RuntimeError("V63_LEGACY_PROJECTION_MISSING_INVESTIGATION_ID")
+                normalized_rows.append(self._v63_join_opportunity_runtime_view(row_investigation_id, raw_row))
+            result["opportunities"] = normalized_rows
+            result["projected_opportunity_count"] = len(normalized_rows)
+            result["legacy_projection"] = legacy_projection
+            if legacy_rows and not events:
+                result["projection_source"] = "V61_LEGACY_EVIDENCE_BRIDGE_READ_ONLY"
+            elif legacy_rows:
+                result["projection_source"] = "EXISTING_APPEND_ONLY_INVESTIGATION_EVENT_CHAIN_PLUS_V61_LEGACY_BRIDGE"
+
         result["projection_scope"] = projection_scope
         result["derived_state_join_enabled"] = callable(getattr(self, "_derive_v63_opportunity_runtime_view", None))
         return result
@@ -313,9 +364,13 @@ class V63DemandExpansionMixin:
                 for field in ("opportunity_id", "account_id", "product_profile_id", "product_profile_version", "product_profile_sha256"):
                     if supplied.get(field) not in (None, "") and str(supplied.get(field)).upper() != str(durable.get(field) or "").upper():
                         raise ValueError(f"SUPPLIED_OPPORTUNITY_IDENTITY_CONFLICT:{field}")
+            if durable.get("projection_read_only") and not durable.get("durable_event_present"):
+                raise ValueError("LEGACY_OPPORTUNITY_REQUIRES_V63_REQUALIFICATION")
             return durable
 
         if isinstance(supplied, dict) and supplied:
+            if supplied.get("projection_read_only") and not supplied.get("durable_event_present"):
+                raise ValueError("LEGACY_OPPORTUNITY_REQUIRES_V63_REQUALIFICATION")
             return copy.deepcopy(supplied)
         raise ValueError("INVESTIGATION_ID_AND_OPPORTUNITY_ID_REQUIRED")
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .demand_market import is_direct_procurement_source
+from .legacy_opportunity_projection import project_legacy_v61_opportunities
 from .product_profiles import get_product_profile, list_product_profiles
 from .v63_projection import project_product_opportunities
 
@@ -145,23 +146,20 @@ def _profile_tokens(profile: dict[str, Any]) -> set[str]:
 
 def _canonical_source_categories(row: dict[str, Any]) -> set[str]:
     source = row.get("source") if isinstance(row.get("source"), dict) else {}
-    raw = " ".join(
-        str(source.get(key) or "")
+    labels = [
+        str(source.get(key) or "").strip().upper().replace("-", "_").replace(" ", "_")
         for key in ("source_type", "source_family")
-    ).upper().replace("-", "_").replace(" ", "_")
+    ]
     categories: set[str] = set()
-    if "CUSTOMS" in raw:
-        categories.add("CUSTOMS")
-    if "TRADE_DATA" in raw or "TRADEDATA" in raw:
-        categories.add("TRADE_DATA")
-    if "SUPPLIER_BUYER_SHIPMENT" in raw or "BILL_OF_LADING" in raw or re.search(r"(^|_)BOL($|_)", raw):
-        categories.add("SUPPLIER_BUYER_SHIPMENT")
-    if "PURCHASE_ORDER" in raw:
-        categories.add("PURCHASE_ORDER")
-    if "INVOICE" in raw:
-        categories.add("INVOICE")
+    for label in labels:
+        if is_direct_procurement_source(label):
+            categories.add(label)
+        elif label == "TRADEDATA":
+            categories.add("TRADE_DATA")
+        elif label in {"BILL_OF_LADING", "BOL"}:
+            categories.add("SUPPLIER_BUYER_SHIPMENT")
     if not categories:
-        source_type = str(source.get("source_type") or "").strip().upper()
+        source_type = labels[0]
         if source_type:
             categories.add(source_type)
     return categories
@@ -217,6 +215,81 @@ class V63ProductionIntegrationBindingMixin:
             if normalized is not None:
                 rows.append(normalized)
         return rows
+
+    def _v63_project_legacy_v61_opportunities(self, filters: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Project eligible v6.1 evidence without appending v6.3 events.
+
+        The v6.3 event chain remains authoritative.  Sessions that already have
+        a v6.3 Product Opportunity event are deliberately excluded from this
+        bridge so a stale legacy projection can never shadow a durable row.
+        """
+        args = dict(filters or {})
+        store = getattr(self, "store", None)
+        root = getattr(store, "root", None)
+        if root is None or not callable(getattr(self, "_v6_state", None)):
+            return {
+                "schema": "cbi.v61-to-v63-evidence-bridge.v1",
+                "status": "NOT_APPLICABLE",
+                "opportunities": [],
+                "projected_opportunity_count": 0,
+                "blockers": [],
+                "investigation_reports": [],
+                "projection_read_only": True,
+                "durable_event_present": False,
+                "persistent_mutation_performed": False,
+            }
+
+        wanted_investigation = str(args.get("investigation_id") or "").strip()
+        wanted_account = str(args.get("account_id") or "").strip()
+        wanted_opportunity = str(args.get("opportunity_id") or "").strip()
+        wanted_profile = str(args.get("product_profile_id") or "").strip().upper()
+        if wanted_investigation:
+            investigation_ids = [wanted_investigation]
+        else:
+            investigation_ids = sorted(
+                path.stem
+                for path in Path(root).glob("INV-*.jsonl")
+                if path.is_file()
+            )
+
+        projected: list[dict[str, Any]] = []
+        blockers: set[str] = set()
+        reports: list[dict[str, Any]] = []
+        for investigation_id in investigation_ids:
+            durable_events = self._read_v63_durable_events(investigation_id)
+            if durable_events:
+                continue
+            state = self._v6_state(investigation_id)
+            report = project_legacy_v61_opportunities(
+                state,
+                evidence_matches_profile=self._evidence_matches_product_profile,
+                source_categories=_canonical_source_categories,
+                account_id=wanted_account,
+                opportunity_id=wanted_opportunity,
+                product_profile_id=wanted_profile,
+            )
+            if report.get("status") in {"PROJECTED", "BLOCKED"}:
+                reports.append(copy.deepcopy(report))
+            projected.extend(copy.deepcopy(report.get("opportunities") or []))
+            blockers.update(str(value) for value in report.get("blockers") or [] if str(value).strip())
+
+        if projected:
+            status = "PROJECTED"
+        elif blockers:
+            status = "BLOCKED"
+        else:
+            status = "NOT_APPLICABLE"
+        return {
+            "schema": "cbi.v61-to-v63-evidence-bridge.v1",
+            "status": status,
+            "opportunities": projected,
+            "projected_opportunity_count": len(projected),
+            "blockers": sorted(blockers),
+            "investigation_reports": reports,
+            "projection_read_only": True,
+            "durable_event_present": False,
+            "persistent_mutation_performed": False,
+        }
 
     def _v63_locator_index_path(self) -> Path:
         root = Path(getattr(getattr(self, "store", None), "root", "")).expanduser().resolve()

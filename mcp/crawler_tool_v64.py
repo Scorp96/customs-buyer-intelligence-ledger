@@ -229,26 +229,32 @@ def crawler_runtime_status() -> dict[str, Any]:
         "async_playwright",
     )
     browser_executable = _find_playwright_browser_executable(playwright["package_root"])
-    browser_escalation_supported = bool(
-        configured_enabled and playwright["importable"] and browser_executable
-    )
     readiness_blockers: list[str] = []
+    browser_readiness_blockers: list[str] = []
     if not interpreter["interpreter_ready"]:
         readiness_blockers.append("INTERPRETER_UNSUPPORTED")
     if not crawl4ai["importable"]:
         readiness_blockers.append("CRAWL4AI_NOT_IMPORTABLE")
+    if not interpreter["interpreter_ready"]:
+        browser_readiness_blockers.append("INTERPRETER_UNSUPPORTED")
     if not playwright["importable"]:
-        readiness_blockers.append("PLAYWRIGHT_NOT_IMPORTABLE")
+        browser_readiness_blockers.append("PLAYWRIGHT_NOT_IMPORTABLE")
     elif not browser_executable:
-        readiness_blockers.append("PLAYWRIGHT_BROWSER_NOT_READY")
+        browser_readiness_blockers.append("PLAYWRIGHT_BROWSER_NOT_READY")
     runtime_ready = not readiness_blockers
+    browser_runtime_ready = not browser_readiness_blockers
     enabled = bool(configured_enabled and runtime_ready)
+    browser_escalation_supported = bool(
+        configured_enabled and runtime_ready and browser_runtime_ready
+    )
     return {
         "schema": "cbi.crawler-runtime-status.v6.4",
         "enabled": enabled,
         "configured_enabled": configured_enabled,
         "runtime_ready": runtime_ready,
+        "browser_runtime_ready": browser_runtime_ready,
         "readiness_blockers": readiness_blockers,
+        "browser_readiness_blockers": browser_readiness_blockers,
         "python_executable": interpreter["python_executable"],
         "python_version": interpreter["python_version"],
         "interpreter_ready": interpreter["interpreter_ready"],
