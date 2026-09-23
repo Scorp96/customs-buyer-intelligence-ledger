@@ -38,6 +38,15 @@ class ProductionLauncherRootBindingTests(unittest.TestCase):
         self.assertIn("mcp\\server_v61_backup_recovery.py", command)
         self.assertTrue(command.rstrip().endswith("--stdio"))
 
+    def test_launcher_prefers_isolated_crawler_runtime_and_browser_root(self) -> None:
+        config = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        command = config["mcpServers"]["buyer-outreach-actions"]["args"][-1]
+        self.assertIn("CBI-V64-CrawlerRuntime", command)
+        self.assertIn("venv\\Scripts\\python.exe", command)
+        self.assertIn("PLAYWRIGHT_BROWSERS_PATH", command)
+        self.assertIn("ms-playwright", command)
+        self.assertLess(command.index("$crawlerPython"), command.index("$candidates"))
+
 
 if __name__ == "__main__":
     unittest.main()

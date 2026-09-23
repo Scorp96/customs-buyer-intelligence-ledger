@@ -1,2 +1,5 @@
 crawl4ai==0.9.3
 playwright>=1.49,<2
+# Windows has no bundled IANA database; CBI's local-time and outreach gates
+# require a real ZoneInfo database in the isolated local runtime.
+tzdata>=2024.1,<2027
