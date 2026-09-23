@@ -29,23 +29,19 @@ _DIRECT_SOURCE_CATEGORIES = {
 
 def _source_categories(row: dict[str, Any]) -> set[str]:
     source = row.get("source") if isinstance(row.get("source"), dict) else {}
-    labels = [
-        str(source.get(key) or "").strip().upper().replace("-", "_").replace(" ", "_")
-        for key in ("source_type", "source_family")
-    ]
-    categories = {
-        label
-        for label in labels
-        if is_direct_procurement_source(label)
-    }
-    if "TRADEDATA" in labels:
+    source_type = str(source.get("source_type") or "").strip().upper().replace("-", "_").replace(" ", "_")
+    categories: set[str] = set()
+    # The concrete persisted source_type is the authority.  A broad or
+    # descriptive source_family must never upgrade an adjacent source_type
+    # (for example CUSTOMS_BROKER_DIRECTORY + CUSTOMS) into direct proof.
+    if is_direct_procurement_source(source_type):
+        categories.add(source_type)
+    elif source_type == "TRADEDATA":
         categories.add("TRADE_DATA")
-    if any(label in {"BILL_OF_LADING", "BOL"} for label in labels):
+    elif source_type in {"BILL_OF_LADING", "BOL"}:
         categories.add("SUPPLIER_BUYER_SHIPMENT")
-    if not categories:
-        source_type = labels[0]
-        if source_type:
-            categories.add(source_type)
+    elif source_type:
+        categories.add(source_type)
     return categories
 
 
@@ -184,7 +180,10 @@ def project_legacy_v61_opportunities(
             "requires_v63_requalification": True,
             "legacy_bridge_schema": BRIDGE_SCHEMA,
             "legacy_projection_discriminator": f"LEGACY_BRIDGE_{investigation_value or 'UNKNOWN'}",
-            "legacy_claim_keys": [_PRODUCT_CLAIM, "trade.import_activity", "commercial.procurement_need"],
+            "legacy_claim_keys": [
+                _PRODUCT_CLAIM,
+                *sorted({str(row.get("claim_key") or "") for row in procurement_rows if str(row.get("claim_key") or "") in _PROCUREMENT_CLAIMS}),
+            ],
             "product_evidence_ids": product_evidence_ids,
             "procurement_evidence_ids": procurement_evidence_ids,
             "commercial_evidence_ids": all_evidence_ids,

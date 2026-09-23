@@ -146,22 +146,16 @@ def _profile_tokens(profile: dict[str, Any]) -> set[str]:
 
 def _canonical_source_categories(row: dict[str, Any]) -> set[str]:
     source = row.get("source") if isinstance(row.get("source"), dict) else {}
-    labels = [
-        str(source.get(key) or "").strip().upper().replace("-", "_").replace(" ", "_")
-        for key in ("source_type", "source_family")
-    ]
+    source_type = str(source.get("source_type") or "").strip().upper().replace("-", "_").replace(" ", "_")
     categories: set[str] = set()
-    for label in labels:
-        if is_direct_procurement_source(label):
-            categories.add(label)
-        elif label == "TRADEDATA":
-            categories.add("TRADE_DATA")
-        elif label in {"BILL_OF_LADING", "BOL"}:
-            categories.add("SUPPLIER_BUYER_SHIPMENT")
-    if not categories:
-        source_type = labels[0]
-        if source_type:
-            categories.add(source_type)
+    if is_direct_procurement_source(source_type):
+        categories.add(source_type)
+    elif source_type == "TRADEDATA":
+        categories.add("TRADE_DATA")
+    elif source_type in {"BILL_OF_LADING", "BOL"}:
+        categories.add("SUPPLIER_BUYER_SHIPMENT")
+    elif source_type:
+        categories.add(source_type)
     return categories
 
 

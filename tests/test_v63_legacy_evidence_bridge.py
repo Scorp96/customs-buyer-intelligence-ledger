@@ -25,7 +25,14 @@ class LegacyEvidenceBridgeTests(unittest.TestCase):
         self.investigation_id = started["investigation_id"]
 
     @staticmethod
-    def observation(claim_key: str, suffix: str, value: dict, *, source_type: str = "CUSTOMS") -> dict:
+    def observation(
+        claim_key: str,
+        suffix: str,
+        value: dict,
+        *,
+        source_type: str = "CUSTOMS",
+        source_family: str | None = None,
+    ) -> dict:
         return {
             "claim_key": claim_key,
             "result": "POSITIVE",
@@ -33,7 +40,7 @@ class LegacyEvidenceBridgeTests(unittest.TestCase):
             "owner_id": "LEGACY-BUYER-1",
             "value": value,
             "source": {
-                "source_family": source_type,
+                "source_family": source_family or source_type,
                 "source_type": source_type,
                 "reference_type": "PUBLIC_URL",
                 "url": f"https://legacy-evidence.invalid/{suffix}",
@@ -77,7 +84,21 @@ class LegacyEvidenceBridgeTests(unittest.TestCase):
         self.assertTrue(row["requires_v63_requalification"])
         self.assertTrue(row["product_evidence_ids"])
         self.assertTrue(row["procurement_evidence_ids"])
+        self.assertEqual(
+            row["legacy_claim_keys"],
+            ["product.fit", "commercial.procurement_need", "trade.import_activity"],
+        )
         self.assertEqual(result["legacy_projection"]["status"], "PROJECTED")
+
+    def test_legacy_claim_keys_only_include_observed_procurement_claims(self) -> None:
+        self.compile([
+            self.observation("product.fit", "product-only-trade", {"product_profile_id": "PVC"}),
+            self.observation("trade.import_activity", "trade-only", {"product_profile_id": "PVC", "current_import": True}),
+        ])
+        result = self.runtime.get_product_opportunities({"investigation_id": self.investigation_id})
+        row = result["opportunities"][0]
+        self.assertEqual(row["legacy_claim_keys"], ["product.fit", "trade.import_activity"])
+        self.assertNotIn("commercial.procurement_need", row["legacy_claim_keys"])
 
     def test_runtime_contract_declares_bridge_as_read_only_requalification_input(self) -> None:
         bridge = self.runtime.get_runtime_contract({})["demand_expansion_v6_3"]["legacy_evidence_bridge_v6_1"]
@@ -167,6 +188,22 @@ class LegacyEvidenceBridgeTests(unittest.TestCase):
                 "broker-directory",
                 {"product_profile_id": "PVC", "current_import": True},
                 source_type="CUSTOMS_BROKER_DIRECTORY",
+            ),
+        ])
+        result = self.runtime.get_product_opportunities({"investigation_id": self.investigation_id})
+        self.assertEqual(result["projected_opportunity_count"], 0)
+        self.assertEqual(result["legacy_projection"]["status"], "BLOCKED")
+        self.assertIn("LEGACY_DIRECT_PROCUREMENT_EVIDENCE_MISSING", result["legacy_projection"]["blockers"])
+
+    def test_non_direct_source_type_cannot_be_upgraded_by_broad_source_family(self) -> None:
+        self.compile([
+            self.observation("product.fit", "mixed-product", {"product_profile_id": "PVC"}),
+            self.observation(
+                "trade.import_activity",
+                "mixed-source",
+                {"product_profile_id": "PVC", "current_import": True},
+                source_type="CUSTOMS_BROKER_DIRECTORY",
+                source_family="CUSTOMS",
             ),
         ])
         result = self.runtime.get_product_opportunities({"investigation_id": self.investigation_id})
