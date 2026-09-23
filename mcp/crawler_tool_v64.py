@@ -32,7 +32,12 @@ _PLAYWRIGHT_EXECUTABLE_RELATIVE_PATHS = (
     Path("chrome-win64") / "chrome.exe",
     Path("chrome-win") / "chrome.exe",
     Path("chrome-headless-shell-win64") / "chrome-headless-shell.exe",
+    # Playwright 1.63+ ships Chrome for Testing under ``chrome-linux64``
+    # on Linux. Older releases used ``chrome-linux``; keep both layouts
+    # fail-closed compatible with Render images that retain an older cache.
+    Path("chrome-linux64") / "chrome",
     Path("chrome-linux") / "chrome",
+    Path("chrome-headless-shell-linux64") / "chrome-headless-shell",
     Path("chrome-linux") / "headless_shell",
     Path("chrome-mac") / "Chromium.app" / "Contents" / "MacOS" / "Chromium",
     Path("chrome-mac") / "Google Chrome for Testing.app" / "Contents" / "MacOS" / "Google Chrome for Testing",

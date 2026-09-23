@@ -405,6 +405,44 @@ class CrawlerMcpSurfaceTests(unittest.TestCase):
 
         self.assertEqual(found, executable)
 
+    def test_playwright_browser_path_probe_accepts_chrome_for_testing_linux_layout(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            executable = (
+                Path(temp_dir)
+                / "chromium-1243"
+                / "chrome-linux64"
+                / "chrome"
+            )
+            executable.parent.mkdir(parents=True)
+            executable.write_text("synthetic executable", encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {"PLAYWRIGHT_BROWSERS_PATH": temp_dir},
+                clear=False,
+            ):
+                found = crawler_tool_v64._find_playwright_browser_executable(None)
+
+        self.assertEqual(found, executable)
+
+    def test_playwright_browser_path_probe_accepts_linux_headless_shell_layout(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            executable = (
+                Path(temp_dir)
+                / "chromium_headless_shell-1243"
+                / "chrome-headless-shell-linux64"
+                / "chrome-headless-shell"
+            )
+            executable.parent.mkdir(parents=True)
+            executable.write_text("synthetic executable", encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {"PLAYWRIGHT_BROWSERS_PATH": temp_dir},
+                clear=False,
+            ):
+                found = crawler_tool_v64._find_playwright_browser_executable(None)
+
+        self.assertEqual(found, executable)
+
     def test_runtime_status_exposes_resource_and_ssrf_guards(self) -> None:
         status = crawler_tool_v64.crawler_runtime_status()
         self.assertTrue(status["request_interception_guard"])
