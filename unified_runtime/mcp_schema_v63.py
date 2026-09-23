@@ -335,12 +335,7 @@ def _descriptor(name: str, *, read_only: bool) -> dict[str, Any]:
         if name in {"derive_demand_anchor", "evaluate_product_opportunity"}:
             input_schema = _derived_view_schema(name)
         else:
-            input_schema = {
-                "type": "object",
-                "properties": _base_properties(),
-                "required": [],
-                "additionalProperties": True,
-            }
+            input_schema = _read_only_schema(name)
     else:
         input_schema = _mutation_schema(name)
 
@@ -362,6 +357,101 @@ def _descriptor(name: str, *, read_only: bool) -> dict[str, Any]:
             "mutation_boundary": None if read_only else "EXISTING_PRODUCTION_WAL_ONLY",
         },
     }
+
+
+def _read_only_schema(name: str) -> dict[str, Any]:
+    """Describe the domain inputs consumed by each read-only handler.
+
+    The legacy transport accepted an open object with no required fields.  Keep
+    that top-level compatibility shape where clients depend on it, while making
+    the actual handler inputs discoverable and expressing scoped alternatives
+    through ``anyOf``.
+    """
+    properties = _base_properties()
+    required: list[str] = []
+    any_of: list[dict[str, Any]] = []
+    string_field = {"type": "string", "minLength": 1}
+
+    if name == "get_demand_anchors":
+        properties["seeds"] = {"type": "array", "items": {"type": "object"}}
+    elif name == "get_market_cells":
+        properties["items"] = {"type": "array", "items": {"type": "object"}}
+    elif name == "evaluate_market_acceptance":
+        properties["anchors"] = {"type": "array", "items": {"type": "object"}}
+    elif name == "assess_candidate_researchability":
+        properties.update({
+            "candidate_id": string_field,
+            "company_name": string_field,
+        })
+        required = ["candidate_id", "company_name", "product_profile_id"]
+    elif name == "plan_candidate_expansion":
+        properties.update({
+            "geography": string_field,
+            "limit": {"type": "integer", "minimum": 1},
+            "query_limit": {"type": "integer", "minimum": 1},
+            "source_task_limit": {"type": "integer", "minimum": 1},
+            "continuation_token": {"type": "string", "minLength": 1},
+        })
+        required = ["product_profile_id", "geography"]
+    elif name == "evaluate_relative_opportunity":
+        properties.update({
+            "anchor_grade": string_field,
+            "candidate_grade": string_field,
+            "anchor_score": {"type": "number"},
+            "candidate_score": {"type": "number"},
+            "strategic": {"type": "boolean"},
+        })
+        required = ["anchor_grade", "candidate_grade"]
+    elif name == "project_legacy_peer_receipt":
+        properties.update({
+            "source_event": {"const": "PEER_RECEIPT_APPENDED"},
+            "peer_id": string_field,
+            "candidate_id": string_field,
+            "company_name": string_field,
+            "product_profile_id": string_field,
+            "product_evidence_ids": _evidence_id_array(),
+            "procurement_evidence_ids": _evidence_id_array(),
+            "procurement_proven": {"type": "boolean"},
+            "product_or_application_signal": {"type": "boolean"},
+            "signal_tier": {"type": "string", "enum": ["D1", "D2", "D3", "D4"]},
+            "eiv": {"type": "number", "minimum": 0},
+            "promotion_decision": {"type": "string"},
+            "canonical_status": {"type": "string"},
+        })
+        required = ["source_event", "peer_id"]
+    elif name == "preview_customs_seed_expansion":
+        properties.update({
+            "source_type": {"const": "CUSTOMS"},
+            "source_evidence_ids": _evidence_id_array(),
+            "geography": string_field,
+        })
+        required = [
+            "investigation_id", "account_id", "opportunity_id",
+            "source_evidence_ids", "product_profile_id", "geography",
+        ]
+    elif name in {"plan_contact_exhaustion", "evaluate_route_reuse", "evaluate_sales_readiness"}:
+        properties["opportunity"] = {"type": "object", "additionalProperties": True}
+        any_of = [
+            {"required": ["investigation_id", "opportunity_id"]},
+            {"required": ["opportunity"]},
+        ]
+    elif name == "preview_recursive_anchor_expansion":
+        properties.update({
+            "promoted_anchor": {"type": "object", "additionalProperties": True},
+            "market_cell": {"type": "object", "additionalProperties": True},
+            "visited_anchor_ids": {"type": "array", "uniqueItems": True, "items": string_field},
+            "visited_expansion_keys": {"type": "array", "uniqueItems": True, "items": string_field},
+        })
+
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": True,
+    }
+    if any_of:
+        schema["anyOf"] = any_of
+    return schema
 
 def build_v63_tool_descriptors() -> list[dict[str, Any]]:
     return [

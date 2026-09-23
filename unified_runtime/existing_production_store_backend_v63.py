@@ -5,8 +5,10 @@ from typing import Any
 
 from .candidate_anchor import build_candidate_discovery
 from .canonical_resolution_gate import validate_canonical_resolution_proof
+from .opportunity_domain import validate_product_opportunity
 from .recovery_semantics_v63 import canonical_v63_wal_request_sha256, snapshot_sha256
 from .runtime_durable_backend_v63 import V63_DURABLE_BACKEND_BINDING_STRATEGY, V63_DURABLE_BACKEND_SCHEMA
+from .wal_contract_v63 import V63_WAL_BINDINGS, validate_v63_durable_event_proof
 
 
 class ExistingProductionStoreBackend:
@@ -79,6 +81,7 @@ class ExistingProductionStoreBackend:
         for name in ('application_ids','buyer_archetype_ids','market_cell_ids'):
             if name in opportunity:
                 result[name] = copy.deepcopy(opportunity.get(name) or [])
+
         payload = {
             'investigation_id': inv,
             'request_sha256': canonical_v63_wal_request_sha256('create_product_opportunity', args),
@@ -88,7 +91,141 @@ class ExistingProductionStoreBackend:
             'result_snapshot_sha256': snapshot_sha256(result),
             'raw_idempotency_key_persisted': False,
         }
-        self._append(runtime, inv, 'V63_PRODUCT_OPPORTUNITY_CREATED', payload)
+
+        store = getattr(runtime, "store", None)
+        reader = getattr(store, "read", None)
+        current_request_sha256 = str(payload["request_sha256"]).strip().lower()
+
+        def replay_or_conflict(events: Any) -> dict[str, Any] | None:
+            if not isinstance(events, list):
+                return None
+            matching_snapshots: list[dict[str, Any]] = []
+            for existing_event in events:
+                if not isinstance(existing_event, dict):
+                    continue
+                if str(existing_event.get("event_type") or "") != "V63_PRODUCT_OPPORTUNITY_CREATED":
+                    continue
+                # SessionStore envelopes the mutation payload under `payload`;
+                # the fallback keeps small adapter fakes readable without ever
+                # treating an unrelated top-level field as durable authority.
+                event_payload = existing_event.get("payload")
+                if not isinstance(event_payload, dict):
+                    event_payload = existing_event
+                existing_snapshot = event_payload.get("result_snapshot")
+                if not isinstance(existing_snapshot, dict):
+                    raise ValueError("V63_EXISTING_OPPORTUNITY_EVENT_INVALID")
+                correlation = existing_event.get("mutation_correlation")
+                if (
+                    not isinstance(correlation, dict)
+                    or correlation.get("schema") != "cbi.mutation-correlation.v6.1"
+                    or correlation.get("tool") != "create_product_opportunity"
+                    or not str(correlation.get("correlation_id") or "").strip()
+                ):
+                    raise ValueError(
+                        "V63_EXISTING_OPPORTUNITY_EVENT_INVALID:CORRELATION_BINDING_INVALID"
+                    )
+                normalized_event = copy.deepcopy(event_payload)
+                normalized_event["event_type"] = existing_event.get("event_type")
+                normalized_event["correlation_id"] = correlation.get("correlation_id")
+                proof = validate_v63_durable_event_proof(
+                    V63_WAL_BINDINGS["create_product_opportunity"],
+                    normalized_event,
+                )
+                if not proof["valid"]:
+                    raise ValueError(
+                        "V63_EXISTING_OPPORTUNITY_EVENT_INVALID:"
+                        + ",".join(proof["blockers"])
+                    )
+                expected_snapshot_hash = str(
+                    existing_snapshot.get("result_snapshot_sha256")
+                    or event_payload.get("result_snapshot_sha256")
+                    or ""
+                ).lower()
+                actual_snapshot_hash = snapshot_sha256(existing_snapshot).lower()
+                if expected_snapshot_hash != actual_snapshot_hash:
+                    raise ValueError("V63_EXISTING_OPPORTUNITY_SNAPSHOT_HASH_MISMATCH")
+                try:
+                    validate_product_opportunity({
+                        **existing_snapshot,
+                        "lifecycle_stage": str(
+                            existing_snapshot.get("stage")
+                            or existing_snapshot.get("lifecycle_stage")
+                            or "OPPORTUNITY_CREATED"
+                        ).upper(),
+                    })
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ValueError("V63_EXISTING_OPPORTUNITY_SNAPSHOT_INVALID") from exc
+                if str(existing_snapshot.get("opportunity_id") or "").strip() != opportunity_id:
+                    continue
+                stored_request_sha256 = str(
+                    event_payload.get("request_sha256") or ""
+                ).strip().lower()
+                if stored_request_sha256 != current_request_sha256:
+                    raise ValueError("V63_OPPORTUNITY_IDENTITY_CONFLICT:request_sha256")
+                matching_snapshots.append(copy.deepcopy(existing_snapshot))
+            if len(matching_snapshots) > 1:
+                raise ValueError("V63_OPPORTUNITY_DUPLICATE_DURABLE_PROOF")
+            if not matching_snapshots:
+                return None
+            existing_snapshot = matching_snapshots[0]
+            conflicts: list[str] = []
+            for field in (
+                "account_id",
+                "product_profile_id",
+                "product_profile_version",
+                "product_profile_sha256",
+                "application_ids",
+                "buyer_archetype_ids",
+                "market_cell_ids",
+            ):
+                if field not in result and field not in existing_snapshot:
+                    continue
+                left = result.get(field)
+                right = existing_snapshot.get(field)
+                if field == "product_profile_id":
+                    left = str(left or "").upper()
+                    right = str(right or "").upper()
+                if left != right:
+                    conflicts.append(field)
+            if conflicts:
+                raise ValueError(
+                    "V63_OPPORTUNITY_IDENTITY_CONFLICT:" + ",".join(sorted(set(conflicts)))
+                )
+            replay = copy.deepcopy(existing_snapshot)
+            replay["status"] = "REPLAYED"
+            replay["replayed"] = True
+            replay["persistent_mutation_performed"] = False
+            return replay
+
+        existing_events = reader(inv) if callable(reader) else []
+        replay = replay_or_conflict(existing_events)
+        if replay is not None:
+            return replay
+
+        # SessionStore exposes append_if_tail, which makes the identity check
+        # and durable append a compare-and-swap.  A concurrent retry that loses
+        # the CAS is reconciled from the now-authoritative event stream and is
+        # returned as an exact replay instead of appending a duplicate.
+        append_if_tail = getattr(store, "append_if_tail", None)
+        tail_hash = None
+        if isinstance(existing_events, list) and existing_events:
+            tail_hash = str(existing_events[-1].get("event_hash") or "").strip()
+        if callable(append_if_tail) and tail_hash:
+            try:
+                append_if_tail(inv, tail_hash, 'V63_PRODUCT_OPPORTUNITY_CREATED', payload)
+            except Exception:
+                refreshed = reader(inv) if callable(reader) else []
+                replay = replay_or_conflict(refreshed)
+                if replay is not None:
+                    return replay
+                raise
+        elif isinstance(existing_events, list) and existing_events:
+            raise RuntimeError("V63_ATOMIC_APPEND_UNAVAILABLE")
+        else:
+            # A store with no existing session tail can still be initialized by
+            # its normal append primitive.  Once a durable chain exists, the
+            # compare-and-swap above is mandatory to prevent duplicate creates.
+            self._append(runtime, inv, 'V63_PRODUCT_OPPORTUNITY_CREATED', payload)
         return result
 
     def promote_opportunity_anchor(self, runtime: Any, arguments: dict[str, Any]) -> dict[str, Any]:

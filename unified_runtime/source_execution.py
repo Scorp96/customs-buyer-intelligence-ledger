@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 from typing import Any
@@ -47,6 +49,7 @@ SOURCE_FAMILIES_BY_BRANCH_GROUP: dict[str, tuple[str, ...]] = {
 }
 
 _TERMINAL_RESULTS = {"POSITIVE", "NEGATIVE_EXHAUSTED", "NOT_APPLICABLE_JUSTIFIED"}
+_CURSOR_SCHEMA = "cbi.v63-source-task-cursor.v1"
 
 
 def _call_id(payload: dict[str, Any]) -> str:
@@ -54,11 +57,55 @@ def _call_id(payload: dict[str, Any]) -> str:
     return "V63CALL-" + hashlib.sha256(raw).hexdigest()[:24].upper()
 
 
+def _plan_fingerprint(expansion_plan: dict[str, Any], queries: list[str]) -> str:
+    payload = {
+        "product_profile_id": str(expansion_plan.get("product_profile_id") or "").upper(),
+        "market_acceptance": str(expansion_plan.get("market_acceptance") or "").upper(),
+        "branches": expansion_plan.get("branches") or {},
+        "queries": list(queries),
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _encode_cursor(plan_fingerprint: str, offset: int) -> str:
+    payload = {
+        "schema": _CURSOR_SCHEMA,
+        "plan_fingerprint": plan_fingerprint,
+        "offset": int(offset),
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(token: str, plan_fingerprint: str) -> int:
+    encoded = str(token or "").strip()
+    if not encoded:
+        return 0
+    try:
+        padded = encoded + "=" * (-len(encoded) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except (ValueError, UnicodeError, json.JSONDecodeError, binascii.Error) as exc:
+        raise ValueError("INVALID_SOURCE_TASK_CONTINUATION_TOKEN") from exc
+    if not isinstance(payload, dict) or payload.get("schema") != _CURSOR_SCHEMA:
+        raise ValueError("INVALID_SOURCE_TASK_CONTINUATION_TOKEN")
+    if str(payload.get("plan_fingerprint") or "") != plan_fingerprint:
+        raise ValueError("SOURCE_TASK_CONTINUATION_PLAN_MISMATCH")
+    try:
+        offset = int(payload.get("offset"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("INVALID_SOURCE_TASK_CONTINUATION_TOKEN") from exc
+    if offset < 0:
+        raise ValueError("INVALID_SOURCE_TASK_CONTINUATION_TOKEN")
+    return offset
+
+
 def plan_public_source_tasks(
     expansion_plan: dict[str, Any],
     discovery_plan: dict[str, Any],
     *,
     max_tasks: int = 1000,
+    continuation_token: str | None = None,
 ) -> dict[str, Any]:
     if not isinstance(expansion_plan, dict) or not isinstance(discovery_plan, dict):
         raise ValueError("expansion_plan and discovery_plan must be objects")
@@ -71,36 +118,48 @@ def plan_public_source_tasks(
         for row in discovery_plan.get("queries", [])
         if isinstance(row, dict) and str(row.get("query") or "").strip()
     ]
+    plan_fingerprint = _plan_fingerprint(expansion_plan, queries)
+    offset = _decode_cursor(continuation_token or "", plan_fingerprint)
     branches = expansion_plan.get("branches") or {}
-    tasks: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for branch_group, branch_names in branches.items():
-        if branch_group not in SOURCE_FAMILIES_BY_BRANCH_GROUP:
-            continue
-        for branch in branch_names or []:
-            for source_family in SOURCE_FAMILIES_BY_BRANCH_GROUP[branch_group]:
-                for query in queries:
-                    identity = {
-                        "branch_group": str(branch_group),
-                        "branch": str(branch),
-                        "source_family": source_family,
-                        "query": query,
-                    }
-                    call_id = _call_id(identity)
-                    if call_id in seen:
-                        continue
-                    seen.add(call_id)
-                    tasks.append({
-                        "call_id": call_id,
-                        **identity,
-                        "execution_required": True,
-                        "receipt_required": True,
-                        "search_execution_performed": False,
-                    })
+    def iter_tasks():
+        seen: set[str] = set()
+        for branch_group, branch_names in branches.items():
+            if branch_group not in SOURCE_FAMILIES_BY_BRANCH_GROUP:
+                continue
+            for branch in branch_names or []:
+                for source_family in SOURCE_FAMILIES_BY_BRANCH_GROUP[branch_group]:
+                    for query in queries:
+                        identity = {
+                            "branch_group": str(branch_group),
+                            "branch": str(branch),
+                            "source_family": source_family,
+                            "query": query,
+                        }
+                        call_id = _call_id(identity)
+                        if call_id in seen:
+                            continue
+                        seen.add(call_id)
+                        yield {
+                            "call_id": call_id,
+                            **identity,
+                            "execution_required": True,
+                            "receipt_required": True,
+                            "search_execution_performed": False,
+                        }
 
-    candidate_count = len(tasks)
-    returned = tasks[:max_tasks]
-    local_truncated = candidate_count > len(returned)
+    candidate_count = 0
+    returned: list[dict[str, Any]] = []
+    page_end = offset + max_tasks
+    for task in iter_tasks():
+        if offset <= candidate_count < page_end:
+            returned.append(task)
+        candidate_count += 1
+    if offset > candidate_count:
+        raise ValueError("SOURCE_TASK_CONTINUATION_OFFSET_OUT_OF_RANGE")
+    next_offset = offset + len(returned)
+    has_more = next_offset < candidate_count
+    local_truncated = has_more
+    next_token = _encode_cursor(plan_fingerprint, next_offset) if has_more else None
     upstream_truncated = bool(discovery_plan.get("truncated"))
     return {
         "status": "PLANNED",
@@ -108,7 +167,12 @@ def plan_public_source_tasks(
         "market_acceptance": expansion_plan.get("market_acceptance"),
         "task_candidate_count": candidate_count,
         "returned_count": len(returned),
-        "truncated": local_truncated or upstream_truncated,
+        "offset": offset,
+        "plan_fingerprint": plan_fingerprint,
+        "continuation_token": next_token,
+        "next_cursor": next_token,
+        "has_more": has_more,
+        "truncated": has_more or upstream_truncated,
         "local_task_truncated": local_truncated,
         "upstream_query_plan_truncated": upstream_truncated,
         "tasks": returned,

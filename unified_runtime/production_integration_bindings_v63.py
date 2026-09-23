@@ -297,14 +297,40 @@ class V63ProductionIntegrationBindingMixin:
         stat = path.stat()
         events = self._read_v63_durable_events(investigation_id)
         projection_error = None
+        identity_candidates: list[dict[str, str]] = []
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("event_type") or "")
+            if event_type == "V63_PRODUCT_OPPORTUNITY_CREATED":
+                snapshot = event.get("result_snapshot")
+                if not isinstance(snapshot, dict):
+                    snapshot = event
+                identity_candidates.append({
+                    "opportunity_id": str(snapshot.get("opportunity_id") or "").strip(),
+                    "account_id": str(snapshot.get("account_id") or "").strip(),
+                    "product_profile_id": str(snapshot.get("product_profile_id") or "").strip().upper(),
+                })
+            elif event_type == "V63_OPPORTUNITY_ANCHOR_PROMOTED":
+                identity_candidates.append({
+                    "opportunity_id": str(event.get("opportunity_id") or "").strip(),
+                    "account_id": "",
+                    "product_profile_id": "",
+                })
         try:
             projected = project_product_opportunities(events)
         except RuntimeError as exc:
-            if str(exc).startswith("V63_ANCHOR_PROMOTION_WITHOUT_CREATED_OPPORTUNITY:"):
-                projected = {"opportunities": []}
-                projection_error = "ORPHAN_PROMOTION_WITHOUT_CREATED_OPPORTUNITY"
-            else:
-                raise
+            projected = {"opportunities": []}
+            error_code = str(exc).split(":", 1)[0].strip()
+            projection_error = error_code or "V63_PROJECTION_FAILED"
+        except ValueError:
+            # The projector raises ValueError for a durable opportunity whose
+            # product/profile pin or lifecycle fields fail domain validation.
+            # Quarantine only this expected persisted-data error so an
+            # unrelated account query can proceed; programming errors with
+            # other exception types must still surface.
+            projected = {"opportunities": []}
+            projection_error = "V63_PRODUCT_OPPORTUNITY_VALIDATION_FAILED"
         opportunities = [
             {
                 "opportunity_id": str(row.get("opportunity_id") or ""),
@@ -320,6 +346,7 @@ class V63ProductionIntegrationBindingMixin:
             "mtime_ns": int(stat.st_mtime_ns),
             "opportunities": opportunities,
             "projection_error": projection_error,
+            "identity_candidates": identity_candidates,
         }
 
     def _load_v63_locator_index_unlocked(self, path: Path) -> dict[str, Any]:
@@ -352,6 +379,8 @@ class V63ProductionIntegrationBindingMixin:
                     and int(prior.get("file_size") or -1) == int(stat.st_size)
                     and int(prior.get("mtime_ns") or -1) == int(stat.st_mtime_ns)
                     and isinstance(prior.get("opportunities"), list)
+                    and isinstance(prior.get("identity_candidates"), list)
+                    and "projection_error" in prior
                 ):
                     continue
                 existing[investigation_id] = self._v63_locator_session_row(investigation_id)
@@ -395,12 +424,44 @@ class V63ProductionIntegrationBindingMixin:
 
     def _query_v63_opportunity_events(self, filters: dict[str, Any]) -> list[dict[str, Any]]:
         args = dict(filters or {})
+        wanted_investigation = str(args.get("investigation_id") or "").strip()
         account_id = str(args.get("account_id") or "").strip()
         opportunity_id = str(args.get("opportunity_id") or "").strip()
         profile_id = str(args.get("product_profile_id") or "").strip().upper()
         index = self._ensure_v63_locator_index()
         investigation_ids: list[str] = []
-        for investigation_id, meta in dict(index.get("sessions") or {}).items():
+        for session_id, meta in dict(index.get("sessions") or {}).items():
+            if wanted_investigation and wanted_investigation != str(session_id):
+                continue
+            if not isinstance(meta, dict):
+                continue
+            projection_error = str(meta.get("projection_error") or "").strip()
+            if projection_error:
+                candidates = meta.get("identity_candidates")
+                candidates = candidates if isinstance(candidates, list) else []
+                scope_matches = not any((account_id, opportunity_id, profile_id))
+                if wanted_investigation and wanted_investigation != str(session_id):
+                    scope_matches = False
+                if not scope_matches:
+                    for candidate in candidates:
+                        if not isinstance(candidate, dict):
+                            continue
+                        if account_id and str(candidate.get("account_id") or "") != account_id:
+                            continue
+                        if opportunity_id and str(candidate.get("opportunity_id") or "") != opportunity_id:
+                            continue
+                        if profile_id and str(candidate.get("product_profile_id") or "").upper() != profile_id:
+                            continue
+                        scope_matches = True
+                        break
+                if scope_matches:
+                    raise RuntimeError(
+                        "V63_OPPORTUNITY_PROJECTION_BLOCKED:"
+                        + str(session_id)
+                        + ":"
+                        + projection_error
+                    )
+                continue
             rows = meta.get("opportunities") if isinstance(meta, dict) else []
             if not isinstance(rows, list):
                 continue
@@ -417,7 +478,7 @@ class V63ProductionIntegrationBindingMixin:
                 matched = True
                 break
             if matched:
-                investigation_ids.append(str(investigation_id))
+                investigation_ids.append(str(session_id))
         result: list[dict[str, Any]] = []
         for investigation_id in sorted(investigation_ids):
             result.extend(self._read_v63_durable_events(investigation_id))
@@ -529,7 +590,14 @@ class V63ProductionIntegrationBindingMixin:
         return {"valid": bool(ids) and not mismatches, "mismatches": sorted(set(mismatches)), "product_profile_id": target_profile}
 
     def _derive_v63_opportunity_runtime_view(self, investigation_id: str, opportunity: dict[str, Any]) -> dict[str, Any]:
-        claims_result = self.get_claims({"investigation_id": investigation_id})
+        get_claims = getattr(self, "get_claims", None)
+        if not callable(get_claims):
+            return {
+                "derived_from_existing_evidence": False,
+                "derived_basis": "CLAIMS_READER_NOT_BOUND",
+                "derived_state_status": "UNAVAILABLE",
+            }
+        claims_result = get_claims({"investigation_id": investigation_id})
         claims = dict(claims_result.get("claims") or {})
         product_claims = [key for key in _PRODUCT_CLAIMS if key in claims]
         weighted = 0.0
@@ -566,11 +634,15 @@ class V63ProductionIntegrationBindingMixin:
                     "lifecycle_target": "QUALIFIED_TARGET" if grade in {"A+", "A", "A-", "B+"} else "OPPORTUNITY_CREATED",
                 }
             )
-        confidence = self.evaluate_research_confidence({"investigation_id": investigation_id})
-        view["research_confidence"] = float(confidence.get("score") or 0.0)
-        outreach = self.evaluate_outreach_readiness({"investigation_id": investigation_id})
-        view["outreach_readiness"] = str(outreach.get("outreach_readiness") or "BLOCKED")
-        view["company_route_status"] = view["outreach_readiness"]
+        evaluate_confidence = getattr(self, "evaluate_research_confidence", None)
+        if callable(evaluate_confidence):
+            confidence = evaluate_confidence({"investigation_id": investigation_id})
+            view["research_confidence"] = float(confidence.get("score") or 0.0)
+        evaluate_outreach = getattr(self, "evaluate_outreach_readiness", None)
+        if callable(evaluate_outreach):
+            outreach = evaluate_outreach({"investigation_id": investigation_id})
+            view["outreach_readiness"] = str(outreach.get("outreach_readiness") or "BLOCKED")
+            view["company_route_status"] = view["outreach_readiness"]
         return view
 
     def _load_v63_capability_bundle(self) -> dict[str, Any] | None:

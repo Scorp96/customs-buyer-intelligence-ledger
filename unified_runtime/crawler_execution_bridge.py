@@ -725,6 +725,16 @@ def _source_access_blocked_failure(row: dict[str, str]) -> bool:
     )
 
 
+def _redirect_target_blocked_failure(row: dict[str, str]) -> bool:
+    error = str(row.get("error") or "").lower()
+    return bool(error) and (
+        "redirect_guard" in error
+        or "redirect target" in error
+        or "private destination" in error
+        or "non-public destination" in error
+    )
+
+
 def _source_unavailable_failure(row: dict[str, str]) -> bool:
     error = str(row.get("error") or "").lower()
     return bool(error) and (
@@ -736,6 +746,50 @@ def _source_unavailable_failure(row: dict[str, str]) -> bool:
         or "connection refused" in error
         or "temporarily unavailable" in error
     )
+
+
+def _sanitize_crawl_error(error: Any) -> str:
+    """Return a stable public error class without backend internals."""
+    raw = " ".join(str(error or "").split())
+    lowered = raw.lower()
+    if not raw:
+        return "CRAWL_FAILED"
+    if lowered.startswith("execution_budget_exceeded_after_"):
+        return raw.split()[0]
+    if (
+        "redirect_guard" in lowered
+        or "redirect target" in lowered
+        or "private destination" in lowered
+        or "non-public destination" in lowered
+    ):
+        return "REDIRECT_TARGET_BLOCKED"
+    if "http_status_403" in lowered or "http 403" in lowered or "status code 403" in lowered:
+        return "HTTP 403"
+    if "http_status_429" in lowered or "http 429" in lowered or "too many requests" in lowered:
+        return "HTTP 429"
+    if "http_status_5" in lowered:
+        return "HTTP 5XX"
+    if lowered.startswith("timeout_after_") or "timed out" in lowered:
+        return "TIMEOUT"
+    if lowered.startswith("source_throttled:") or "rate limit" in lowered:
+        return "SOURCE_THROTTLED"
+    if "anti-bot protection" in lowered or "access denied" in lowered or "forbidden" in lowered:
+        return "SOURCE_ACCESS_BLOCKED"
+    return "SOURCE_UNAVAILABLE"
+
+
+def _sanitize_diagnostics(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _sanitize_diagnostics(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_diagnostics(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_diagnostics(item) for item in value]
+    if isinstance(value, str):
+        lowered = value.lower()
+        if any(marker in lowered for marker in ("traceback", "site-packages", "code context", "runner.py")):
+            return "REDACTED_INTERNAL_ERROR"
+    return value
 
 
 def _fallback_subject(task: dict[str, Any], seed_url: str) -> str:
@@ -965,7 +1019,13 @@ class CrawlExecutionBridge:
             failure_relevant
             and not execution_budget_exhausted
             and not source_throttled
+            and not any(_redirect_target_blocked_failure(row) for row in failed_urls)
             and any(_source_access_blocked_failure(row) for row in failed_urls)
+        )
+        redirect_target_blocked = (
+            failure_relevant
+            and not execution_budget_exhausted
+            and any(_redirect_target_blocked_failure(row) for row in failed_urls)
         )
         # Budget exhaustion takes precedence over a late lower-level response:
         # once the bounded request window has been exceeded, the source was not
@@ -974,17 +1034,25 @@ class CrawlExecutionBridge:
             failure_relevant
             and (
                 execution_budget_exhausted
-                or (not source_throttled and not source_access_blocked)
+                or (
+                    not source_throttled
+                    and not source_access_blocked
+                    and not redirect_target_blocked
+                )
             )
         )
-        source_blocked = source_throttled or source_access_blocked or source_unavailable
+        source_blocked = source_throttled or source_access_blocked or redirect_target_blocked or source_unavailable
         source_status = (
             "SOURCE_THROTTLED"
             if source_throttled
             else (
-                "SOURCE_ACCESS_BLOCKED"
-                if source_access_blocked
-                else ("SOURCE_UNAVAILABLE" if source_unavailable else "OK")
+                "REDIRECT_TARGET_BLOCKED"
+                if redirect_target_blocked
+                else (
+                    "SOURCE_ACCESS_BLOCKED"
+                    if source_access_blocked
+                    else ("SOURCE_UNAVAILABLE" if source_unavailable else "OK")
+                )
             )
         )
 
@@ -1015,11 +1083,17 @@ class CrawlExecutionBridge:
             "route_candidates": route_candidates,
             "source_urls": [page.url for page in pages],
             "pages_crawled": len(pages),
-            "failed_urls": failed_urls,
+            "failed_urls": [
+                {
+                    "url": str(row.get("url") or ""),
+                    "error": _sanitize_crawl_error(row.get("error")),
+                }
+                for row in failed_urls
+            ],
             "source_status": source_status,
             "execution_budget_seconds": max_elapsed_seconds,
             "execution_budget_exhausted": execution_budget_exhausted,
-            "retryable": bool(source_blocked),
+            "retryable": bool(source_throttled or source_access_blocked or source_unavailable),
             "fallback_required": bool(source_blocked),
             "fallback_search_plan": fallback_plan,
             "negative_contact_conclusion_allowed": not source_blocked,
@@ -1035,5 +1109,5 @@ class CrawlExecutionBridge:
         }
         diagnostics = getattr(self.backend, "diagnostics", None)
         if callable(diagnostics):
-            receipt["backend_diagnostics"] = diagnostics()
+            receipt["backend_diagnostics"] = _sanitize_diagnostics(diagnostics())
         return receipt
