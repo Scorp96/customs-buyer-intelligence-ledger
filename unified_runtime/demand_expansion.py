@@ -377,6 +377,25 @@ class V63DemandExpansionMixin:
     def get_demand_anchors(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         args = dict(arguments or {})
         seeds = list(args.get("seeds") or [])
+        scoped_identity = {
+            key: str(args.get(key) or "").strip()
+            for key in ("investigation_id", "account_id", "opportunity_id", "product_profile_id")
+            if str(args.get(key) or "").strip()
+        }
+        identity_scope_requested = any(
+            str(args.get(key) or "").strip()
+            for key in ("investigation_id", "opportunity_id")
+        )
+        if identity_scope_requested and not seeds:
+            return {
+                "status": "BLOCKED",
+                "reason": "IDENTITY_SCOPED_ANCHOR_SEEDS_REQUIRED",
+                "identity_scope": scoped_identity,
+                "anchors": [],
+                "derived_view": True,
+                "requires_immutable_evidence_inputs": True,
+                "persistent_mutation_performed": False,
+            }
         anchors = [self.derive_demand_anchor(dict(seed)) for seed in seeds if isinstance(seed, dict)]
         return {
             "status": "READY",
@@ -507,14 +526,19 @@ class V63DemandExpansionMixin:
 
     def plan_candidate_expansion(self, arguments: dict[str, Any]) -> dict[str, Any]:
         context = copy.deepcopy(arguments)
-        query_limit = int(context.pop("query_limit", 100) or 100)
-        source_task_limit = int(context.pop("source_task_limit", 1000) or 1000)
+        shared_limit = context.pop("limit", None)
+        query_limit = int(context.pop("query_limit", shared_limit if shared_limit is not None else 100) or 100)
+        source_task_limit = int(
+            context.pop("source_task_limit", shared_limit if shared_limit is not None else 1000) or 1000
+        )
+        continuation_token = context.pop("continuation_token", None)
         expansion_plan = plan_expansion(context)
         discovery_plan = generate_discovery_queries({**context, "limit": query_limit})
         source_plan = plan_public_source_tasks(
             expansion_plan,
             discovery_plan,
             max_tasks=source_task_limit,
+            continuation_token=continuation_token,
         )
         return {
             "status": "PLANNED",
@@ -530,7 +554,19 @@ class V63DemandExpansionMixin:
         return _project_legacy_peer_receipt(arguments)
 
     def preview_recursive_anchor_expansion(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        result = _prepare_recursive_expansion(arguments)
+        payload = copy.deepcopy(arguments or {})
+        promoted_anchor = dict(payload.get("promoted_anchor") or {})
+        if not promoted_anchor.get("opportunity_id"):
+            durable = self._v63_resolve_opportunity(payload)
+            durable_stage = str(durable.get("lifecycle_stage") or durable.get("stage") or "").strip().upper()
+            if durable_stage != "PROMOTED_ANCHOR":
+                raise ValueError("recursive expansion requires a PROMOTED_ANCHOR")
+            promoted_anchor = {
+                **durable,
+                "stage": "PROMOTED_ANCHOR",
+            }
+            payload["promoted_anchor"] = promoted_anchor
+        result = _prepare_recursive_expansion(payload)
         result["preview_only"] = True
         result["persistent_mutation_performed"] = False
         return result

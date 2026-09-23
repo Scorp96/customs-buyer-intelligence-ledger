@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import v6 as _v6
+from .legacy_peer_projection import project_legacy_peer_receipt
 
 
 class V61LegacyPeerProjectionMixin:
@@ -159,9 +160,16 @@ class V61LegacyPeerProjectionMixin:
                 ) or []
                 if str(evidence_id).strip()
             })
+            display_name = self._legacy_peer_display_name(receipt)
+            candidate_projection = project_legacy_peer_receipt({
+                **receipt,
+                "source_event": "PEER_RECEIPT_APPENDED",
+                "peer_id": peer_id,
+                "company_name": display_name,
+            })["candidate_projection"]
             rows.append({
                 "peer_id": peer_id,
-                "name": self._legacy_peer_display_name(receipt),
+                "name": display_name,
                 "canonical_key": receipt.get("canonical_key") or "",
                 "country": receipt.get("country") or "",
                 "branch": receipt.get("branch") or "",
@@ -176,6 +184,11 @@ class V61LegacyPeerProjectionMixin:
                 "v6_anchor_promoted": False,
                 "legacy_receipt_replay_safe": True,
                 "legacy_receipt_replay_rejection_reasons": reasons,
+                "candidate_projection": candidate_projection,
+                "candidate_researchability": candidate_projection.get(
+                    "candidate_researchability"
+                ),
+                "candidate_projection_status": candidate_projection.get("status"),
             })
         return sorted(rows, key=lambda row: str(row.get("peer_id") or "").casefold())
 
@@ -191,6 +204,13 @@ class V61LegacyPeerProjectionMixin:
             "decision_saturation_requires_v6_reconciliation": True,
             "execution_receipt_candidate_auto_promotes_to_peer": False,
             "projection_reuses_verified_legacy_event_stream": True,
+            "legacy_peer_candidate_projection": {
+                "status": "READ_ONLY_SIGNAL_ONLY",
+                "requires_explicit_product_profile_and_product_procurement_evidence": True,
+                "missing_inputs_block_candidate_projection": True,
+                "candidate_researchability_is_not_v6_candidate_mutation": True,
+                "preserves_v6_requalification": True,
+            },
         }
         return contract
 
