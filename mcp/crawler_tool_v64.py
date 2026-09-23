@@ -26,7 +26,12 @@ _MAX_PRODUCTION_PAGES = 12
 _MAX_ATTEMPT_ENVELOPE_SECONDS = 30.0
 _MIN_CRAWLER_PYTHON = (3, 10)
 _PLAYWRIGHT_EXECUTABLE_RELATIVE_PATHS = (
+    # Playwright 1.63+ ships Chrome for Testing in a ``chrome-win64``
+    # directory on Windows.  Older Playwright releases used ``chrome-win``;
+    # keep both layouts fail-closed compatible with the runtime probe.
+    Path("chrome-win64") / "chrome.exe",
     Path("chrome-win") / "chrome.exe",
+    Path("chrome-headless-shell-win64") / "chrome-headless-shell.exe",
     Path("chrome-linux") / "chrome",
     Path("chrome-linux") / "headless_shell",
     Path("chrome-mac") / "Chromium.app" / "Contents" / "MacOS" / "Chromium",
