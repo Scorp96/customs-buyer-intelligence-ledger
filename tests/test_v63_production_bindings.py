@@ -143,6 +143,12 @@ class ProductionBindingTests(unittest.TestCase):
         self.assertEqual(index["authority"], "DERIVED_LOCATOR_ONLY")
         self.assertTrue(index["session_event_chain_remains_authority"])
 
+    def test_legacy_bridge_never_shadows_existing_v63_durable_events(self):
+        result = self.runtime._v63_project_legacy_v61_opportunities({"investigation_id": "INV-1"})
+        self.assertEqual(result["status"], "NOT_APPLICABLE")
+        self.assertEqual(result["opportunities"], [])
+        self.assertTrue(result["projection_read_only"])
+
     def test_ownership_rejects_cross_investigation(self):
         result = self.runtime._validate_v63_evidence_ownership("INV-1", "C1", ["E-C2-PVC"])
         self.assertFalse(result["valid"])
