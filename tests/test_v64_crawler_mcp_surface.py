@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from mcp import crawler_tool_v64
@@ -180,9 +183,121 @@ class CrawlerMcpSurfaceTests(unittest.TestCase):
     def test_runtime_status_never_claims_paid_api_requirement(self) -> None:
         with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False):
             status = crawler_tool_v64.crawler_runtime_status()
-        self.assertTrue(status["enabled"])
         self.assertFalse(status["paid_api_required"])
         self.assertTrue(status["public_network_only"])
+
+    def test_enabled_is_false_when_optional_runtime_dependencies_are_missing(self) -> None:
+        with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False), patch.object(
+            crawler_tool_v64.importlib.util,
+            "find_spec",
+            return_value=None,
+        ):
+            status = crawler_tool_v64.crawler_runtime_status()
+
+        self.assertFalse(status["enabled"])
+        self.assertTrue(status["configured_enabled"])
+        self.assertFalse(status["runtime_ready"])
+        self.assertIn("CRAWL4AI_NOT_IMPORTABLE", status["readiness_blockers"])
+        self.assertIn("PLAYWRIGHT_NOT_IMPORTABLE", status["readiness_blockers"])
+        self.assertFalse(status["crawl4ai_present"])
+        self.assertFalse(status["playwright_present"])
+
+    def test_import_failures_are_not_reported_as_dependency_ready(self) -> None:
+        with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False), patch.object(
+            crawler_tool_v64.importlib.util,
+            "find_spec",
+            return_value=SimpleNamespace(submodule_search_locations=None),
+        ), patch.object(
+            crawler_tool_v64.importlib,
+            "import_module",
+            side_effect=ImportError("optional dependency is broken"),
+        ):
+            status = crawler_tool_v64.crawler_runtime_status()
+
+        self.assertTrue(status["crawl4ai_present"])
+        self.assertTrue(status["playwright_present"])
+        self.assertFalse(status["crawl4ai_importable"])
+        self.assertFalse(status["playwright_importable"])
+        self.assertFalse(status["enabled"])
+        self.assertEqual(status["crawl4ai_error_type"], "ImportError")
+        self.assertEqual(status["playwright_error_type"], "ImportError")
+
+    def test_missing_runtime_fails_closed_before_crawl_execution(self) -> None:
+        with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False), patch.object(
+            crawler_tool_v64.importlib.util,
+            "find_spec",
+            return_value=None,
+        ):
+            result = crawler_tool_v64.execute_public_crawl_handler(
+                {
+                    "task": {"call_id": "V64-RUNTIME-MISSING"},
+                    "seed_url": "https://8.8.8.8/",
+                }
+            )
+
+        self.assertEqual(result["status"], "CRAWLER_RUNTIME_MISSING")
+        self.assertEqual(result["missing"], ["crawl4ai"])
+        self.assertFalse(result["runtime"]["enabled"])
+
+    def test_browser_executable_readiness_is_fail_closed(self) -> None:
+        def fake_import(module_name: str):
+            if module_name == "crawl4ai":
+                return SimpleNamespace(AsyncWebCrawler=lambda: None)
+            return SimpleNamespace(async_playwright=lambda: None)
+
+        with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False), patch.object(
+            crawler_tool_v64.importlib.util,
+            "find_spec",
+            return_value=SimpleNamespace(submodule_search_locations=None),
+        ), patch.object(
+            crawler_tool_v64.importlib,
+            "import_module",
+            side_effect=fake_import,
+        ), patch.object(
+            crawler_tool_v64,
+            "_find_playwright_browser_executable",
+            return_value=None,
+        ):
+            status = crawler_tool_v64.crawler_runtime_status()
+
+        self.assertTrue(status["crawl4ai_importable"])
+        self.assertTrue(status["playwright_importable"])
+        self.assertFalse(status["browser_executable_ready"])
+        self.assertFalse(status["browser_escalation_supported"])
+        self.assertFalse(status["enabled"])
+        self.assertIn("PLAYWRIGHT_BROWSER_NOT_READY", status["readiness_blockers"])
+
+    def test_unsupported_interpreter_is_not_runtime_ready(self) -> None:
+        version_info = SimpleNamespace(major=3, minor=9)
+        with patch.dict(os.environ, {"CBI_CRAWLER_ENABLED": "1"}, clear=False), patch.object(
+            crawler_tool_v64.sys,
+            "version_info",
+            version_info,
+        ):
+            status = crawler_tool_v64.crawler_runtime_status()
+
+        self.assertFalse(status["interpreter_ready"])
+        self.assertFalse(status["enabled"])
+        self.assertIn("INTERPRETER_UNSUPPORTED", status["readiness_blockers"])
+
+    def test_playwright_browser_path_probe_uses_installed_chromium_layout(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            executable = (
+                Path(temp_dir)
+                / "chromium-1234"
+                / "chrome-linux"
+                / "chrome"
+            )
+            executable.parent.mkdir(parents=True)
+            executable.write_text("synthetic executable", encoding="utf-8")
+            with patch.dict(
+                os.environ,
+                {"PLAYWRIGHT_BROWSERS_PATH": temp_dir},
+                clear=False,
+            ):
+                found = crawler_tool_v64._find_playwright_browser_executable(None)
+
+        self.assertEqual(found, executable)
 
     def test_runtime_status_exposes_resource_and_ssrf_guards(self) -> None:
         status = crawler_tool_v64.crawler_runtime_status()

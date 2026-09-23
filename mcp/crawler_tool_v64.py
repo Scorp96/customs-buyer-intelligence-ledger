@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import importlib.util
 import os
+import platform
+import sys
 import threading
+from pathlib import Path
 from typing import Any
 
 from unified_runtime.browser_escalation import (
@@ -20,6 +24,14 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off", ""}
 _MAX_PRODUCTION_PAGES = 12
 _MAX_ATTEMPT_ENVELOPE_SECONDS = 30.0
+_MIN_CRAWLER_PYTHON = (3, 10)
+_PLAYWRIGHT_EXECUTABLE_RELATIVE_PATHS = (
+    Path("chrome-win") / "chrome.exe",
+    Path("chrome-linux") / "chrome",
+    Path("chrome-linux") / "headless_shell",
+    Path("chrome-mac") / "Chromium.app" / "Contents" / "MacOS" / "Chromium",
+    Path("chrome-mac") / "Google Chrome for Testing.app" / "Contents" / "MacOS" / "Google Chrome for Testing",
+)
 
 
 def _env_enabled() -> bool:
@@ -78,6 +90,113 @@ def _validate_attempt_envelope(timeout_seconds: float, max_retries: int) -> floa
     return envelope
 
 
+def _probe_optional_dependency(
+    module_name: str,
+    import_name: str,
+    required_symbol: str,
+) -> dict[str, Any]:
+    """Report package presence and importability without making network calls."""
+    try:
+        spec = importlib.util.find_spec(module_name)
+    except Exception as exc:
+        return {
+            "present": False,
+            "importable": False,
+            "error_type": type(exc).__name__,
+            "package_root": None,
+        }
+
+    if spec is None:
+        return {
+            "present": False,
+            "importable": False,
+            "error_type": "MODULE_NOT_FOUND",
+            "package_root": None,
+        }
+
+    package_root: Path | None = None
+    locations = getattr(spec, "submodule_search_locations", None)
+    if locations:
+        try:
+            package_root = Path(next(iter(locations))).resolve()
+        except (OSError, StopIteration, TypeError, ValueError):
+            package_root = None
+
+    try:
+        module = importlib.import_module(import_name)
+        if not callable(getattr(module, required_symbol, None)):
+            return {
+                "present": True,
+                "importable": False,
+                "error_type": "REQUIRED_SYMBOL_MISSING",
+                "package_root": package_root,
+            }
+    except Exception as exc:
+        return {
+            "present": True,
+            "importable": False,
+            "error_type": type(exc).__name__,
+            "package_root": package_root,
+        }
+
+    return {
+        "present": True,
+        "importable": True,
+        "error_type": None,
+        "package_root": package_root,
+    }
+
+
+def _playwright_browser_roots(package_root: Path | None) -> list[Path]:
+    configured = str(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "").strip()
+    if configured == "0":
+        return [package_root / ".local-browsers"] if package_root is not None else []
+    if configured:
+        return [Path(configured).expanduser()]
+
+    if os.name == "nt":
+        base = str(os.environ.get("LOCALAPPDATA") or "").strip()
+        return [
+            (Path(base) if base else Path.home() / "AppData" / "Local")
+            / "ms-playwright"
+        ]
+    if sys.platform == "darwin":
+        return [Path.home() / "Library" / "Caches" / "ms-playwright"]
+    cache_root = str(os.environ.get("XDG_CACHE_HOME") or "").strip()
+    return [
+        (Path(cache_root) if cache_root else Path.home() / ".cache")
+        / "ms-playwright"
+    ]
+
+
+def _find_playwright_browser_executable(package_root: Path | None) -> Path | None:
+    for root in _playwright_browser_roots(package_root):
+        try:
+            browser_dirs = sorted(root.glob("chromium*"))
+        except (OSError, ValueError):
+            continue
+        for browser_dir in browser_dirs:
+            if not browser_dir.is_dir():
+                continue
+            for relative_path in _PLAYWRIGHT_EXECUTABLE_RELATIVE_PATHS:
+                candidate = browser_dir / relative_path
+                try:
+                    if candidate.is_file():
+                        return candidate
+                except OSError:
+                    continue
+    return None
+
+
+def _interpreter_status() -> dict[str, Any]:
+    version = (sys.version_info.major, sys.version_info.minor)
+    return {
+        "python_executable": str(sys.executable or ""),
+        "python_version": platform.python_version(),
+        "interpreter_ready": bool(sys.executable) and version >= _MIN_CRAWLER_PYTHON,
+    }
+
+
 _CRAWLER_CONCURRENCY_LIMIT = _crawler_max_concurrency()
 _CRAWLER_SEMAPHORE = threading.BoundedSemaphore(_CRAWLER_CONCURRENCY_LIMIT)
 
@@ -97,15 +216,51 @@ def validate_public_seed_url(url: str) -> str:
 
 
 def crawler_runtime_status() -> dict[str, Any]:
-    crawl4ai_present = importlib.util.find_spec("crawl4ai") is not None
-    playwright_present = importlib.util.find_spec("playwright") is not None
-    enabled = _env_enabled()
+    configured_enabled = _env_enabled()
+    interpreter = _interpreter_status()
+    crawl4ai = _probe_optional_dependency(
+        "crawl4ai",
+        "crawl4ai",
+        "AsyncWebCrawler",
+    )
+    playwright = _probe_optional_dependency(
+        "playwright",
+        "playwright.async_api",
+        "async_playwright",
+    )
+    browser_executable = _find_playwright_browser_executable(playwright["package_root"])
+    browser_escalation_supported = bool(
+        configured_enabled and playwright["importable"] and browser_executable
+    )
+    readiness_blockers: list[str] = []
+    if not interpreter["interpreter_ready"]:
+        readiness_blockers.append("INTERPRETER_UNSUPPORTED")
+    if not crawl4ai["importable"]:
+        readiness_blockers.append("CRAWL4AI_NOT_IMPORTABLE")
+    if not playwright["importable"]:
+        readiness_blockers.append("PLAYWRIGHT_NOT_IMPORTABLE")
+    elif not browser_executable:
+        readiness_blockers.append("PLAYWRIGHT_BROWSER_NOT_READY")
+    runtime_ready = not readiness_blockers
+    enabled = bool(configured_enabled and runtime_ready)
     return {
         "schema": "cbi.crawler-runtime-status.v6.4",
         "enabled": enabled,
-        "crawl4ai_present": crawl4ai_present,
-        "playwright_present": playwright_present,
-        "browser_escalation_supported": enabled and playwright_present,
+        "configured_enabled": configured_enabled,
+        "runtime_ready": runtime_ready,
+        "readiness_blockers": readiness_blockers,
+        "python_executable": interpreter["python_executable"],
+        "python_version": interpreter["python_version"],
+        "interpreter_ready": interpreter["interpreter_ready"],
+        "crawl4ai_present": crawl4ai["present"],
+        "crawl4ai_importable": crawl4ai["importable"],
+        "crawl4ai_error_type": crawl4ai["error_type"],
+        "playwright_present": playwright["present"],
+        "playwright_importable": playwright["importable"],
+        "playwright_error_type": playwright["error_type"],
+        "browser_executable_ready": bool(browser_executable),
+        "browser_executable_path": str(browser_executable) if browser_executable else None,
+        "browser_escalation_supported": browser_escalation_supported,
         "paid_api_required": False,
         "public_network_only": True,
         "request_interception_guard": True,
@@ -210,7 +365,16 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
         }
 
     runtime = crawler_runtime_status()
-    if not runtime["crawl4ai_present"]:
+    browser_requested = arguments.get("browser_escalation", True) is not False
+    if not runtime["interpreter_ready"]:
+        return {
+            "status": "CRAWLER_RUNTIME_MISSING",
+            "runtime": runtime,
+            "missing": ["python"],
+            "retryable": False,
+            "paid_api_required": False,
+        }
+    if not runtime["crawl4ai_importable"]:
         return {
             "status": "CRAWLER_RUNTIME_MISSING",
             "runtime": runtime,
@@ -219,8 +383,7 @@ async def _execute(arguments: dict[str, Any]) -> dict[str, Any]:
             "paid_api_required": False,
         }
 
-    browser_requested = arguments.get("browser_escalation", True) is not False
-    if browser_requested and not runtime["playwright_present"]:
+    if browser_requested and not runtime["browser_escalation_supported"]:
         return {
             "status": "CRAWLER_RUNTIME_MISSING",
             "runtime": runtime,
