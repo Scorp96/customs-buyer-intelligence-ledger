@@ -47,7 +47,7 @@ class CanonicalRoutePreflightContractTests(unittest.TestCase):
             self.assertIn(required, self.skill)
         self.assertIn("server-side tenant/storage authority check", self.skill)
         self.assertIn("host execution policy", self.skill)
-        self.assertIn("never** try an alternate MCP", self.skill.lower().replace("**never**", "never**"))
+        self.assertIn("**Never** try an alternate MCP", self.skill)
         self.assertIn("merge Canonical IDs", self.skill)
         self.assertIn("CRM writes", self.skill)
 
