@@ -96,6 +96,10 @@ from mcp.chatgpt_oauth_transport import (  # noqa: E402
     decorate_tools_list_for_chatgpt,
     main as _remote_transport_main,
 )
+from mcp.host_search_crawl_bridge_v64 import (  # noqa: E402
+    TOOL_NAME as HOST_SEARCH_CRAWL_BRIDGE_TOOL_NAME,
+    install_remote_host_search_crawl_bridge_tool,
+)
 from mcp.object_store_recovery_v63 import (  # noqa: E402
     RecoveryObjectStoreStateManagerV63,
 )
@@ -116,6 +120,9 @@ install_remote_authoritative_source_evidence_tool(
     persistence=_PERSISTENCE,
     runtime=_RUNTIME,
     live_root=_LIVE_ROOT,
+)
+install_remote_host_search_crawl_bridge_tool(
+    server_module=_production._v61._server,
 )
 
 
@@ -227,6 +234,12 @@ def _health() -> dict[str, Any]:
         "object_store_persistence_enabled": _PERSISTENCE is not None,
         "remote_post_handler_checkpoint_enabled": _PERSISTENCE is not None,
         "crawler_runtime": crawler_runtime_status(),
+        "host_search_crawl_bridge": {
+            "enabled": True,
+            "tool_name": HOST_SEARCH_CRAWL_BRIDGE_TOOL_NAME,
+            "server_performs_web_search": False,
+            "durable_mutation_performed": False,
+        },
         "deployment_identity": _deployment_identity(persistence_health),
     }
     if _PERSISTENCE is not None:
