@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from mcp.cloud_runtime_startup_guard import require_remote_environment_safety
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -82,6 +84,7 @@ def _require_explicit_durable_root() -> Path:
 _ACCEPTANCE_PIN_REQUIRED = _env_flag("CBI_V63_ACCEPTANCE_PIN_DEPLOYMENT_SHA")
 _DEPLOYMENT_GIT_SHA = _resolve_deployment_git_sha(pin_required=_ACCEPTANCE_PIN_REQUIRED)
 _DEPLOYMENT_INSTANCE_ID = str(os.environ.get("RENDER_INSTANCE_ID") or "").strip() or None
+require_remote_environment_safety(os.environ)
 _EXPECTED_ROOT = _require_explicit_durable_root()
 _LIVE_ROOT = _EXPECTED_ROOT.parent
 
