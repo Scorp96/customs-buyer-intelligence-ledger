@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 import unittest
 
@@ -35,6 +36,22 @@ class SingleMcpEntrypointTests(unittest.TestCase):
         manifest = json.loads((ROOT / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["mcpServers"], "./mcp.json")
         self.assertNotIn("mcpServers", json.loads((ROOT / "plugin.json").read_text(encoding="utf-8")))
+
+    def test_synthetic_legacy_checkout_isolated_from_real_plugin_root(self):
+        from unified_runtime.mcp_entrypoint_v63 import resolve_active_mcp_entrypoint
+        with tempfile.TemporaryDirectory(prefix="cbi-mcp-isolation-") as td:
+            root = Path(td)
+            old = root / ".mcp.json"
+            old.write_text(json.dumps({"mcpServers": {
+                "test-only": {"args": ["mcp/server_v61_backup_recovery.py"]},
+            }}), encoding="utf-8")
+            # Old tests can parse this explicit synthetic checkout only.
+            self.assertEqual(resolve_active_mcp_entrypoint(root), "mcp/server_v61_backup_recovery.py")
+            # A real plugin cannot fall back to the root legacy dotfile.
+            (root / "plugin.json").write_text("{}", encoding="utf-8")
+            self.assertIsNone(resolve_active_mcp_entrypoint(root))
+            (root / "mcp.json").write_text("{}", encoding="utf-8")
+            self.assertIsNone(resolve_active_mcp_entrypoint(root))
 
     def test_active_skill_contract_has_no_answer_first_research_route(self):
         docs = (ROOT / "skills/investigate-customs-buyers/references/unified-runtime-contract.md").read_text(encoding="utf-8")
