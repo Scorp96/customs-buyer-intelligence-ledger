@@ -125,6 +125,35 @@ the accepted `https://cbi-v61-preview.onrender.com` remains unchanged.
 This transport safeguard does **not** replace confidential upstream-token
 protection in OAuth token packaging, which needs separate migration validation.
 
+### Verify the **active process** enforces Render Free safety
+
+The source Blueprint declaring `CBI_REQUIRE_EPHEMERAL_DURABILITY=1`
+does not prove an already-created Render service received that environment
+setting. The authenticated MCP `get_runtime_contract` and
+`get_runtime_health` tools now include a read-only
+`remote_startup_safety` attestation derived from the **currently running
+process**, not from an on-disk configuration template:
+
+- `render_hosted`
+- `public_mcp_auth_mode_valid`
+- `ephemeral_durability_gate_requested`
+- `object_store_manager_attached`
+- `ephemeral_durability_gate_enforced`
+
+For the current Render Free service, all five should be `true`. If
+`ephemeral_durability_gate_requested` is `false`, code deployment alone
+has not activated the mandatory Free-instance guard; treat production
+configuration acceptance as **BLOCKED** and fix it through an authorized
+Render Dashboard configuration audit. No automatic environment mutation,
+bucket migration or restart occurs from the read-only tool.
+
+The response contains no access key, object-store endpoint, bucket or pointer
+fingerprint, and explicitly reports
+`render_instance_plan_independently_verified=false` and
+`latest_generation_self_restore_proven=false`. It must never be used as
+a substitute for isolated R2 self-restore verification or for ensuring
+that a different ChatGPT CBI connector is pointing at the same store.
+
 ### Bootstrap process liveness versus MCP readiness
 
 During missing/unrestored R2 state, the bootstrap HTTP server keeps
