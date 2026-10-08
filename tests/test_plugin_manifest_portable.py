@@ -54,15 +54,30 @@ class PortablePluginManifestTests(unittest.TestCase):
         self.assertNotIn("command", exposed)
         self.assertNotIn("args", exposed)
 
+    def test_portable_and_codex_package_versions_match_for_cache_refresh(self):
+        portable = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        codex = json.loads((ROOT / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(portable["name"], codex["name"])
+        self.assertEqual(portable["version"], codex["version"])
+        self.assertTrue(portable["version"].startswith("6.4.1"), portable["version"])
+
     def test_legacy_engineering_launcher_not_referenced_by_active_manifest(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         compatibility = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
         portable = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
-        remote = compatibility["mcp_servers"]["buyer-outreach-actions"]
-        self.assertEqual(remote["url"], portable["mcpServers"]["buyer-outreach-actions"]["url"])
-        self.assertNotIn("command", remote)
-        self.assertNotIn("args", remote)
+        # OpenAI Codex compatibility uses camelCase mcpServers, not config.toml
+        # snake_case mcp_servers. Keep a single hosted MCP and zero stdio fallbacks.
+        self.assertEqual(set(compatibility), {"mcpServers"})
+        self.assertNotIn("mcp_servers", compatibility)
+        self.assertEqual(set(compatibility["mcpServers"]), {"buyer-outreach-actions"})
+        remote = compatibility["mcpServers"]["buyer-outreach-actions"]
+        self.assertEqual(remote, {
+            "type": "http",
+            "url": portable["mcpServers"]["buyer-outreach-actions"]["url"],
+        })
+        for prohibited in ("command", "args", "cwd", "env"):
+            self.assertNotIn(prohibited, remote)
         legacy = json.loads((ROOT / "tests/fixtures/mcp/legacy_windows_launcher.json").read_text(encoding="utf-8"))
         self.assertIn("command", legacy["mcpServers"]["buyer-outreach-actions"])
 
