@@ -59,7 +59,7 @@ class PortablePluginManifestTests(unittest.TestCase):
         codex = json.loads((ROOT / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(portable["name"], codex["name"])
         self.assertEqual(portable["version"], codex["version"])
-        self.assertTrue(portable["version"].startswith("6.4.1"), portable["version"])
+        self.assertTrue(portable["version"].startswith("6.4.2"), portable["version"])
 
     def test_legacy_engineering_launcher_not_referenced_by_active_manifest(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
