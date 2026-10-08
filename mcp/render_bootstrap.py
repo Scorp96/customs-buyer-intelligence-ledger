@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
+from mcp.cloud_runtime_startup_guard import require_remote_environment_safety
 
 
 def _live_root() -> Path:
@@ -149,6 +150,7 @@ def _serve_bootstrap() -> int:
 
 
 def main() -> int:
+    require_remote_environment_safety(os.environ)
     live = _live_root()
     state = _state(live)
 
