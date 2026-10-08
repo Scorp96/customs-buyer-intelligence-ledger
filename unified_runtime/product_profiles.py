@@ -351,6 +351,105 @@ PRODUCT_PROFILE_REGISTRY: dict[str, dict[str, Any]] = {
         "cross_sell_profiles": ["PVC"],
         "technical_claim_boundaries": ["acrylic application overlap does not establish PVC demand"],
     },
+    # Buyer-demand discovery taxonomy only. This is NOT a SMARTORS manufacturing
+    # capability profile; verified machine specifications require a separate,
+    # explicitly bound seller capability with model-level technical evidence.
+    "SOAP_MACHINERY": {
+        "profile_id": "SOAP_MACHINERY",
+        "profile_version": "1",
+        "portfolio_priority": "SECONDARY_HIGH",
+        "scheduler_weight": 0.75,
+        "seller_capability_default": "UNCONFIGURED",
+        "product_scope": "BUYER_DISCOVERY_TAXONOMY_ONLY",
+        "subfamilies": [
+            "LIQUID_DETERGENT_PROCESSING",
+            "EMULSIFICATION",
+            "LIQUID_FILLING_PACKAGING",
+            "WATER_TREATMENT",
+        ],
+        "variants": [
+            "LIQUID_WASHING_MIXER",
+            "VACUUM_EMULSIFIER",
+            "LIQUID_FILLING_LINE",
+            "RO_WATER_TREATMENT",
+            "CAPPING_EQUIPMENT",
+        ],
+        "variant_application_map_policy": {
+            "role": "DISCOVERY_PRIOR",
+            "qualification_gate": False,
+            "proves_procurement": False,
+            "proves_application_fit": False,
+            "explicit_context_overrides_prior": True,
+            "verified_observed_evidence_overrides_prior": True,
+        },
+        "variant_application_map": {
+            "LIQUID_WASHING_MIXER": {
+                "applications": ["LIQUID_DETERGENT_PRODUCTION", "HOME_CARE_LIQUIDS"],
+                "buyer_archetypes": ["DETERGENT_MANUFACTURER", "HOME_CARE_MANUFACTURER"],
+            },
+            "VACUUM_EMULSIFIER": {
+                "applications": ["COSMETICS_EMULSION", "LIQUID_DETERGENT_PRODUCTION"],
+                "buyer_archetypes": ["COSMETICS_MANUFACTURER", "DETERGENT_MANUFACTURER"],
+            },
+            "LIQUID_FILLING_LINE": {
+                "applications": ["LIQUID_FILLING_PACKAGING", "HOME_CARE_LIQUIDS"],
+                "buyer_archetypes": ["DETERGENT_MANUFACTURER", "HOME_CARE_MANUFACTURER"],
+            },
+            "RO_WATER_TREATMENT": {
+                "applications": ["PROCESS_WATER_TREATMENT"],
+                "buyer_archetypes": ["DETERGENT_MANUFACTURER", "COSMETICS_MANUFACTURER"],
+            },
+            "CAPPING_EQUIPMENT": {
+                "applications": ["LIQUID_FILLING_PACKAGING"],
+                "buyer_archetypes": ["DETERGENT_MANUFACTURER", "COSMETICS_MANUFACTURER"],
+            },
+        },
+        "applications": [
+            "LIQUID_DETERGENT_PRODUCTION",
+            "HOME_CARE_LIQUIDS",
+            "COSMETICS_EMULSION",
+            "LIQUID_FILLING_PACKAGING",
+            "PROCESS_WATER_TREATMENT",
+        ],
+        "buyer_archetypes": [
+            "DETERGENT_MANUFACTURER",
+            "HOME_CARE_MANUFACTURER",
+            "COSMETICS_MANUFACTURER",
+        ],
+        "channels": ["DIRECT_FACTORY", "MACHINERY_IMPORTER", "EQUIPMENT_INTEGRATOR"],
+        "commercial_aliases": [
+            "soap machinery",
+            "liquid detergent manufacturing equipment",
+            "liquid washing mixer",
+            "liquid filling machine",
+        ],
+        "marketing_aliases": [],
+        "positive_search_vocabulary": [
+            "liquid detergent production line",
+            "soap factory mixing equipment",
+            "industrial liquid filling machinery",
+            "vacuum emulsifying mixer",
+            "reverse osmosis process water system",
+        ],
+        "negative_exclusion_vocabulary": [
+            "PVC foam board",
+            "WPC cladding",
+            "solid soap plodder capability unverified",
+        ],
+        "cross_sell_profiles": [],
+        "technical_claim_boundaries": [
+            "Discovery taxonomy is not seller capability or verified technical fit",
+            "Machine type alone never proves capacity, automation, or compatibility",
+            "Solid soap bar production and soap plodder are not verified SMARTORS capabilities",
+            "Spare-part imports do not establish a new complete-line purchasing intent",
+            "Current seller name, models, specs and citations must be bound separately",
+        ],
+        "discovery_source_urls": [
+            "https://www.gzsmartors.com/",
+            "https://www.gzsmartors.com/col.jsp?id=120",
+            "https://www.gzsmartors.com/nd.jsp?fromMid=780&id=8",
+        ],
+    },
 }
 
 

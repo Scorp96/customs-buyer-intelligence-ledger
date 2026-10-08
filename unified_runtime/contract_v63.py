@@ -61,7 +61,11 @@ def build_v63_contract() -> dict[str, Any]:
     profiles = list_product_profiles()
     return {
         "schema": "cbi.demand-expansion.v6.3",
-        "primary_product_profile": "PVC",
+        "primary_product_profile": "PVC",  # legacy v6.3 portfolio scheduling, not active seller
+        "primary_product_profile_scope": "LEGACY_PORTFOLIO_COMPATIBILITY_ONLY",
+        "active_seller_product_profile_id": None,
+        "seller_profile_requires_explicit_binding": True,
+        "discovery_profile_is_not_seller_capability": True,
         "product_profiles": {
             row["profile_id"]: {
                 "profile_version": row["profile_version"],
