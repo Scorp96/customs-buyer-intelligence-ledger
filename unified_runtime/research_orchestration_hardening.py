@@ -7,6 +7,7 @@ canonical identity, CRM state, outreach sends, or object-store persistence.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .errors import ValidationError
@@ -55,6 +56,31 @@ SUPPORTED_ROUTE_CHANNELS = {
     "FORM",
 }
 SOFT_BUDGET_STATUS = "PAUSED_RESOURCE_LIMIT"
+
+
+def _is_obvious_placeholder_route(channel: str, raw_value: str) -> bool:
+    """Reject obvious public-site template values; keep legitimate examples in tests.
+
+    This is deliberately narrower than a generic fake-contact detector.
+    Unusual real business routes require normal source and ownership validation.
+    """
+    value = str(raw_value or "").strip()
+    if not value:
+        return False
+    if channel == "EMAIL":
+        if value.count("@") != 1:
+            return True
+        local, domain = value.rsplit("@", 1)
+        return (not local or "." not in domain or " " in value
+                or local.upper() in {"X.XXXXX", "XXXXX", "XXXX"})
+    if channel in {"PHONE", "WHATSAPP", "ZALO"}:
+        digits = re.sub(r"[^0-9]", "", value)
+        return bool(digits) and (
+            set(digits) == {"0"}
+            or (digits.startswith("020") and len(digits) >= 8
+                and set(digits[3:]) == {"0"})
+        )
+    return value.upper() in {"XXX", "X.XXXXX", "PLACEHOLDER"}
 
 
 class V61ResearchOrchestrationHardeningMixin:
@@ -166,6 +192,8 @@ class V61ResearchOrchestrationHardeningMixin:
             return None
         if channel not in SUPPORTED_ROUTE_CHANNELS or not value:
             return None
+        if _is_obvious_placeholder_route(channel, value):
+            return None
         if raw.get("verified") is not True:
             return None
         if raw.get("masked") is True:
@@ -224,6 +252,8 @@ class V61ResearchOrchestrationHardeningMixin:
             reasons.append("UNSUPPORTED_ROUTE_CHANNEL")
         if not route_value:
             reasons.append("ROUTE_VALUE_REQUIRED")
+        if route_value and _is_obvious_placeholder_route(channel, route_value):
+            reasons.append("OBVIOUS_TEMPLATE_CONTACT_VALUE")
         if value.get("verified") is not True:
             reasons.append("ROUTE_NOT_VERIFIED")
         if value.get("masked") is True:
