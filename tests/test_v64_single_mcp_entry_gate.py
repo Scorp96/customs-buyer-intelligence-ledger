@@ -31,10 +31,15 @@ class SingleMcpEntrypointTests(unittest.TestCase):
         launcher = payload["mcpServers"]["buyer-outreach-actions"]
         self.assertEqual(launcher["command"].lower(), "powershell.exe")
         compatibility = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
-        self.assertEqual(set(compatibility), {"mcp_servers"})
-        remote = compatibility["mcp_servers"]["buyer-outreach-actions"]
-        self.assertEqual(remote, {"url": "https://cbi-v61-preview.onrender.com/mcp"})
-        self.assertNotIn("command", remote)
+        self.assertEqual(set(compatibility), {"mcpServers"})
+        self.assertNotIn("mcp_servers", compatibility)
+        remote = compatibility["mcpServers"]["buyer-outreach-actions"]
+        self.assertEqual(remote, {
+            "type": "http",
+            "url": "https://cbi-v61-preview.onrender.com/mcp",
+        })
+        for field in ("command", "args", "cwd", "env"):
+            self.assertNotIn(field, remote)
 
     def test_plugin_manifest_points_to_single_cloud_endpoint(self):
         manifest = json.loads((ROOT / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
