@@ -19,7 +19,7 @@ class V64ReleaseIdentityTests(unittest.TestCase):
         payload = json.loads(
             (ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
         )
-        self.assertTrue(str(payload["version"]).startswith("6.4.1+codex."))
+        self.assertTrue(str(payload["version"]).startswith("6.4.2+codex."))
         self.assertIn("v6.4", str(payload["description"]))
         self.assertIn("Crawl4AI", str(payload["description"]))
         self.assertIn("Playwright", str(payload["description"]))

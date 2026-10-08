@@ -1,6 +1,6 @@
 {
   "name": "customs-buyer-intelligence",
-  "version": "6.4.1+codex.20261009.r1",
+  "version": "6.4.2+codex.20261009.r1",
   "description": "CBI v6.4 — One CBI FULL_AUDIT EXHAUSTIVE research entry over Render cloud MCP; identity-first Google Maps, official site, company and person social profiles; independently verified Decision-Grade Evidence Saturation; safeguards for CRM and outreach. Uses Crawl4AI/Playwright public crawling.",
   "author": {
     "name": "CBI Research Platform"
@@ -35,7 +35,7 @@
   "interface": {
     "displayName": "Customs Buyer Intelligence",
     "shortDescription": "唯一FULL_AUDIT；公司→地图→官网→官方社媒→逐人社媒；独立证据饱和",
-    "longDescription": "唯一调查入口：CBI FULL_AUDIT（EXHAUSTIVE）＋Decision-Grade证据饱和。五步强制顺序：1 公司法定/营业名、行业和别名；2 Google Maps/Business地图实体、地址和官网核对；3 官网Contact/About/Team/Footer/PDF核验；4 公司官方Facebook/Instagram/LinkedIn/X、本地社媒、管理层及帖子/标签；5 针对每个采购、生产、工程、运营、GM/所有者决策人逐一搜查公开LinkedIn/Facebook/Instagram与当地社媒，绑定姓名职位任职时间和个人公开联系方式。公司官方Facebook不等于个人主页；未能访问/403/SOURCE_UNAVAILABLE等须保留SOURCE_ACCESS_BLOCKED，改用合法公开渠道反查，不得猜姓名或个人号码。不得因COMPANY_ROUTE_READY而停止 named-person research；公司 route 与 named-person route 必须分开验证；CONTACT_PENDING需独立终止性 receipt，终止性 receipt不等于不存在账号。海关one-shot仅表示最终一次性呈现，不是第二调查模式：全部历史提单去重、进口人/真实采购人、供应商竞争、12模块和六分支网络都在同一FULL_AUDIT执行。不得把公司总机、通用邮箱或公司级 route 冒充具体决策人的个人直线。使用真实证据和关联Source Attempt，不把搜索片段、重复镜像或模型判断当独立事实；评估正反证、剩余EIV、Decision Saturation及正式Closure。28分钟为实质调查默认主动研究下限而非完整性证明；未实测有效研究时长、被阻断或会话中止时，必须交付中断交接报告，不得假称已跑满、完成或云端自动持续执行。ChatGPT平台若无法提供真实可恢复的长任务执行环境，不得承诺持续工作。默认只记录经证实的调查Evidence；CRM/Excel写入、付费Provider、持续监控、草稿发送或任何外联执行均须单独明确授权。WAL durability与历史记录保持兼容。 个人档案搜寻必须包含公开 LinkedIn 资料；draft-only outreach 仅允许生成文字草稿，未授权不得发送。 当前卖方品牌/法人和产品能力必须逐单核验绑定；历史PVC为兼容档案，不得默认应用到SMARTORS机械。",
+    "longDescription": "唯一调查入口：CBI FULL_AUDIT（EXHAUSTIVE）＋Decision-Grade证据饱和。五步强制顺序：1 公司法定/营业名、行业和别名；2 Google Maps/Business地图实体、地址和官网核对；3 官网Contact/About/Team/Footer/PDF核验；4 公司官方Facebook/Instagram/LinkedIn/X、本地社媒、管理层及帖子/标签；5 针对每个采购、生产、工程、运营、GM/所有者决策人逐一搜查公开LinkedIn/Facebook/Instagram与当地社媒，绑定姓名职位任职时间和个人公开联系方式。公司官方Facebook不等于个人主页；未能访问/403/SOURCE_UNAVAILABLE等须保留SOURCE_ACCESS_BLOCKED，改用合法公开渠道反查，不得猜姓名或个人号码。不得因COMPANY_ROUTE_READY而停止 named-person research；公司 route 与 named-person route 必须分开验证；CONTACT_PENDING需独立终止性 receipt，终止性 receipt不等于不存在账号。海关one-shot仅表示最终一次性呈现，不是第二调查模式：全部历史提单去重、进口人/真实采购人、供应商竞争、12模块和六分支网络都在同一FULL_AUDIT执行。不得把公司总机、通用邮箱或公司级 route 冒充具体决策人的个人直线。使用真实证据和关联Source Attempt，不把搜索片段、重复镜像或模型判断当独立事实；评估正反证、剩余EIV、Decision Saturation及正式Closure。28分钟为实质调查默认主动研究下限而非完整性证明；未实测有效研究时长、被阻断或会话中止时，必须交付中断交接报告，不得假称已跑满、完成或云端自动持续执行。ChatGPT平台若无法提供真实可恢复的长任务执行环境，不得承诺持续工作。默认只记录经证实的调查Evidence；CRM/Excel写入、付费Provider、持续监控、草稿发送或任何外联执行均须单独明确授权。WAL durability与历史记录保持兼容。 个人档案搜寻必须包含公开 LinkedIn 资料；draft-only outreach 仅允许生成文字草稿，未授权不得发送。 当前卖方品牌/法人和产品能力必须逐单核验绑定；历史PVC为兼容档案，不得默认应用到SMARTORS机械。 写入前必须在同一CBI v6.4 Render连接读取Runtime契约与健康状态，核对唯一规范MCP端点、外部备份及WAL；旧同名连接状态分叉时禁止写入或自动切换。",
     "developerName": "CBI Research Platform",
     "category": "Business",
     "capabilities": [
@@ -43,9 +43,9 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "使用 $investigate-customs-buyers 运行唯一 CBI FULL_AUDIT（EXHAUSTIVE）＋Decision-Grade：先公司/行业→Google Maps→官网→官方Facebook等和管理层→每个决策人个人社媒与联系方式，再完成海关、供应商、设备适配、六分支、反证和饱和。必须引用每个来源；若无法证明有效28分钟研究或完成Closure，输出中断交接，不许假称完成。不写CRM、不付费、不发送。",
-      "使用 $investigate-customs-buyers 继续当前同一企业的 FULL_AUDIT，先恢复该公司的独立Evidence与未关闭Pivot，补查全部未验证的公司/个人社媒及决策链，不重置历史。",
-      "使用 $investigate-customs-buyers 对海关/提单线索运行同一 FULL_AUDIT，按统一调查规则完成采购实体、历史交易、供应商、Buying Group、六分支裂变和证据饱和；只在Closure有效时宣称全部完成。",
+      "使用 $investigate-customs-buyers 运行唯一 CBI FULL_AUDIT（EXHAUSTIVE）＋Decision-Grade：先公司/行业→Google Maps→官网→官方Facebook等和管理层→每个决策人个人社媒与联系方式，再完成海关、供应商、设备适配、六分支、反证和饱和。必须引用每个来源；若无法证明有效28分钟研究或完成Closure，输出中断交接，不许假称完成。不写CRM、不付费、不发送。 写入前先执行规范Render连接身份检查；旧CBI连接不做写入。",
+      "使用 $investigate-customs-buyers 继续当前同一企业的 FULL_AUDIT，先恢复该公司的独立Evidence与未关闭Pivot，补查全部未验证的公司/个人社媒及决策链，不重置历史。 写入前先执行规范Render连接身份检查；旧CBI连接不做写入。",
+      "使用 $investigate-customs-buyers 对海关/提单线索运行同一 FULL_AUDIT，按统一调查规则完成采购实体、历史交易、供应商、Buying Group、六分支裂变和证据饱和；只在Closure有效时宣称全部完成。 写入前先执行规范Render连接身份检查；旧CBI连接不做写入。",
       "将已经完成验证的结果写入生产 CRM（单独操作）：仅在我另外明确授权写回的范围内，执行去重、历史保留、验证、审计与回滚；绝不自动发送外联。"
     ],
     "brandColor": "#0F766E",
