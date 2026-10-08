@@ -75,6 +75,45 @@ class RenderEphemeralStartupSafetyTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 require_remote_environment_safety(dict(ENV, CBI_REMOTE_AUTH_MODE=mode))
 
+    def test_render_public_oauth_origin_must_use_https(self):
+        invalid = (
+            "http://cbi-v61-preview.onrender.com",
+            "http://127.0.0.1:8787",
+            "ftp://example.invalid",
+            "https://example.invalid/alternate-mcp",
+            "https://example.invalid/?x=1",
+            "https://example.invalid/#frag",
+            "https://user:password@example.invalid",
+        )
+        for origin in invalid:
+            with self.subTest(origin=origin):
+                with self.assertRaisesRegex(
+                    RuntimeError, "RENDER_PUBLIC_OAUTH_ORIGIN_HTTPS_REQUIRED"
+                ):
+                    require_remote_environment_safety(dict(ENV, CBI_REMOTE_PUBLIC_BASE_URL=origin))
+
+    def test_render_custom_https_origin_and_trailing_slash_allowed(self):
+        for origin in (
+            "https://cbi-v61-preview.onrender.com",
+            "https://cbi-v61-preview.onrender.com/",
+            "https://mcp.example.invalid",
+        ):
+            with self.subTest(origin=origin):
+                self.assertIsNone(require_remote_environment_safety(
+                    dict(ENV, CBI_REMOTE_PUBLIC_BASE_URL=origin)
+                ))
+
+    def test_render_external_url_fallback_must_be_https(self):
+        env = dict(ENV, RENDER_EXTERNAL_URL="http://example.invalid")
+        with self.assertRaisesRegex(
+            RuntimeError, "RENDER_PUBLIC_OAUTH_ORIGIN_HTTPS_REQUIRED"
+        ):
+            require_remote_environment_safety(env)
+
+    def test_local_http_oauth_test_mode_is_unchanged(self):
+        env = dict(ENV, RENDER="false", CBI_REMOTE_PUBLIC_BASE_URL="http://localhost:8787")
+        self.assertIsNone(require_remote_environment_safety(env))
+
     def test_render_blueprint_declares_r2_and_never_commits_secrets(self):
         text = (ROOT / "render.yaml").read_text(encoding="utf-8")
         self.assertIn("plan: free", text)
