@@ -54,6 +54,13 @@ class PortablePluginManifestTests(unittest.TestCase):
         self.assertNotIn("command", exposed)
         self.assertNotIn("args", exposed)
 
+    def test_portable_and_codex_package_versions_match_for_cache_refresh(self):
+        portable = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+        codex = json.loads((ROOT / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(portable["name"], codex["name"])
+        self.assertEqual(portable["version"], codex["version"])
+        self.assertTrue(portable["version"].startswith("6.4.1"), portable["version"])
+
     def test_legacy_engineering_launcher_not_referenced_by_active_manifest(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
