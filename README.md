@@ -1,3 +1,17 @@
+> **CURRENT INSTALLATION WARNING — GitHub default `main` is a historical Windows-local checkout, NOT the supported cloud CBI plugin.**
+>
+> The root `.mcp.json` on this branch deliberately preserves an old PowerShell/stdio launcher for legacy acceptance and recovery. Do **not** use an unpinned Git marketplace installation of this default branch for current ChatGPT/Codex buyer investigations: it can attach to a different local state store than the supported Render cloud plugin. Do not merge or copy its customer/WAL state into the hosted Runtime.
+>
+> **Supported cloud package and instructions:** [`cbi-v6-cloud-runtime-20260901`](https://github.com/Scorp96/customs-buyer-intelligence-ledger/tree/cbi-v6-cloud-runtime-20260901). For Git-backed Codex installation, explicitly pin it:
+>
+> ```bash
+> codex plugin marketplace add Scorp96/customs-buyer-intelligence-ledger --ref cbi-v6-cloud-runtime-20260901
+> ```
+>
+> Before activating the supported checkout, run `python scripts/cbi_plugin_install_preflight.py`. This offline check verifies one Render HTTPS MCP entrypoint, no local launcher, and required FULL_AUDIT safeguards. Installing that package does not automatically refresh or uninstall any already connected ChatGPT app. See [default-branch migration risk #89](https://github.com/Scorp96/customs-buyer-intelligence-ledger/issues/89) and [dual connected runtimes #86](https://github.com/Scorp96/customs-buyer-intelligence-ledger/issues/86). Historical Windows recovery tests on this branch remain intact until a reviewed migration.
+
+---
+
 # Customs Buyer Intelligence v6.4
 
 Personal Codex plugin for answer-first public buyer research, self-hosted public-web execution, and explicit batch-only CRM persistence. Ordinary company/contact lookups now search and answer immediately without creating Runtime history, audit documents, Closure records or workbook writes. The current task acts as the temporary review queue. Only an explicit user instruction such as `新增到表格`, `批量写回`, `正式入库`, `合并到最新CRM`, `生成审核文档`, `评估Closure` or `准备外联` activates the corresponding persistent workflow.
