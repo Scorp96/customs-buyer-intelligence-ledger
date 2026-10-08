@@ -111,6 +111,24 @@ keys just to match this documentation; do not log credentials. A mere
 `get_runtime_health=READY` or an old backup snapshot is not an independently
 executed latest-generation R2 self-restore proof.
 
+### Bootstrap process liveness versus MCP readiness
+
+During missing/unrestored R2 state, the bootstrap HTTP server keeps
+`GET/HEAD /healthz` at **200** to let Render preserve an operator-recoverable
+process and allow manual import; this is **process liveness only**. The distinct
+`GET/HEAD /readyz` now returns **503** in bootstrap mode, as does
+`POST /mcp` (structured JSON-RPC bootstrap-required error). In production
+mode after a valid restore, the real MCP HTTP transport handles readiness
+normally. Never infer business-readiness, valid authentication or latest R2
+self-restore solely from Render showing a deployment as `live`.
+
+The unauthenticated health and readiness response bodies reveal only a
+minimal `status` and `service` indicator; object-store credentials,
+deployment identity, WAL fingerprint, session records and private restore
+markers remain inaccessible. Maintain Render's `healthCheckPath: /healthz`:
+pointing that probe at `/readyz` prematurely could block essential cold-start
+restoration during a recoverable bootstrap.
+
 Reference: https://render.com/docs/blueprint-spec
 
 ## Recommended cloud host

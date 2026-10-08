@@ -83,8 +83,14 @@ class BootstrapHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_HEAD(self) -> None:  # noqa: N802
-        if self._path() in {"/", "/healthz", "/readyz"}:
-            self.send_response(HTTPStatus.OK)
+        path = self._path()
+        if path in {"/", "/healthz", "/readyz"}:
+            # Render's healthCheckPath remains /healthz (liveness); a restore
+            # operator may query /readyz to detect MCP unavailable during
+            # bootstrap without mistaking a live process for a ready ledger.
+            self.send_response(
+                HTTPStatus.SERVICE_UNAVAILABLE if path == "/readyz" else HTTPStatus.OK
+            )
             self.send_header("Content-Length", "0")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -94,9 +100,10 @@ class BootstrapHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:  # noqa: N802
-        if self._path() in {"/healthz", "/readyz"}:
+        path = self._path()
+        if path in {"/healthz", "/readyz"}:
             self._json(
-                HTTPStatus.OK,
+                HTTPStatus.SERVICE_UNAVAILABLE if path == "/readyz" else HTTPStatus.OK,
                 {
                     "status": "bootstrap_required",
                     "service": "customs-buyer-intelligence",
