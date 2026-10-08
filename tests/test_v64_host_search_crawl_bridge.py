@@ -145,7 +145,7 @@ class HostSearchCrawlBridgeExecutionTests(unittest.TestCase):
         self.assertFalse(result["route_ownership_promoted"])
         self.assertEqual(result["planned_work_item_id"], "PWEB-EXAMPLE-001")
         self.assertEqual(result["final_result"], "POSITIVE")
-        self.assertTrue(result["source_coverage_terminal"])
+        self.assertFalse(result["source_coverage_terminal"])
 
         payload = result["append_execution_receipt_payload"]
         attempt = payload["attempt"]
@@ -191,11 +191,12 @@ class HostSearchCrawlBridgeExecutionTests(unittest.TestCase):
             lambda args: self.negative_receipt(args["seed_url"]),
         )
 
-        self.assertEqual(result["final_result"], "NEGATIVE")
+        self.assertEqual(result["final_result"], "BLOCKED")
         self.assertFalse(result["negative_exhaustion_proven"])
         self.assertFalse(result["source_coverage_terminal"])
         payload = result["append_execution_receipt_payload"]
-        self.assertEqual(payload["attempt"]["result"], "NEGATIVE")
+        self.assertEqual(payload["attempt"]["result"], "BLOCKED")
+        self.assertEqual(payload["attempt"]["blocked_reason"], "SEED_NEGATIVE_SOURCE_FAMILY_NOT_EXHAUSTED")
         self.assertEqual(payload["attempt"]["evidence_ids"], [])
         self.assertEqual(payload["evidence"], [])
 
@@ -237,7 +238,7 @@ class HostSearchCrawlBridgeExecutionTests(unittest.TestCase):
         self.assertEqual(result["status"], "NO_VALID_PUBLIC_URLS")
         self.assertEqual(result["final_result"], "NO_VALID_PUBLIC_URLS")
 
-    def test_pivot_consumption_is_prepared_only_for_non_blocked_attempt(self) -> None:
+    def test_single_seed_negative_never_consumes_pivot(self) -> None:
         t = task(
             pivot_id="PIV-1",
             pivot_value="director",
@@ -263,10 +264,48 @@ class HostSearchCrawlBridgeExecutionTests(unittest.TestCase):
             })
 
         consumed = result["append_execution_receipt_payload"]["pivots_consumed"]
-        self.assertEqual(consumed, [{
-            "pivot_id": "PIV-1",
-            "consumption_result": "HOST_SEARCH_CRAWL_NEGATIVE",
-        }])
+        self.assertEqual(consumed, [])
+        self.assertEqual(result["final_result"], "BLOCKED")
+
+
+    def test_two_negative_seed_receipts_do_not_prove_source_family_exhaustion(self) -> None:
+        first = "https://example.test/contact"
+        second = "https://example.test/team"
+        result = self.run_bridge(
+            [{"url": first}, {"url": second}],
+            lambda args: self.negative_receipt(args["seed_url"]),
+            max_crawl_seeds=2,
+        )
+        self.assertEqual(len(result["attempted_urls"]), 2)
+        self.assertEqual(result["final_result"], "BLOCKED")
+        self.assertFalse(result["source_coverage_terminal"])
+        self.assertFalse(result["negative_exhaustion_proven"])
+        attempt = result["append_execution_receipt_payload"]["attempt"]
+        self.assertEqual(attempt["result"], "BLOCKED")
+        self.assertIn("SOURCE_FAMILY_NOT_EXHAUSTED", attempt["blocked_reason"])
+        self.assertEqual(result["append_execution_receipt_payload"]["pivots_consumed"], [])
+
+    def test_positive_page_evidence_does_not_auto_consume_pivot(self) -> None:
+        t = task(
+            pivot_id="PIV-2",
+            pivot_value="director",
+            query='"Example Company" director contact',
+        )
+        with patch.object(
+            bridge, "validate_public_seed_url", side_effect=lambda url: url,
+        ), patch.object(
+            bridge, "execute_public_crawl_handler",
+            side_effect=lambda args: self.positive_receipt(args["seed_url"]),
+        ):
+            result = bridge.execute_host_search_crawl_bridge_handler({
+                "investigation_id": "INV-1",
+                "task": t,
+                "host_search": {"query": '"Example Company" director', "searched_at": "2026-09-21T00:00:00Z"},
+                "search_results": [{"url": "https://example.test/contact"}],
+            })
+        self.assertEqual(result["final_result"], "POSITIVE")
+        self.assertFalse(result["source_coverage_terminal"])
+        self.assertEqual(result["append_execution_receipt_payload"]["pivots_consumed"], [])
 
 
 class HostSearchCrawlBridgeDescriptorTests(unittest.TestCase):
