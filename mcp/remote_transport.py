@@ -232,7 +232,18 @@ class RemoteMcpRequestHandler(BaseHTTPRequestHandler):
         path = self._path()
         if path in {"/healthz", "/readyz"}:
             try:
-                self._send_json(HTTPStatus.OK, self.app.health())
+                health = self.app.health()
+                # /healthz is process liveness; /readyz is actual readiness.
+                # Even after initial bootstrap succeeds, a broken R2 checkpoint
+                # can return status=degraded while the process still runs.
+                # Never report HTTP 200 readiness for degraded/unknown state.
+                ready = str(health.get("status") or "").strip().lower() == "ok"
+                code = (
+                    HTTPStatus.SERVICE_UNAVAILABLE
+                    if path == "/readyz" and not ready
+                    else HTTPStatus.OK
+                )
+                self._send_json(code, health)
             except Exception:
                 self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"status": "error"})
             return
