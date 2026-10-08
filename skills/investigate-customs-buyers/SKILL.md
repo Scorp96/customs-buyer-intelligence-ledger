@@ -29,7 +29,7 @@ Stage outcomes are `VERIFIED`, `CANDIDATE_UNVERIFIED`, `CONFLICTED`, `BLOCKED`, 
 
 ## One hosted cloud entry and evidence-saturation source of truth
 
-Use **only** the remote MCP address configured in both `mcp.json` and `.mcp.json`. The two config files are cross-client compatibility wrappers for the *same* cloud endpoint; they are not two operating backends. Do not spawn local PowerShell, Windows, Python MCP, or a second CBI Runtime. Do not fall back to obsolete Render v6.3 acceptance or v5/main services. If the hosted MCP is unavailable, report a blocked/interrupted full audit and preserve externally verified leads without claiming a Runtime receipt.
+Use **only** the hosted MCP address configured by the plugin's explicit `mcp.json` binding. The repository-root `.mcp.json` is an isolated legacy engineering/crash-recovery test fixture, **not referenced by the plugin manifest** and never an authorized CBI research fallback. Do not spawn local PowerShell, Windows, Python MCP, or a second CBI Runtime. Do not fall back to obsolete Render v6.3 acceptance or v5/main services. If the hosted MCP is unavailable, report a blocked/interrupted full audit and preserve externally verified leads without claiming a Runtime receipt.
 
 Read [Decision-Grade evidence and interruption contract](references/decision-grade-full-audit.md) before a substantive FULL_AUDIT. For customs/shipment targets, read the unified [customs buyer evidence checklist](references/customs-investigation-checklist.md) in the *same* investigation. These references are not extra Skills or alternative investigation modes.
 
