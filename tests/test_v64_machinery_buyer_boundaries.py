@@ -113,6 +113,41 @@ class MachineryProductBoundaryTests(unittest.TestCase):
             manifest = json.loads((root / path).read_text(encoding="utf-8"))
             self.assertEqual(manifest["author"]["name"], "CBI Research Platform")
 
+    def test_machine_capability_requires_exact_seller_and_never_auto_certifies(self):
+        source = "https://www.gzsmartors.com/nd.jsp?fromMid=780&id=8"
+        machine_profile = build_capability_profile({
+            "capability_profile_id": "SMARTORS-MACHINE-EXAMPLE",
+            "version": "1",
+            "product_profile_id": "SOAP_MACHINERY",
+            "seller_identity": "SMARTORS",
+            "supported_variants": ["LIQUID_WASHING_MIXER"],
+            "validation_status": "VERIFIED",
+            "evidence_sources": [{"url": source}],
+        })
+        runtime = _ReadModel()
+        runtime._v63_capability_profiles = {"SOAP_MACHINERY": machine_profile}
+        for seller in ("", "XINGHUAI", "OTHER SELLER"):
+            found = runtime.get_capability_profile({
+                "product_profile_id": "SOAP_MACHINERY", "seller_identity": seller,
+            })
+            self.assertEqual(found["status"], "UNCONFIGURED")
+            self.assertEqual(found["reason"], "MACHINERY_SELLER_IDENTITY_BINDING_REQUIRED")
+        found = runtime.get_capability_profile({
+            "product_profile_id": "SOAP_MACHINERY", "seller_identity": "smartors",
+        })
+        self.assertEqual(found["status"], "READY")
+        self.assertEqual(found["capability_profile"]["seller_identity"], "SMARTORS")
+        fit = runtime.evaluate_capability_fit({
+            "product_profile_id": "SOAP_MACHINERY",
+            "seller_identity": "SMARTORS",
+            "demand": {
+                "product_profile_id": "SOAP_MACHINERY",
+                "product_variant": "LIQUID_WASHING_MIXER",
+            },
+        })
+        self.assertEqual(fit["status"], "READY")
+        self.assertEqual(fit["capability_fit"]["capability_fit"], "NEEDS_VERIFICATION")
+
     def test_legacy_pvc_remains_separate(self):
         self.assertIn("PVC_FOAM_BOARD", get_product_profile("PVC")["subfamilies"])
         model = _ReadModel()
