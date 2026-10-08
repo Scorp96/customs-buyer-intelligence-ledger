@@ -148,6 +148,26 @@ class MachineryProductBoundaryTests(unittest.TestCase):
         self.assertEqual(fit["status"], "READY")
         self.assertEqual(fit["capability_fit"]["capability_fit"], "NEEDS_VERIFICATION")
 
+    def test_machine_seller_profile_requires_verified_source(self):
+        for status, evidence in (
+            ("PARTIALLY_VERIFIED", [{"url": "https://www.gzsmartors.com/"}]),
+            ("VERIFIED", []),
+        ):
+            machine = build_capability_profile({
+                "capability_profile_id": "CHECK-SOURCES",
+                "version": "1", "product_profile_id": "SOAP_MACHINERY",
+                "seller_identity": "SMARTORS",
+                "validation_status": status, "evidence_sources": evidence,
+            })
+            runtime = _ReadModel()
+            runtime._v63_capability_profiles = {"SOAP_MACHINERY": machine}
+            state = runtime.get_capability_profile({
+                "product_profile_id": "SOAP_MACHINERY",
+                "seller_identity": "SMARTORS",
+            })
+            self.assertEqual(state["status"], "UNCONFIGURED")
+            self.assertEqual(state["reason"], "MACHINERY_SELLER_CAPABILITY_EVIDENCE_REQUIRED")
+
     def test_legacy_pvc_remains_separate(self):
         self.assertIn("PVC_FOAM_BOARD", get_product_profile("PVC")["subfamilies"])
         model = _ReadModel()
