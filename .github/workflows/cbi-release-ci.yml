@@ -39,7 +39,7 @@ jobs:
 
       - name: Validate JSON manifests
         run: >-
-          python -c "import json, pathlib; [json.loads(pathlib.Path(p).read_text(encoding='utf-8-sig')) for p in ['.codex-plugin/plugin.json','mcp.json','tests/fixtures/mcp/legacy_windows_launcher.json','skills/investigate-customs-buyers/references/buyer-intelligence-schema.json','skills/investigate-customs-buyers/references/enrichment-schema.json','skills/investigate-customs-buyers/references/evidence-bundle-schema.json','skills/investigate-customs-buyers/references/intelligence-rules.json','skills/investigate-customs-buyers/references/runtime-policy.json','skills/investigate-customs-buyers/references/unified-runtime-schema.json']]; print('JSON manifests: PASS')"
+          python -c "import json, pathlib; [json.loads(pathlib.Path(p).read_text(encoding='utf-8-sig')) for p in ['.codex-plugin/plugin.json','mcp.json','.mcp.json','tests/fixtures/mcp/legacy_windows_launcher.json','skills/investigate-customs-buyers/references/buyer-intelligence-schema.json','skills/investigate-customs-buyers/references/enrichment-schema.json','skills/investigate-customs-buyers/references/evidence-bundle-schema.json','skills/investigate-customs-buyers/references/intelligence-rules.json','skills/investigate-customs-buyers/references/runtime-policy.json','skills/investigate-customs-buyers/references/unified-runtime-schema.json']]; print('JSON manifests: PASS')"
 
       - name: Install ephemeral CI parsers and timezone data
         run: python -m pip install --disable-pip-version-check --no-input PyYAML==6.0.2 tzdata==2026.3
