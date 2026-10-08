@@ -25,7 +25,7 @@ user customs row
   -> optional cloud delta monitor
 ```
 
-Git is source/version control, not the research engine. Local CLI, the non-discoverable `tests/fixtures/mcp/legacy_windows_launcher.json`, Windows Runtime, CMD, PowerShell and Python are engineering/acceptance/recovery surfaces only. The repository-root `.mcp.json` is retired and MUST remain absent.
+Git is source/version control, not the research engine. Local CLI, the non-discoverable `tests/fixtures/mcp/legacy_windows_launcher.json`, Windows Runtime, CMD, PowerShell and Python are engineering/acceptance/recovery surfaces only. The root `.mcp.json` must remain remote-only and must point to the **same** Render endpoint as portable `mcp.json`; no Windows stdio transport is permitted there.
 
 For the normal user path:
 
