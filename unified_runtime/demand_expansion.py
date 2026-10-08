@@ -480,6 +480,15 @@ class V63DemandExpansionMixin:
                     "reason": "MACHINERY_SELLER_IDENTITY_BINDING_REQUIRED",
                     "persistent_mutation_performed": False,
                 }
+            if (str(capability.get("validation_status") or "").upper() != "VERIFIED"
+                    or not capability.get("evidence_sources")):
+                return {
+                    "status": "UNCONFIGURED",
+                    "product_profile_id": profile_id,
+                    "capability_profile": None,
+                    "reason": "MACHINERY_SELLER_CAPABILITY_EVIDENCE_REQUIRED",
+                    "persistent_mutation_performed": False,
+                }
         return {
             "status": "READY",
             "product_profile_id": profile_id,
