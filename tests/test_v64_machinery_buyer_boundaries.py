@@ -5,6 +5,8 @@ No production credentials, external crawling, or network calls in these tests.
 from __future__ import annotations
 
 import unittest
+import json
+from pathlib import Path
 
 from unified_runtime.capability_profile import (
     build_capability_profile,
@@ -95,6 +97,21 @@ class MachineryProductBoundaryTests(unittest.TestCase):
         self.assertEqual(fit["capability_fit"], "NEEDS_VERIFICATION")
         self.assertIn("MACHINERY_TECHNICAL_SPEC_MATCHER_UNCONFIGURED", fit["reasons"])
         self.assertEqual(fit["missing_verified_claims"], [])
+
+    def test_legacy_portfolio_priority_is_not_current_seller_identity(self):
+        from unified_runtime.contract_v63 import build_v63_contract
+        contract = build_v63_contract()
+        self.assertEqual(contract["primary_product_profile"], "PVC")  # compatibility only
+        self.assertEqual(contract["primary_product_profile_scope"], "LEGACY_PORTFOLIO_COMPATIBILITY_ONLY")
+        self.assertIsNone(contract["active_seller_product_profile_id"])
+        self.assertTrue(contract["seller_profile_requires_explicit_binding"])
+        self.assertIn("SOAP_MACHINERY", contract["product_profiles"])
+
+    def test_plugin_publisher_identity_is_seller_neutral(self):
+        root = Path(__file__).resolve().parents[1]
+        for path in ("plugin.json", ".codex-plugin/plugin.json"):
+            manifest = json.loads((root / path).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["author"]["name"], "CBI Research Platform")
 
     def test_legacy_pvc_remains_separate(self):
         self.assertIn("PVC_FOAM_BOARD", get_product_profile("PVC")["subfamilies"])
