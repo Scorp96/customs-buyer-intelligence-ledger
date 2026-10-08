@@ -29,7 +29,10 @@ if str(ROOT) not in sys.path:
 
 # Direct script execution starts with /app/mcp on sys.path; import only
 # AFTER inserting repository root, exactly like the Render bootstrap path.
-from mcp.cloud_runtime_startup_guard import require_remote_environment_safety  # noqa: E402
+from mcp.cloud_runtime_startup_guard import (  # noqa: E402
+    require_remote_environment_safety,
+    install_remote_startup_attestation,
+)
 
 _GIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _DEPLOYMENT_IDENTITY_SCHEMA = "cbi.remote-deployment-identity.v6.3"
@@ -121,6 +124,15 @@ install_remote_authoritative_source_evidence_tool(
     persistence=_PERSISTENCE,
     runtime=_RUNTIME,
     live_root=_LIVE_ROOT,
+)
+
+# The tool handlers are invoked exclusively through authenticated MCP
+# calls. Public /healthz and /readyz remain minimal and never carry this
+# process-level startup/ephemeral durability attestation.
+install_remote_startup_attestation(
+    _production._v61._server.TOOL_HANDLERS,
+    env=os.environ,
+    object_store_attached=_PERSISTENCE is not None,
 )
 
 
