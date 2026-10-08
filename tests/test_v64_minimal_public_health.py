@@ -53,11 +53,9 @@ class MinimalPublicHealthTests(unittest.TestCase):
             self.assertNotIn(forbidden, public)
 
     def test_production_main_exposes_only_public_health_callback(self):
-        from mcp import server_v61_remote
-        # Source-code binding is deterministic; actual remote GET behavior
-        # is integration-tested in the isolated transport harness.
-        import inspect
-        source = inspect.getsource(server_v61_remote.main)
+        # Do not import the server into the current unittest process:
+        # remote import is deliberately guarded by an explicit durable root.
+        source = (ROOT / "mcp/server_v61_remote.py").read_text(encoding="utf-8")
         self.assertIn("health=_public_health", source)
         self.assertNotIn("health=_health)", source)
 
