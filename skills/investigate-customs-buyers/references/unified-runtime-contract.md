@@ -8,7 +8,7 @@ All new CBI buyer/company/contact/email/phone/person/customs investigations use 
 
 The default research floor is **28 minutes of active useful work**, not idle time. The current server does NOT attest that duration; if not independently verified, return `INTERRUPTED` / `PAUSED_RESOURCE_LIMIT` and a `中断交接报告`, never claim that the 28-minute contract or Closure passed. The capability profile is seller-scoped: SMARTORS machinery may not inherit the old XingHuai PVC/WPC supplier's abilities. A source-verified machinery product taxonomy is discovery-only, not a model-level engineering fit.
 
-Append-only governed research Evidence is authorized for the requested audit. CRM/workbook writes, paid providers, recurring monitoring, and outreach/send remain separately authorized; drafts are review-only. Use ONE hosted cloud MCP from the plugin `mcp.json`; the local Windows legacy launcher is test-only, stored under `tests/fixtures/mcp/legacy_windows_launcher.json` and not a fallback.
+Append-only governed research Evidence is authorized for the requested audit. CRM/workbook writes, paid providers, recurring monitoring, and outreach/send remain separately authorized; drafts are review-only. Use ONE hosted cloud MCP: portable `mcp.json` and compatibility `.mcp.json` are aliases for the identical HTTPS Render destination. The Windows-local launcher is test-only under `tests/fixtures/mcp/legacy_windows_launcher.json`, not a transport fallback.
 
 ## Architecture
 
