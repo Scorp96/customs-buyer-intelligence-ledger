@@ -487,7 +487,7 @@ def tool_descriptors() -> list[dict[str, Any]]:
         },
         {
             "name": "start_investigation",
-            "description": "Resolve the canonical Account and idempotently create or resume an append-only EXHAUSTIVE or preliminary FAST_SCAN investigation. FAST_SCAN can never issue research_complete.",
+            "description": "Resolve canonical Account and create/resume the single FULL_AUDIT investigation with EXHAUSTIVE mode. FAST_SCAN is a legacy compatibility protocol only and never a new research entrypoint.",
             "inputSchema": _object_schema(["account"], {
                 "account": ACCOUNT_SCHEMA,
                 "input": {"type": "object", "additionalProperties": True},

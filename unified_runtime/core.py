@@ -1117,6 +1117,8 @@ class UnifiedRuntime:
             "workflow_policy": {
                 "default_mode": "FULL_AUDIT",
                 "single_investigation_mode": "EXHAUSTIVE",
+                "user_facing_investigation_modes": ["FULL_AUDIT"],
+                "legacy_compatibility_modes_not_new_entrypoints": ["ANSWER_FIRST", "FAST_SCAN"],
                 "full_audit": {
                     "identity_preflight_order": [
                         "COMPANY_NAME_INDUSTRY_LEGAL_ENTITY",
@@ -1128,6 +1130,9 @@ class UnifiedRuntime:
                     "research_rule": "DECISION_GRADE_EVIDENCE_SATURATION",
                     "min_active_research_minutes": 28,
                     "active_research_only": True,
+                    "server_side_active_duration_attestation": False,
+                    "host_must_report_unverified_research_window": True,
+                    "cloud_mcp_canonical_endpoint": "https://cbi-v61-preview.onrender.com/mcp",
                     "unmeasurable_window_result": "INTERRUPTED_HANDOFF",
                     "closure_requires": "VALID_DECISION_SATURATION_AND_CLOSURE",
                     "persistent_research_evidence_allowed": True,
@@ -1166,7 +1171,8 @@ class UnifiedRuntime:
                     "正式入库",
                     "合并到最新CRM",
                 ],
-                "continuation_or_item_count_authorizes_persistence": True,
+                "continuation_or_item_count_authorizes_persistence": False,
+                "audit_evidence_append_only_is_not_crm_writeback": True,
                 "continuation_resumes_existing_full_audit": True,
                 "mcp_initialize_mutates_state": False,
                 "pending_sync_requires_explicit_tool_call": True,

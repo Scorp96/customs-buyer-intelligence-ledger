@@ -30,7 +30,7 @@ class ContactFirstPluginPolicyTest(unittest.TestCase):
         data = json.loads(p.read_text(encoding="utf-8"))
         text = data.get("interface", {}).get("longDescription", "")
         for token in [
-            "one-shot customs route",
+            "海关one-shot仅表示最终一次性呈现",
             "six",
             "WAL durability",
             "draft-only outreach",

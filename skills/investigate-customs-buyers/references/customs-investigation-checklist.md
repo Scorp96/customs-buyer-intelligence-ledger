@@ -1,13 +1,9 @@
----
-name: customs-buyer-one-shot
-description: "Use this skill whenever the user supplies a customs/import/export/shipment record, asks whether a customs company is a real buyer, asks for buyer intelligence plus 裂变/network expansion, or asks to investigate a customs buyer completely. Run the buyer investigation as one cloud/Host job and return one complete dossier: historical shipment backfill and dedupe, buyer/IOR/Ultimate Buyer resolution, product and supplier analysis, company profile, Buying Group and contact routes, all six network-fission branches with validation of promoted peers, commercial/confidence/readiness conclusions, outreach drafts, and—when the user wants ongoing updates—a cloud new-customs-record monitor. Do not require the user's Windows PC, local CLI, CMD, PowerShell, Python, Git checkout or local MCP for the normal user path."
----
 
-# Customs Buyer Intelligence v6.4 — ONE-SHOT CUSTOMS route
+# CBI FULL_AUDIT — Customs buyer research reference
 
-## Trigger and precedence
+## When to apply this reference
 
-This one-shot skill is only a presentation alias for the same unified `FULL_AUDIT` (`EXHAUSTIVE`) investigation. It does not override, bypass, or create a separate `ANSWER_FIRST`/fast investigation route. The same five-step company→Google Maps→official website→company social→named-person social preflight runs before deep customs analysis. It is invoked when any of the following is true:
+This file is a reference used *within* the existing `investigate-customs-buyers` FULL_AUDIT. It is not a separate Skill. Complete the identity→Maps→official website→company social→named-person social preflight first. Use the additional customs checks whenever:
 
 - the user supplies a customs, import, export, B/L, shipment, consignee, supplier or trade-data row;
 - the user asks `这个企业是真实买家吗`, `裂变`, `深度调查`, `穷尽搜索`, `完整调查`, `全部信息`, `海关历史`, or equivalent;
@@ -238,7 +234,7 @@ Cloud monitoring must not require the user's computer to remain online.
 
 ## Runtime and persistence boundary
 
-This one-shot presentation route uses the SAME persisted FULL_AUDIT research records, not a second investigation mode. Without separately authorized CRM/outreach instructions:
+This reference uses the SAME persisted FULL_AUDIT research records, not a second investigation mode. Without separately authorized CRM/outreach instructions:
 
 - do not write CRM;
 - do not send outreach;

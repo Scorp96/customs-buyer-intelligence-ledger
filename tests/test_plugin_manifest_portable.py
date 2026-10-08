@@ -43,6 +43,16 @@ class PortablePluginManifestTests(unittest.TestCase):
         self.assertTrue((ROOT / ".codex-plugin" / "plugin.json").is_file())
         self.assertTrue((ROOT / ".mcp.json").is_file())
 
+    def test_codex_compatibility_config_uses_exact_same_hosted_mcp(self):
+        legacy = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        portable = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
+        lhs = legacy["mcpServers"]["buyer-outreach-actions"]
+        rhs = portable["mcpServers"]["buyer-outreach-actions"]
+        self.assertEqual(lhs, rhs)
+        self.assertEqual(lhs["type"], "streamable-http")
+        self.assertNotIn("command", lhs)
+        self.assertNotIn("args", lhs)
+
 
 if __name__ == "__main__":
     unittest.main()
