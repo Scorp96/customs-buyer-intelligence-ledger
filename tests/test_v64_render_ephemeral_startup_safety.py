@@ -89,6 +89,27 @@ class RenderEphemeralStartupSafetyTests(unittest.TestCase):
             self.assertIn("key: " + key + "\n        sync: false", text)
         self.assertNotIn("synthetic-secret", text)
 
+    def test_bootstrap_public_health_hides_storage_and_mcp_control_details(self):
+        from mcp import render_bootstrap
+        for path in ("/", "/healthz", "/readyz"):
+            with self.subTest(path=path):
+                handler = object.__new__(render_bootstrap.BootstrapHandler)
+                captured = []
+                handler._path = lambda p=path: p
+                handler._json = lambda status, data: captured.append((status, data))
+                with mock.patch.object(
+                    render_bootstrap.RecoveryObjectStoreStateManagerV63,
+                    "from_env",
+                    side_effect=AssertionError("public health must not inspect secret configuration"),
+                ):
+                    handler.do_GET()
+                self.assertEqual(len(captured), 1)
+                self.assertEqual(captured[0][0], 200)
+                self.assertEqual(captured[0][1], {
+                    "status": "bootstrap_required",
+                    "service": "customs-buyer-intelligence",
+                })
+
     def test_server_entrypoint_checks_safety_before_mutable_runtime_import(self):
         src = (ROOT / "mcp/server_v61_remote.py").read_text(encoding="utf-8")
         self.assertLess(
