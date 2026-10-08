@@ -6,6 +6,26 @@ Single hosted CBI v6.4 research system: ONE `FULL_AUDIT` / `EXHAUSTIVE` buyer in
 
 The user-facing portable and Codex plugin manifests both bind directly to ONE remote `mcp.json` endpoint: `https://cbi-v61-preview.onrender.com/mcp`. The historical service name contains v6.1 but the deployed Runtime reports v6.4. The old Windows-local stdio launcher was **retired from the repository root**. Portable `mcp.json` and Codex compatibility `.mcp.json` now both point to the **same** hosted HTTPS Render endpoint; `.codex-plugin/plugin.json` references `./.mcp.json` as required for compatibility. These are two packaging formats for one remote Runtime, not two running MCP instances. The old Windows launcher is retained only under `tests/fixtures/mcp/legacy_windows_launcher.json` for offline WAL/recovery acceptance and must never be used as a chat research fallback. The separate `customs-investigation-checklist.md` and `decision-grade-full-audit.md` are internal references of ONE `investigate-customs-buyers` Skill, not independent Skills.
 
+## Fail-closed plugin installation and source provenance
+
+The repository's GitHub **default branch `main` is a historical local Runtime checkout**, not the current cloud client package. It still contains a Windows PowerShell stdio root launcher and obsolete one-shot/ANSWER_FIRST client rules. Never install the CBI client by resolving unpinned `Scorp96/customs-buyer-intelligence-ledger` to that default branch.
+
+For a Git-backed **Codex** marketplace, explicitly pin the current production source branch during initial connection (operator action; not automatically executed by this repository):
+
+```bash
+codex plugin marketplace add Scorp96/customs-buyer-intelligence-ledger --ref cbi-v6-cloud-runtime-20260901
+```
+
+For any staged downloaded checkout or plugin archive before activating it, run the **offline, no-network** packaging gate:
+
+```bash
+python scripts/cbi_plugin_install_preflight.py
+```
+
+A PASS validates the local source package only: portable `mcp.json`, Codex `.mcp.json`, one HTTPS Render destination, matching plugin versions, retired launcher rejection and the FULL_AUDIT route identity contract. It **does not** prove the user's installed ChatGPT connector is pointing to that package or that the connected OAuth schema has refreshed. Compare the connected `CBI v6.4 Render` Runtime contract and health from the **same** tool namespace and never use the generic `CBI v6.4` instance as fallback. The currently installed stale generic connector may have a separate 125-account historical store; never delete or merge its state by guessing app identity.
+
+Updating GitHub or Render does not remove stale ChatGPT connections. Refresh only the exact intended connector under ChatGPT **Settings > Plugins** and verify the tool list; keep old-connection data intact until provenance is independently verified. See [dual-route issue #86](https://github.com/Scorp96/customs-buyer-intelligence-ledger/issues/86), [recovery-schema issue #87](https://github.com/Scorp96/customs-buyer-intelligence-ledger/issues/87), and [default-branch issue #89](https://github.com/Scorp96/customs-buyer-intelligence-ledger/issues/89).
+
 ## Default operation
 
 1. Resolve legal/entity identity and verify minimal location/industry before assigning or resuming a Canonical Buyer.
