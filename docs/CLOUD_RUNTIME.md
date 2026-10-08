@@ -82,6 +82,37 @@ The Docker service:
   archives, keys, logs, and Git metadata cannot be accidentally copied into the
   image build context.
 
+## Current Render Free service — mandatory ephemeral safety gate (v6.4)
+
+The earlier VM/mounted-volume description above is **not** the durability
+model for the current Render Free `cbi-v61-preview` service. Render Free local
+data is ephemeral and may be cleared on redeploy, restart or idle spin-down.
+The authoritative ledger, sessions and WAL must be mirrored through the
+configured R2/S3 object-store current-pointer mechanism.
+
+`render.yaml` now declares `CBI_REQUIRE_EPHEMERAL_DURABILITY=1` and
+`CBI_OBJECT_STORE_MODE=r2`. It also declares the object-store endpoint,
+bucket and credentials as **`sync: false` placeholders**, without secret
+values. On startup, Render's `RENDER=true` environment triggers a separate
+check for non-anonymous MCP authentication. When the ephemeral safety flag is
+enabled, the boot gate additionally requires a complete R2/S3 config **before**
+importing the mutable production adapter. Any missing/invalid config fails
+closed; no empty new buyer ledger is created. Paid deployments using a verified
+persistent disk may leave the ephemeral flag off but must still authenticate
+the publicly hosted MCP.
+
+**Critical existing-Blueprint caveat:** Render prompts for `sync: false`
+values only when a Blueprint is initially created. Adding those placeholders
+to an *existing* Blueprint does **not** set the values. Confirm the current
+service's exact R2 object-store mode, endpoint, bucket, access key, secret,
+prefix and CAS-pointer lineage in the Render Dashboard using authorized
+operator access. Do not overwrite the established R2 bucket/prefix or rotate
+keys just to match this documentation; do not log credentials. A mere
+`get_runtime_health=READY` or an old backup snapshot is not an independently
+executed latest-generation R2 self-restore proof.
+
+Reference: https://render.com/docs/blueprint-spec
+
 ## Recommended cloud host
 
 A small always-on Linux VM is sufficient for the current single-user workload.
