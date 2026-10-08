@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from typing import Mapping
+from urllib.parse import urlsplit
 
 _R2_REQUIRED_FIELDS = (
     "CBI_OBJECT_STORE_ENDPOINT",
@@ -27,6 +28,24 @@ def require_remote_environment_safety(env: Mapping[str, str] | None = None) -> N
     auth_mode = str(values.get("CBI_REMOTE_AUTH_MODE") or "bearer").strip().lower()
     if auth_mode not in {"bearer", "mixed", "github_oauth"}:
         raise RuntimeError("RENDER_PUBLIC_MCP_AUTH_REQUIRED")
+
+    # Local development may use HTTP loopback; a Render-hosted, public OAuth
+    # issuer must never advertise a plaintext authority/credential endpoint.
+    base_url = str(
+        values.get("CBI_REMOTE_PUBLIC_BASE_URL")
+        or values.get("RENDER_EXTERNAL_URL")
+        or "https://cbi-v61-preview.onrender.com"
+    ).strip().rstrip("/")
+    parsed = urlsplit(base_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError("RENDER_PUBLIC_OAUTH_ORIGIN_HTTPS_REQUIRED")
 
     required = str(values.get("CBI_REQUIRE_EPHEMERAL_DURABILITY") or "").strip().lower()
     if required not in {"", "0", "1", "false", "true", "no", "yes", "off", "on"}:
