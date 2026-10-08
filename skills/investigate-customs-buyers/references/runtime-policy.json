@@ -1,21 +1,23 @@
 {
-  "version": "6.1",
-  "default_interaction_mode": "ANSWER_FIRST",
+  "version": "6.4",
+  "default_interaction_mode": "FULL_AUDIT",
   "persistent_default_mode": "EXHAUSTIVE",
   "legacy_adapter": {
     "version": "5.4.1",
-    "purpose": "Preserve the offline Fast Scan and Deep Dive plan builder without changing v6 Claim/EIV/Decision Saturation policy."
+    "purpose": "Preserve historical offline Fast Scan artifacts and parsers; do not expose Fast Scan as a user-facing CBI investigation option."
   },
   "modes": {
     "fast-scan": {
       "offline_only": true,
       "purpose": "batch_or_explicit_preliminary_screening",
       "may_issue_research_complete": false,
-      "terminal_state": "PAUSED_RESOURCE_LIMIT"
+      "terminal_state": "PAUSED_RESOURCE_LIMIT",
+      "legacy_compatibility_only": true,
+      "new_full_audit_entry_allowed": false
     },
     "deep-dive": {
       "offline_only": false,
-      "purpose": "single_buyer_exhaustive_investigation",
+      "purpose": "single_unified_FULL_AUDIT_exhaustive_investigation",
       "may_issue_research_complete": true,
       "completion_basis": "claim_eiv_decision_saturation",
       "fixed_seconds_are_completion": false,
@@ -29,8 +31,17 @@
     }
   },
   "circuit_breaker": {
-    "immediate_statuses": [401, 403, 429],
-    "single_retry_statuses": [500, 502, 503, 504],
+    "immediate_statuses": [
+      401,
+      403,
+      429
+    ],
+    "single_retry_statuses": [
+      500,
+      502,
+      503,
+      504
+    ],
     "transport_failures": [
       "timeout",
       "dns_failure",
@@ -105,8 +116,25 @@
     }
   },
   "commercial_dimensions": {
-    "commercial_value": ["A+", "A", "A-", "B+", "B", "B-", "C", "D", "NQ"],
-    "research_confidence": ["R0", "R1", "R2", "R3", "R4", "R5"],
+    "commercial_value": [
+      "A+",
+      "A",
+      "A-",
+      "B+",
+      "B",
+      "B-",
+      "C",
+      "D",
+      "NQ"
+    ],
+    "research_confidence": [
+      "R0",
+      "R1",
+      "R2",
+      "R3",
+      "R4",
+      "R5"
+    ],
     "outreach_readiness": [
       "BLOCKED",
       "IDENTITY_ONLY",
@@ -180,5 +208,25 @@
     "paid_credit_requires_explicit_consent": true,
     "runtime_invokes_other_plugins": false,
     "send_tools_allowed": false
+  },
+  "user_facing_investigation_modes": [
+    "FULL_AUDIT"
+  ],
+  "single_investigation_runtime_mode": "EXHAUSTIVE",
+  "hosted_mcp_endpoint": "https://cbi-v61-preview.onrender.com/mcp",
+  "legacy_mode_notice": "ANSWER_FIRST/FAST_SCAN are historical protocol/data compatibility only, not advertised investigation choices.",
+  "identity_first_order": [
+    "COMPANY_NAME_AND_INDUSTRY",
+    "GOOGLE_MAPS_BUSINESS",
+    "OFFICIAL_WEBSITE",
+    "COMPANY_SOCIAL_AND_NAMED_LEADERSHIP",
+    "EACH_NAMED_DECISION_MAKER_PERSONAL_SOCIAL_AND_PUBLIC_ROUTES"
+  ],
+  "research_window": {
+    "default_active_minutes": 28,
+    "backend_attests_active_duration": false,
+    "completion_requires_trusted_activity_evidence": true,
+    "missing_proof": "INTERRUPTED_HANDOFF",
+    "time_alone_never_closes": true
   }
 }
