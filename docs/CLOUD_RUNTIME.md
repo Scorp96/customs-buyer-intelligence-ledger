@@ -111,6 +111,20 @@ keys just to match this documentation; do not log credentials. A mere
 `get_runtime_health=READY` or an old backup snapshot is not an independently
 executed latest-generation R2 self-restore proof.
 
+### Hosted OAuth public origin
+
+On Render (`RENDER=true`), the configured OAuth/MCP public base must be
+a valid **HTTPS origin** without credentials, embedded paths, query strings or
+fragments. The Render bootstrap and direct remote entrypoint both invoke the
+startup guard before importing the mutable Runtime. A malformed or plaintext
+public authority aborts startup rather than advertising an insecure MCP OAuth
+issuer. Local non-Render development may continue using HTTP loopback.
+
+Do not silently modify the production public URL or static Bearer credential;
+the accepted `https://cbi-v61-preview.onrender.com` remains unchanged.
+This transport safeguard does **not** replace confidential upstream-token
+protection in OAuth token packaging, which needs separate migration validation.
+
 ### Bootstrap process liveness versus MCP readiness
 
 During missing/unrestored R2 state, the bootstrap HTTP server keeps
