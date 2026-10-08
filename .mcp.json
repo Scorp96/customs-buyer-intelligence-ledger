@@ -1,6 +1,7 @@
 {
-  "mcp_servers": {
+  "mcpServers": {
     "buyer-outreach-actions": {
+      "type": "http",
       "url": "https://cbi-v61-preview.onrender.com/mcp"
     }
   }
