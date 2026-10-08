@@ -7,7 +7,7 @@ description: "Use this skill whenever the user supplies a customs/import/export/
 
 ## Trigger and precedence
 
-This skill takes precedence over the generic `ANSWER_FIRST` buyer/contact lookup route when any of the following is true:
+This one-shot skill is only a presentation alias for the same unified `FULL_AUDIT` (`EXHAUSTIVE`) investigation. It does not override, bypass, or create a separate `ANSWER_FIRST`/fast investigation route. The same five-step company→Google Maps→official website→company social→named-person social preflight runs before deep customs analysis. It is invoked when any of the following is true:
 
 - the user supplies a customs, import, export, B/L, shipment, consignee, supplier or trade-data row;
 - the user asks `这个企业是真实买家吗`, `裂变`, `深度调查`, `穷尽搜索`, `完整调查`, `全部信息`, `海关历史`, or equivalent;
@@ -22,9 +22,10 @@ Normal use is Host/cloud execution:
 
 ```text
 user customs row
-  -> Host public research
-  -> one-shot buyer analysis
-  -> complete dossier
+  -> FULL_AUDIT identity-first preflight
+  -> Host public research and CBI EXHAUSTIVE Evidence Compiler
+  -> Decision-Grade saturation/Closure or interrupted handoff
+  -> one consolidated dossier
   -> optional cloud delta monitor
 ```
 
@@ -38,7 +39,7 @@ For the normal user path:
 - do **not** require the user to start an MCP process;
 - do **not** block public research merely because the CBI Runtime/MCP namespace is not exposed in the current Host session.
 
-If CBI Runtime tools are exposed, use the current production Runtime for durable Evidence/Claim/Pivot/Peer/Closure governance when the user requested persistence or formal audit. If they are not exposed, continue the complete one-shot investigation with the Host's real web/search/browser/registry/maps tools and clearly label the result as Host/stateless research. Runtime unavailability is **not** permission to fall back to the user's PC.
+For ALL CBI enterprise investigations, use the current production Runtime for durable Evidence/Claim/Pivot/Peer/Closure governance by default; this does NOT authorize CRM or outreach. If Runtime is unavailable, continue useful public research but report it as an INTERRUPTED partial FULL_AUDIT, never an alternate stateless-complete mode. Runtime unavailability is **not** permission to fall back to the user's PC.
 
 ## One-shot investigation contract
 
@@ -237,9 +238,7 @@ Cloud monitoring must not require the user's computer to remain online.
 
 ## Runtime and persistence boundary
 
-This one-shot route controls **research completeness**, not automatic persistence.
-
-Without an explicit persistence/CRM instruction:
+This one-shot presentation route uses the SAME persisted FULL_AUDIT research records, not a second investigation mode. Without separately authorized CRM/outreach instructions:
 
 - do not write CRM;
 - do not send outreach;
@@ -247,7 +246,7 @@ Without an explicit persistence/CRM instruction:
 - do not claim Runtime Closure if Runtime tools were unavailable;
 - do not fabricate Evidence IDs, Pivot IDs, Peer receipts or Closure tokens.
 
-If the user explicitly requests formal `FULL_AUDIT`, CRM writeback, Closure or outreach preparation and Runtime tools are exposed, hand the verified Host findings into the current production persistent route. The Host still performs actual public research; Runtime governs durable evidence and decisions.
+The FULL_AUDIT is always formal for CBI investigations; CRM writeback, paid data calls, monitoring and send actions still require separate explicit authorization. The Host performs research; Runtime governs durable evidence and decisions.
 
 ## Stop conditions
 
@@ -260,6 +259,6 @@ Do not stop merely because:
 - a high commercial grade appears likely;
 - a fixed number of queries/pages/peers was reached.
 
-Stop the one-shot investigation only when the material modules above have been attempted and remaining high-value questions are either resolved, explicitly `UNKNOWN/BLOCKED`, or cannot be pursued with the tools/sources available in the current Host session.
+Stop only on verified Decision Saturation with a formal valid Closure after the default 28-minute ACTIVE research floor; otherwise classify material limitations as INTERRUPTED/PAUSED_RESOURCE_LIMIT and deliver a state-preserving 中断交接报告, not completion.
 
 Then deliver the complete dossier once.

@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "customs-buyer-intelligence",
-  "version": "6.4.0+codex.20260918",
-  "description": "One-shot customs buyer intelligence with historical backfill, validated six-branch network fission, CONTACT-FIRST public buyer research, cloud monitoring, and guarded CRM/outreach workflows.",
+  "version": "6.4.0+codex.20261008",
+  "description": "Single unified CBI FULL_AUDIT with five-stage identity preflight, Decision-Grade Evidence Saturation, validated six-branch buyer expansion, protected cloud evidence/CRM and draft-only outreach.",
   "author": {
     "name": "Xinghuai Sales Intelligence"
   },

@@ -75,7 +75,8 @@ class V54ResilienceTests(unittest.TestCase):
         self.assertEqual(contract["crm_writeback_boundary"]["structured_receipt_tool"], "append_crm_writeback_receipt")
         self.assertTrue(contract["transport_boundary"]["local_runtime_health_is_not_tunnel_health"])
         workflow = contract["workflow_policy"]
-        self.assertEqual(workflow["default_mode"], "ANSWER_FIRST")
+        self.assertEqual(workflow["default_mode"], "FULL_AUDIT")
+        self.assertEqual(workflow["single_investigation_mode"], "EXHAUSTIVE")
         self.assertEqual(workflow["answer_first"]["cbi_mcp_tools_allowed"], [])
         self.assertEqual(len(workflow["answer_first"]["cbi_mcp_tools_forbidden"]), 19)
         self.assertFalse(workflow["mcp_initialize_mutates_state"])
@@ -306,7 +307,7 @@ class V54ResilienceTests(unittest.TestCase):
             process.stdin.flush()
             response = json.loads(process.stdout.readline())
             self.assertEqual(response["result"]["serverInfo"]["version"], "6.4.0")
-            self.assertIn("Default to ANSWER_FIRST", response["result"]["instructions"])
+            self.assertIn("Use ONLY unified CBI FULL_AUDIT", response["result"]["instructions"])
         finally:
             if process.stdin:
                 process.stdin.close()

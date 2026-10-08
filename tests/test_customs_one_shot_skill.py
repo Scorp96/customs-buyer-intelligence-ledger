@@ -4,60 +4,31 @@ import json
 import unittest
 from pathlib import Path
 
+ROOT=Path(__file__).resolve().parents[1]
 
-ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / ".codex-plugin" / "plugin.json"
-SKILL = ROOT / "skills" / "customs-buyer-one-shot" / "SKILL.md"
+class UnifiedOneShotAliasTests(unittest.TestCase):
+    def test_manifest_alias_is_not_second_investigation(self):
+        m=json.loads((ROOT/".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+        prompts=m["interface"]["defaultPrompt"]
+        self.assertTrue(str(m["version"]).startswith("6.4.0+codex."))
+        self.assertIn("$investigate-customs-buyers",prompts[0])
+        self.assertIn("批量写回",prompts[1])
+        self.assertTrue(any("$customs-buyer-one-shot" in v for v in prompts[2:]))
+        self.assertIn("不是第二调查模式",prompts[2])
 
+    def test_one_shot_alias_preserves_complete_cloud_research_and_safety(self):
+        t=(ROOT/"skills/customs-buyer-one-shot/SKILL.md").read_text(encoding="utf-8")
+        for s in ["ONE-SHOT CUSTOMS", "one consolidated final answer",
+                  "do **not** ask the user to open a computer",
+                  "Runtime unavailability is **not** permission to fall back to the user's PC",
+                  "regional_peer","industry_peer","scale_peer",
+                  "same_supplier_buyer","same_product_hs_application_buyer",
+                  "competing_supplier_alternative", "Cloud customs delta monitoring",
+                  "notify only for a genuinely new shipment",
+                  "same unified `FULL_AUDIT`", "INTERRUPTED"]:
+            self.assertIn(s,t)
+        self.assertNotIn("takes precedence over the generic `ANSWER_FIRST`",t)
+        self.assertNotIn("continue the complete one-shot investigation with the Host's",t)
 
-class CustomsBuyerOneShotSkillTests(unittest.TestCase):
-    def test_manifest_routes_customs_tasks_to_one_shot_skill(self) -> None:
-        manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
-        prompts = manifest["interface"]["defaultPrompt"]
-        self.assertEqual(manifest["version"], "6.4.0+codex.20260918")
-        self.assertIn("$investigate-customs-buyers", prompts[0])
-        self.assertIn("批量写回", prompts[1])
-        self.assertTrue(
-            any("$customs-buyer-one-shot" in prompt for prompt in prompts[2:]),
-            "customs default prompts must route to the one-shot skill without displacing legacy prompt indexes",
-        )
-
-    def test_one_shot_skill_contains_required_cloud_contract(self) -> None:
-        text = SKILL.read_text(encoding="utf-8")
-        required = [
-            "ONE-SHOT CUSTOMS",
-            "one consolidated final answer",
-            "do **not** ask the user to open a computer",
-            "Runtime unavailability is **not** permission to fall back to the user's PC",
-            "regional_peer",
-            "industry_peer",
-            "scale_peer",
-            "same_supplier_buyer",
-            "same_product_hs_application_buyer",
-            "competing_supplier_alternative",
-            "Cloud customs delta monitoring",
-            "notify only for a genuinely new shipment",
-        ]
-        for marker in required:
-            with self.subTest(marker=marker):
-                self.assertIn(marker, text)
-
-    def test_answer_first_skill_explicitly_hands_deep_customs_to_one_shot(self) -> None:
-        answer_first = (ROOT / "skills" / "investigate-customs-buyers" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("$customs-buyer-one-shot", answer_first)
-        self.assertIn("takes precedence over `ANSWER_FIRST`", answer_first)
-
-    def test_one_shot_skill_does_not_require_runtime_for_public_research(self) -> None:
-        text = SKILL.read_text(encoding="utf-8")
-        self.assertIn(
-            "If they are not exposed, continue the complete one-shot investigation",
-            text,
-        )
-        self.assertIn(
-            "Runtime unavailability is **not** permission to fall back to the user's PC",
-            text,
-        )
-
-
-if __name__ == "__main__":
+if __name__=="__main__":
     unittest.main()

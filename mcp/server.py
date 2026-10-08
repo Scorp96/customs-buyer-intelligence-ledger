@@ -879,8 +879,10 @@ def tool_descriptors() -> list[dict[str, Any]]:
         tool.pop("title", None)
         tool.pop("_meta", None)
         tool["description"] = (
-            "Not for ANSWER_FIRST ordinary buyer/contact lookups; use only after an explicit persistent, "
-            "formal-audit, outreach, or plugin-diagnostic request. " + tool["description"]
+            "Unified CBI FULL_AUDIT (EXHAUSTIVE) is the only new investigation workflow; "
+            "first bind company, Google Maps, official website, company social and named-person social; "
+            "use real Evidence and Decision Saturation. CRM writes and outreach require separate authorization. "
+            + tool["description"]
         )
         tool["outputSchema"] = {"type": "object", "additionalProperties": True}
         tool["annotations"] = {
@@ -947,18 +949,21 @@ def handle(method: str, params: dict[str, Any]) -> Any:
             },
             "serverInfo": {"name": "customs-buyer-intelligence", "version": RUNTIME_VERSION},
             "instructions": (
-                "Default to ANSWER_FIRST for ordinary buyer, company, contact, email, phone, person, and route lookups. "
-                "In ANSWER_FIRST, use host-visible public web/search/browser sources, immediately return the latest "
-                "decision-useful findings with concrete links and boundaries, and provide two tailored content-only "
-                "drafts: one development email and one instant-chat message. Do not call any Customs Buyer Intelligence "
-                "MCP tool, access CRM/workbooks, create Runtime history, receipts, audit/Closure records, executable links, "
-                "or one-click actions in ANSWER_FIRST. Only an explicit batch-writeback, full-audit, formal CRM/Closure, "
-                "outreach-preparation, or plugin-diagnostic request enables the relevant MCP tools. MCP initialization "
-                "never replays Runtime receipts or host bundles. Persistent workflows must use get_runtime_contract, "
-                "compile real host observations through the v6.1 Evidence Compiler, rank work by EIV, keep Commercial "
-                "Value/Research Confidence/Outreach Readiness/CRM state independent, and use Decision Saturation rather "
-                "than a Source Family checklist. After transport loss use resume_investigation; never invent Evidence, "
-                "Routes, Closure IDs, drafts or sends."
+                "Use ONLY unified CBI FULL_AUDIT with mode EXHAUSTIVE for company, buyer, contact, "
+                "decision-maker and customs investigations; no ANSWER_FIRST or FAST_SCAN entry route. "
+                "MANDATORY preflight sequence: (1) company/industry/legal name (2) Google Maps/Business "
+                "(3) official website About/Contact/Team/footer (4) official company Facebook, Instagram, "
+                "LinkedIn and named management (5) each decision maker's own social profiles, role tenure, "
+                "public contacts and verified ownership. A company Facebook page is not a personal account. "
+                "Blocked sources remain BLOCKED; pivot across independent sources and preserve receipts. "
+                "Then run the twelve-module exhaustive investigation, verified six-branch network fission, "
+                "counterevidence and Decision-Grade Evidence Saturation. For substantive direct investigations, "
+                "use a minimum 28-minute ACTIVE-research floor; never idle or claim unmeasured elapsed time. "
+                "Only a valid Closure confirms completion; otherwise output a durable interruption handoff. "
+                "MCP initialize never mutates state. FULL_AUDIT may record append-only Evidence and Claims, "
+                "but CRM/workbook writes, paid provider use, monitoring and any send actions always require "
+                "separate explicit user authorization. No fabricated evidence, personal social links or Routes."
+
             ),
         }
     if method == "ping": return {}
