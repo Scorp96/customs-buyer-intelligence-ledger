@@ -41,12 +41,12 @@ class PortablePluginManifestTests(unittest.TestCase):
 
     def test_legacy_codex_compatibility_manifest_remains_available(self) -> None:
         self.assertTrue((ROOT / ".codex-plugin" / "plugin.json").is_file())
-        self.assertFalse((ROOT / ".mcp.json").exists(), "root .mcp.json risks accidental stdio selection")
+        self.assertTrue((ROOT / ".mcp.json").is_file(), "Codex compatibility must point to remote-only .mcp.json")
         self.assertTrue((ROOT / "tests/fixtures/mcp/legacy_windows_launcher.json").is_file())
 
     def test_codex_plugin_uses_only_portable_cloud_mcp(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["mcpServers"], "./mcp.json")
+        self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         portable = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
         exposed = portable["mcpServers"]["buyer-outreach-actions"]
         self.assertEqual(exposed["type"], "streamable-http")
@@ -56,8 +56,13 @@ class PortablePluginManifestTests(unittest.TestCase):
 
     def test_legacy_engineering_launcher_not_referenced_by_active_manifest(self):
         manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertNotEqual(manifest["mcpServers"], "./.mcp.json")
-        self.assertFalse((ROOT / ".mcp.json").exists())
+        self.assertEqual(manifest["mcpServers"], "./.mcp.json")
+        compatibility = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        portable = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
+        remote = compatibility["mcp_servers"]["buyer-outreach-actions"]
+        self.assertEqual(remote["url"], portable["mcpServers"]["buyer-outreach-actions"]["url"])
+        self.assertNotIn("command", remote)
+        self.assertNotIn("args", remote)
         legacy = json.loads((ROOT / "tests/fixtures/mcp/legacy_windows_launcher.json").read_text(encoding="utf-8"))
         self.assertIn("command", legacy["mcpServers"]["buyer-outreach-actions"])
 
