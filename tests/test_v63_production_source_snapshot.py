@@ -45,6 +45,7 @@ class V63ProductionSourceSnapshotTests(unittest.TestCase):
         )
         (root / "tests" / "fixtures" / "mcp").mkdir(parents=True)
         (root / "mcp.json").write_text(json.dumps({"mcpServers":{"cbi":{"type":"streamable-http","url":"https://example.com/mcp"}}}), encoding="utf-8")
+        (root / ".mcp.json").write_text(json.dumps({"mcp_servers":{"cbi":{"url":"https://example.com/mcp"}}}), encoding="utf-8")
         (root / "tests" / "fixtures" / "mcp" / "legacy_windows_launcher.json").write_text(
             json.dumps({"mcpServers":{"cbi":{"args":["mcp/server_v61_backup_recovery.py","--stdio"]}}}),
             encoding="utf-8",
@@ -60,6 +61,7 @@ class V63ProductionSourceSnapshotTests(unittest.TestCase):
         paths = set(snapshot["files"])
         self.assertTrue({
             "mcp.json",
+            ".mcp.json",
             "tests/fixtures/mcp/legacy_windows_launcher.json",
             "unified_runtime/__init__.py",
             "unified_runtime/research_orchestration_hardening.py",
