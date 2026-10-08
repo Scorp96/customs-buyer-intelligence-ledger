@@ -1135,7 +1135,8 @@ class UnifiedRuntime:
                     "paid_provider_requires_separate_authorization": True,
                     "outreach_send_requires_separate_authorization": True,
                 },
-                "legacy_answer_first": {
+                "answer_first": {
+                    "legacy_compatibility_only": True,\n                    "entry_allowed": False,
                     "scope": "ORDINARY_BUYER_COMPANY_CONTACT_LOOKUP",
                     "host_public_research_required": True,
                     "cbi_mcp_tools_allowed": [],
