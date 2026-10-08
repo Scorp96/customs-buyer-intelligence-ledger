@@ -19,7 +19,7 @@ class ContactFirstPluginPolicyTest(unittest.TestCase):
             "不得猜姓名",
             "公司 route 与 named-person route 必须分开验证",
             "COMPANY_ROUTE_READY",
-            "不得因此停止 named-person research",
+            "不得因COMPANY_ROUTE_READY而停止 named-person research",
             "终止性 receipt",
         ]
         for token in required:
