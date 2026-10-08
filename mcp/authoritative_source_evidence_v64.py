@@ -76,6 +76,27 @@ def _pointer_identity(pointer: Any) -> tuple[int, str, str, str, str]:
     return generation, archive_sha, sessions_fp, recovery_fp, archive_format
 
 
+def read_operator_recovery_pointer(*, persistence: Any) -> dict[str, Any]:
+    """Authenticated, read-only source identity for exact restore attestation.
+
+    Public /healthz must not expose this generation/fingerprint; the operator
+    can use these exact values as assertions in RECOVERY_SELF_RESTORE_PROOF.
+    """
+    if persistence is None:
+        raise AuthoritativeSourceEvidenceError("object-store recovery pointer unavailable")
+    generation, archive_sha, sessions_fp, recovery_fp, archive_format = _pointer_identity(
+        persistence.read_pointer(required=True)
+    )
+    return {
+        "schema": "cbi.v64-operator-recovery-pointer.v1",
+        "generation": generation,
+        "recovery_fingerprint_sha256": recovery_fp,
+        "archive_format": archive_format,
+        "source": "AUTHENTICATED_MCP_ONLY",
+        "persistent_mutation_performed": False,
+    }
+
+
 def build_recovery_self_restore_proof(
     *,
     persistence: Any,
@@ -267,7 +288,7 @@ def _tool_descriptor() -> dict[str, Any]:
         "name": TOOL_NAME,
         "description": (
             "[OPERATOR_READ_ONLY] Produce authoritative production acceptance evidence. "
-            "RECOVERY_SELF_RESTORE_PROOF restores the current object-state generation only into an isolated temporary target and returns hashes only. "
+            "READ_RECOVERY_POINTER returns exact generation/fingerprint to authenticated operators; public health never includes them. RECOVERY_SELF_RESTORE_PROOF restores the current object-state generation only into an isolated temporary target and returns hashes only. "
             "EXACT_SESSION_CAPTURE returns one exact private append-only session only while a short-lived server-side allowlist window is explicitly enabled. Never sends outreach and never mutates production state."
         ),
         "inputSchema": {
@@ -277,7 +298,7 @@ def _tool_descriptor() -> dict[str, Any]:
             "properties": {
                 "operation": {
                     "type": "string",
-                    "enum": ["RECOVERY_SELF_RESTORE_PROOF", "EXACT_SESSION_CAPTURE"],
+                    "enum": ["READ_RECOVERY_POINTER", "RECOVERY_SELF_RESTORE_PROOF", "EXACT_SESSION_CAPTURE"],
                 },
                 "expected_generation": {"type": "integer", "minimum": 0},
                 "expected_recovery_fingerprint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -310,6 +331,8 @@ def install_remote_authoritative_source_evidence_tool(
     def handler(arguments: dict[str, Any]) -> dict[str, Any]:
         args = dict(arguments or {}) if isinstance(arguments, dict) else {}
         operation = str(args.get("operation") or "").strip().upper()
+        if operation == "READ_RECOVERY_POINTER":
+            return read_operator_recovery_pointer(persistence=persistence)
         if operation == "RECOVERY_SELF_RESTORE_PROOF":
             return build_recovery_self_restore_proof(
                 persistence=persistence,
