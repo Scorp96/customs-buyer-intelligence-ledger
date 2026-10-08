@@ -1,10 +1,10 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "customs-buyer-intelligence",
-  "version": "6.4.0+codex.20261008.r2",
+  "version": "6.4.0+codex.20261008.r3",
   "description": "One CBI FULL_AUDIT research workflow, five-stage identity binding, consolidated customs investigation, Decision-Grade independent-evidence saturation, one Render MCP endpoint and separately authorized CRM/outreach.",
   "author": {
-    "name": "Xinghuai Sales Intelligence"
+    "name": "CBI Research Platform"
   },
   "repository": "https://github.com/Scorp96/customs-buyer-intelligence-ledger",
   "keywords": [
