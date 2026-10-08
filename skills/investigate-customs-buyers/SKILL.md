@@ -5,6 +5,19 @@ description: "Unified CBI FULL_AUDIT (EXHAUSTIVE) for every CBI buyer/company/co
 
 # Customs Buyer Intelligence v6.4 — Single FULL_AUDIT
 
+## Mandatory host-side MCP authority preflight — block split-brain writes
+
+**Before any CBI state mutation** (including `resolve_or_create_account`, `start_investigation`, `resume_investigation`, `compile_and_append_research_bundle`, `append_peer_discovery`, any Evidence/Pivot/CRM action), select the explicitly connected **CBI v6.4 Render** MCP. Do not select a second, generically named CBI v6.4 app, Windows-local launcher, historical `main` package or standby v6.3 service merely because it reports `READY`.
+
+First use that **same selected connection** for a read-only `get_runtime_contract` and `get_runtime_health` (and optionally `get_product_profiles`) and verify all of the following without writing:
+
+- `workflow_policy.default_mode == "FULL_AUDIT"` and `workflow_policy.single_investigation_mode == "EXHAUSTIVE"`.
+- `workflow_policy.full_audit.cloud_mcp_canonical_endpoint == "https://cbi-v61-preview.onrender.com/mcp"`. Missing/different/invalid canonical endpoint is a **hard block**, even if `runtime_version` and `build_id` match another service.
+- `get_runtime_health.status == "READY"`, `mutation_wal.prepared_count == 0`, `mutation_wal.invalid_count == 0`, with no unresolved recovery error. The intended production instance currently also requires `backup_recovery.external_replication_configured == true` and `backup_recovery.external_replication_verified == true` before persistent writes; a temporary backup failure pauses writes rather than redirecting them to another Runtime.
+- The transport **must be the configured plugin MCP connection**, not a model-constructed HTTP request; no namesake connector, localhost fallback, or implicit state merge. A profile list/health count alone never proves the provenance of a state store. For highly privileged mutations require an independent server-side tenant/storage authority check when available.
+
+If any preflight fails or two CBI connections disagree, return `ROUTE_IDENTITY_CONFLICT` in the report, continue public research **read-only**, and preserve a `中断交接报告`. **Never** try an alternate MCP, merge Canonical IDs, copy WAL/object-state snapshots, reset sessions, issue customer outreach, or make CRM writes as a recovery shortcut. This is a **host execution policy**, not proof that older deployed MCP instances enforce these conditions server-side; a server-enforced tenant/runtime authority gate still requires implementation and client acceptance.
+
 ## Only investigation route: CBI FULL_AUDIT + Decision-Grade Evidence Saturation
 
 Every CBI enterprise, buyer, person/contact, customs, first/next/continue-company request invokes ONE investigation route: `FULL_AUDIT` with Runtime `mode=EXHAUSTIVE`. Do not choose `ANSWER_FIRST`, `FAST_SCAN`, a separate one-shot research mode, or a polished early-answer substitute. Older records and protocol enums may retain legacy modes for compatibility only; they are not user-facing investigation choices.
