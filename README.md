@@ -4,7 +4,7 @@ Single hosted CBI v6.4 research system: ONE `FULL_AUDIT` / `EXHAUSTIVE` buyer in
 
 ## Cloud and client entry
 
-The two client manifest configurations, `mcp.json` and `.mcp.json`, both point to ONE remote MCP endpoint: `https://cbi-v61-preview.onrender.com/mcp`. The service's historical *name* includes v6.1 but its deployed Runtime reports v6.4. Neither manifest invokes PowerShell, a user's PC or a second Render backend. The separate `customs-investigation-checklist.md` and `decision-grade-full-audit.md` are internal references of ONE `investigate-customs-buyers` Skill, not independent Skills.
+The user-facing portable and Codex plugin manifests both bind directly to ONE remote `mcp.json` endpoint: `https://cbi-v61-preview.onrender.com/mcp`. The historical service name contains v6.1 but the deployed Runtime reports v6.4. The repository-root `.mcp.json` retains a Windows-local launcher **only for isolated engineering, WAL and crash-recovery tests**, and is not referenced by any active plugin manifest; it must never be used as a chat-research fallback. The separate `customs-investigation-checklist.md` and `decision-grade-full-audit.md` are internal references of ONE `investigate-customs-buyers` Skill, not independent Skills.
 
 ## Default operation
 
