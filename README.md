@@ -1,20 +1,20 @@
 # Customs Buyer Intelligence v6.4
 
-Personal Codex plugin for answer-first public buyer research, self-hosted public-web execution, and explicit batch-only CRM persistence. Ordinary company/contact lookups now search and answer immediately without creating Runtime history, audit documents, Closure records or workbook writes. The current task acts as the temporary review queue. Only an explicit user instruction such as `新增到表格`, `批量写回`, `正式入库`, `合并到最新CRM`, `生成审核文档`, `评估Closure` or `准备外联` activates the corresponding persistent workflow.
+Single hosted CBI v6.4 research system: ONE `FULL_AUDIT` / `EXHAUSTIVE` buyer investigation workflow with the Decision-Grade evidence-saturation discipline. Every substantive company, named decision maker or customs-derived buyer task starts with company/industry identity → Google Maps/Business → official website → company social accounts/management → each named decision maker's public social and contact routes. Legacy `ANSWER_FIRST`, `FAST_SCAN`, and the previously independent customs one-shot Skill are **not new investigation entrypoints**.
 
-The explicit full-audit route is now the v6 production architecture: Host Research Agent → batch Evidence Compiler → claim-driven Governance Runtime → Artifact Tool transaction, with a Portfolio Scheduler/Budget Controller and a process-independent host recovery queue. Completion is Decision Saturation, not a mandatory Source Family checklist. Commercial Value, Research Confidence, Outreach Readiness and CRM state are independent. Public sources remain the default; connected providers stay opt-in and separately authorized. The 4.2.1 parser, formulas, entity/product analysis, Fast Scan, Deep Dive report, Chinese review and draft-only `mailto:` experience remain compatible.
+## Cloud and client entry
 
-The six phase-one engineering documents are in `docs/v6/`: current architecture audit, target architecture, migration plan, API specification, data model and test plan.
+The user-facing portable and Codex plugin manifests both bind directly to ONE remote `mcp.json` endpoint: `https://cbi-v61-preview.onrender.com/mcp`. The historical service name contains v6.1 but the deployed Runtime reports v6.4. The repository-root `.mcp.json` retains a Windows-local launcher **only for isolated engineering, WAL and crash-recovery tests**, and is not referenced by any active plugin manifest; it must never be used as a chat-research fallback. The separate `customs-investigation-checklist.md` and `decision-grade-full-audit.md` are internal references of ONE `investigate-customs-buyers` Skill, not independent Skills.
 
-Default workflow:
+## Default operation
 
-- `ANSWER_FIRST`: research and return the latest verified content with concrete sources; no Runtime persistence, CRM/history/audit document, Closure or send action;
-- every company/contact result also includes two tailored, ready-to-copy drafts: one development email and one instant-chat message; these are content only, not executable actions;
-- `BATCH_COMMIT`: only after explicit instruction, collect the selected recent results, locate the latest production workbook, Canonical-deduplicate, preserve history, append once, export once and verify once;
-- `FULL_AUDIT`: only when explicitly requested, run the complete twelve-module, six-branch, receipt-bound route;
-- an item count such as ten Buyers never triggers automatic writeback.
+1. Resolve legal/entity identity and verify minimal location/industry before assigning or resuming a Canonical Buyer.
+2. Exhaust company Google Maps, official site, company social channels, and the named decision makers' own public social routes with evidence provenance. Distinguish VERIFIED / CANDIDATE / CONFLICTED / BLOCKED / UNKNOWN. No assumed Facebook or guessed owner.
+3. Record actual SourceAttempts, Evidence, counterevidence and independent source clusters; run the existing twelve modules, EIV-ranked research objectives, six validated Peer branches, Pivot resolution and formal Decision Saturation / Closure.
+4. For substantive directly invoked research, default to 28 minutes of **active useful research**, not idle padding. **The cloud Runtime currently does not independently attest active research duration.** Host is responsible for accurate records; if the window or Closure cannot be verified, return a durable `中断交接报告`, not a fabricated completion statement.
+5. Recording verified FULL_AUDIT research receipts does not imply permission to write CRM/Excel, use paid data providers, start background monitoring, or perform any customer outreach. Those side effects remain separately authorized. Draft text is not a send.
 
-`ANSWER_FIRST` never generates `mailto:`, `wa.me`, `zalo.me`, `tel:`, a send button or an Action Card. An explicit one-click-send request enters the existing guarded outreach workflow; route ownership, history, authority, Stage, expiry and Closure still have to pass before anything executable is rendered.
+The architecture is Host Research Agent → batch Evidence Compiler → claim-driven Governance Runtime → separately authorized Artifact Tool transaction. Commercial Value, Research Confidence, Outreach Readiness and CRM state remain distinct. Public-source search remains the default.
 
 Core enforcement:
 
@@ -38,7 +38,7 @@ Core enforcement:
 - historical rows are never overwritten; new Buyer, cross-entity, supplier, referral, channel, low-confidence and conflict findings are retained and merged into a derived current view;
 - information ingestion and outreach eligibility are separate: an ineligible Route remains available as a lead with its real Owner and relationship;
 - explicit `PUBLIC_ONLY`, optional-provider and required-provider modes with provider allowlists, permission and paid-credit gates;
-- Codex-level cross-plugin orchestration through `plan_provider_calls` and `append_provider_receipt`; the local MCP never impersonates or directly invokes another provider;
+- Host-level authorized provider orchestration through `plan_provider_calls` and `append_provider_receipt`; the cloud MCP never impersonates or directly invokes another provider;
 - self-hosted crawler execution requires no TinyFish, Firecrawl Hosted, Apify Cloud or other paid crawling API; private/local network targets, unsafe redirects and guarded browser subrequests fail closed, with bounded pages, retries and concurrency;
 - same-Owner/same-Module/source-compatible Evidence binding;
 - later, independent Pivot consumption; a material Pivot cannot be dismissed without a measured below-threshold remaining EIV, and terminal Pivot states cannot regress;
@@ -48,6 +48,6 @@ Core enforcement:
 - provider results never replace public Source Families, automatically imply WhatsApp/Zalo, or self-close research;
 - draft-only `mailto:` action; no send tool and no fabricated provider receipt.
 
-Production CRM, customer data and session logs are not stored in the plugin. Session logs default to `%LOCALAPPDATA%\XingHuai\CustomsBuyerIntelligence\sessions\`; canonical and pending journals are sibling data directories, outside plugin source. If the MCP Tunnel itself is completely unreachable, a remote chat cannot call any local fallback tool. The bundled local Journal CLI can still queue receipts, but the server never replays them merely because MCP initializes; synchronization requires an explicit `sync_pending_receipts` call. A truly transparent remote fallback would require a separately authorized always-online cloud queue.
+Production CRM, customer data and session logs are not stored in the plugin. The hosted Runtime uses its configured durable server paths/object-store replication. Historical Windows-local journal CLI paths remain for offline maintenance and migration only; they are **not** runtime routes advertised by the plugin. If the remote MCP is unreachable, a remote chat cannot claim a local fallback or completed evidence persistence. Replaying queued receipts always requires explicit synchronization, not merely an MCP initialization.
 
 Release validation runs the six compatibility self-tests, unified Runtime/adversarial tests, MCP protocol tests, plugin/skill validators, privacy scanning, Windows UTF-8/path tests and cold-copy checks.

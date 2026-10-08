@@ -4,31 +4,29 @@ import json
 import unittest
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]
 
-class UnifiedOneShotAliasTests(unittest.TestCase):
-    def test_manifest_alias_is_not_second_investigation(self):
-        m=json.loads((ROOT/".codex-plugin/plugin.json").read_text(encoding="utf-8"))
-        prompts=m["interface"]["defaultPrompt"]
-        self.assertTrue(str(m["version"]).startswith("6.4.0+codex."))
-        self.assertIn("$investigate-customs-buyers",prompts[0])
-        self.assertIn("批量写回",prompts[1])
-        self.assertTrue(any("$customs-buyer-one-shot" in v for v in prompts[2:]))
-        self.assertIn("不是第二调查模式",prompts[2])
 
-    def test_one_shot_alias_preserves_complete_cloud_research_and_safety(self):
-        t=(ROOT/"skills/customs-buyer-one-shot/SKILL.md").read_text(encoding="utf-8")
-        for s in ["ONE-SHOT CUSTOMS", "one consolidated final answer",
-                  "do **not** ask the user to open a computer",
-                  "Runtime unavailability is **not** permission to fall back to the user's PC",
-                  "regional_peer","industry_peer","scale_peer",
-                  "same_supplier_buyer","same_product_hs_application_buyer",
-                  "competing_supplier_alternative", "Cloud customs delta monitoring",
-                  "notify only for a genuinely new shipment",
-                  "same unified `FULL_AUDIT`", "INTERRUPTED"]:
-            self.assertIn(s,t)
-        self.assertNotIn("takes precedence over the generic `ANSWER_FIRST`",t)
-        self.assertNotIn("continue the complete one-shot investigation with the Host's",t)
+class SingleCBIAuditSurfaceTests(unittest.TestCase):
+    def test_only_one_investigation_skill_exposed(self):
+        self.assertTrue((ROOT/"skills/investigate-customs-buyers/SKILL.md").exists())
+        self.assertFalse((ROOT/"skills/customs-buyer-one-shot/SKILL.md").exists())
+        manifest=json.loads((ROOT/".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+        self.assertTrue(all("$customs-buyer-one-shot" not in p for p in manifest["interface"]["defaultPrompt"]))
+        self.assertTrue(all("$investigate-customs-buyers" in p for p in manifest["interface"]["defaultPrompt"][:3]))
+
+    def test_customs_and_decision_grade_survive_as_references(self):
+        root=ROOT/"skills/investigate-customs-buyers"
+        skill=(root/"SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("references/customs-investigation-checklist.md",skill)
+        self.assertIn("references/decision-grade-full-audit.md",skill)
+        customs=(root/"references/customs-investigation-checklist.md").read_text(encoding="utf-8")
+        research=(root/"references/decision-grade-full-audit.md").read_text(encoding="utf-8")
+        for token in ["regional_peer","industry_peer","scale_peer","same_supplier_buyer",
+                       "same_product_hs_application_buyer","competing_supplier_alternative"]:
+            self.assertIn(token,customs)
+        for token in ["28 minutes","Google Maps","Facebook","中断交接报告","evidence cluster"]:
+            self.assertIn(token,research)
 
 if __name__=="__main__":
     unittest.main()

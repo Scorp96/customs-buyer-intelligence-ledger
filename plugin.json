@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "customs-buyer-intelligence",
-  "version": "6.4.0+codex.20261008",
-  "description": "Single unified CBI FULL_AUDIT with five-stage identity preflight, Decision-Grade Evidence Saturation, validated six-branch buyer expansion, protected cloud evidence/CRM and draft-only outreach.",
+  "version": "6.4.0+codex.20261008.r2",
+  "description": "One CBI FULL_AUDIT research workflow, five-stage identity binding, consolidated customs investigation, Decision-Grade independent-evidence saturation, one Render MCP endpoint and separately authorized CRM/outreach.",
   "author": {
     "name": "Xinghuai Sales Intelligence"
   },

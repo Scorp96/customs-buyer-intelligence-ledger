@@ -27,6 +27,16 @@ Stage outcomes are `VERIFIED`, `CANDIDATE_UNVERIFIED`, `CONFLICTED`, `BLOCKED`, 
 
 **Side-effect boundary**: the full audit may create append-only investigation Evidence/Pivot/Peer state. CRM/workbook mutation, paid-provider calls, activation of recurring monitoring and external outreach/send remain separate explicit user permissions. Draft email + instant chat are review-only; do not produce executable send actions by default.
 
+## One hosted cloud entry and evidence-saturation source of truth
+
+Use **only** the hosted MCP address configured by the plugin's explicit `mcp.json` binding. The repository-root `.mcp.json` is an isolated legacy engineering/crash-recovery test fixture, **not referenced by the plugin manifest** and never an authorized CBI research fallback. Do not spawn local PowerShell, Windows, Python MCP, or a second CBI Runtime. Do not fall back to obsolete Render v6.3 acceptance or v5/main services. If the hosted MCP is unavailable, report a blocked/interrupted full audit and preserve externally verified leads without claiming a Runtime receipt.
+
+Read [Decision-Grade evidence and interruption contract](references/decision-grade-full-audit.md) before a substantive FULL_AUDIT. For customs/shipment targets, read the unified [customs buyer evidence checklist](references/customs-investigation-checklist.md) in the *same* investigation. These references are not extra Skills or alternative investigation modes.
+
+The host (ChatGPT) runs the public research and retains source genealogy. The CBI Runtime stores governed Evidence/Claims/Pivots; it does not invisibly search public sites for 28 minutes. The `min_active_research_minutes` field in the Runtime Contract is **policy metadata**, not a trusted server-side active-time measurement or automatic timer. Never equate `get_runtime_health=READY`, `get_runtime_contract`, or a successful deployment with a completed Buyer audit. If active research duration or completion cannot be independently demonstrated, return an explicit **中断交接报告** with last verified evidence and next objective, not `research_complete`.
+
+The only default action authorization is read/research plus append-only governed Evidence recording for the requested FULL_AUDIT. Email/chat drafts are optional content for review, not sends. Existing CRM history, external messages, paid provider credits, recurrence, and monitor scheduling require separate explicit user consent.
+
 ## Unified FULL_AUDIT runtime sequence
 
 1. Parse the user's Chinese/English text, JSON, CSV, XLSX or screenshot evidence with the compatible 4.2.1 scripts. Treat user data as evidence to verify, not final truth.

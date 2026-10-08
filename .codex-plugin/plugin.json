@@ -1,7 +1,7 @@
 {
   "name": "customs-buyer-intelligence",
-  "version": "6.4.0+codex.20261008",
-  "description": "Unified CBI v6.4 FULL_AUDIT (EXHAUSTIVE) with mandatory company→Maps→official website→company social→named decision-maker social preflight, Decision-Grade Evidence Saturation (28-minute active-research floor), Crawl4AI/Playwright and guarded append-only Runtime, CRM and draft-only outreach.",
+  "version": "6.4.0+codex.20261008.r2",
+  "description": "CBI v6.4 — One CBI FULL_AUDIT EXHAUSTIVE research entry over Render cloud MCP; identity-first Google Maps, official site, company and person social profiles; independently verified Decision-Grade Evidence Saturation; safeguards for CRM and outreach. Uses Crawl4AI/Playwright public crawling.",
   "author": {
     "name": "Xinghuai Sales Intelligence"
   },
@@ -31,11 +31,11 @@
     "穷尽搜索"
   ],
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": "./mcp.json",
   "interface": {
     "displayName": "Customs Buyer Intelligence",
-    "shortDescription": "唯一 FULL_AUDIT；先身份/地图/官网/社媒/决策人，再证据饱和",
-    "longDescription": "所有 CBI 买家、公司、联系人及海关调查只使用 FULL_AUDIT（EXHAUSTIVE）+ Decision-Grade Evidence Saturation；默认28分钟有效主动研究下限，未满足时只可中断交接不能宣称完成。最小身份绑定的先后顺序固定为：1 确认公司名称/行业/法人；2 Google Maps/Business核对企业地址与官网；3 官网主页、Contact、About、Team、footer；4 官网负责人及LinkedIn/Facebook/Instagram/X公司账号和公司互动；5 逐一核实采购、生产、技术、供应链、GM/董事个人社媒及联系人。严格区分公司 Facebook 与个人 Facebook，未验证个人主页不得填充。原 CONTACT-FIRST 扩展规则：先用最少必要证据锚定目标企业身份，防止同名企业、品牌、门店或分公司串号；随后优先 Google Maps/Business，提取地址、官网、品牌/门店名、电话、WhatsApp/消息入口和官方社媒；再查官网 Home/Contact/About/Footer/Branch/Dealer/Supplier/PDF/Jobs 等直接入口；再查企业官方 Facebook、Instagram、LinkedIn Company、WhatsApp、Zalo及当地常用公开社媒。找到 Owner、Founder、President、Director、Managing Director、General Manager、Procurement、Purchasing、Import、Buyer 等真实决策人后，不得停止在职位确认，必须继续搜索该具体人的公开 LinkedIn、Facebook、Instagram、协会/展会/PDF/新闻/员工资料及公开电话、WhatsApp、邮箱，并对号码和邮箱执行反查与多源归属验证。发现品牌名、门店名、Facebook handle、Instagram handle、WhatsApp按钮、具体决策人姓名等直接 Pivot 时，应立即优先深挖该 Pivot，而不是继续低收益的广泛数据库搜索。Facebook、官网或其他源出现 SOURCE_UNAVAILABLE、SOURCE_ACCESS_BLOCKED、SOURCE_THROTTLED 或超时时，只能表示该源当前不可直接抓取；必须转搜索索引、公开镜像/目录、Maps、官方关联页面及其他公开源继续查找，不得将 blocked/unavailable 视为“没有联系方式”或“已穷尽”。海关/贸易数据主要用于验证采购事实、产品规格、采购频率、供应商、港口和商业价值；除非用户只给出海关种子需要先解析身份，否则不得让海关/贸易数据库替代Maps→官网→社媒→决策人→决策人公开社媒/职业资料→联系方式反查这一主路径。只有上述合理公开路径基本耗尽后，才允许标记 CONTACT_PENDING。对 A+ 或其他高价值买家，即使已经存在 COMPANY_ROUTE_READY、公司总机或通用邮箱，也不得因此停止 named-person research；仍须继续 Owner/GM/Procurement/Purchasing/Import/Buyer 等决策路线，直到取得合格 named route 或相应公开来源获得终止性 receipt。始终保持 fail-closed：不得猜姓名、职位、邮箱或 WhatsApp；不得把公司总机、通用邮箱或公司级 route 冒充具体决策人的个人直线；公司 route 与 named-person route 必须分开验证。对于海关/提单/进口记录或深度企业调查，one-shot customs route 只作为 FULL_AUDIT 的一次性成果呈现，不是第二调查模式；在云端统一执行历史海关回溯与去重、法律实体/IOR/Consignee/Ultimate Buyer 判断、产品与需求结构、公司画像、供应商与竞争结构、Buying Group 与 Buyer-owned 路线，并运行 regional、industry、scale、same-supplier buyer、same-product/HS/application buyer、competing-supplier 六分支，高价值裂变对象继续验证后一次性返回完整 dossier。正常路径不要求用户开 Windows、运行 Git/CMD/PowerShell/Python 或本机 MCP。若用户要求持续监控，则先建立 shipment baseline，云端后续只在发现真正新增 shipment 或重大修正时通知。当前 v6.4 self-hosted Crawl4AI/Playwright public crawler、Evidence/Pivot/Peer/Decision Saturation、R2/WAL durability、CRM 和 draft-only outreach 安全边界保持不变。 统一 FULL_AUDIT 默认生成正式调查Evidence记录，但只有用户另行授权才写CRM/Excel、执行付费Provider、创建监控或发送外联；完整研究结束必须同时通过身份门禁、Decision Saturation及有效Closure，若窗口或来源受阻则仅输出中断交接，不得伪造28分钟完成。",
+    "shortDescription": "唯一FULL_AUDIT；公司→地图→官网→官方社媒→逐人社媒；独立证据饱和",
+    "longDescription": "唯一调查入口：CBI FULL_AUDIT（EXHAUSTIVE）＋Decision-Grade证据饱和。五步强制顺序：1 公司法定/营业名、行业和别名；2 Google Maps/Business地图实体、地址和官网核对；3 官网Contact/About/Team/Footer/PDF核验；4 公司官方Facebook/Instagram/LinkedIn/X、本地社媒、管理层及帖子/标签；5 针对每个采购、生产、工程、运营、GM/所有者决策人逐一搜查公开LinkedIn/Facebook/Instagram与当地社媒，绑定姓名职位任职时间和个人公开联系方式。公司官方Facebook不等于个人主页；未能访问/403/SOURCE_UNAVAILABLE等须保留SOURCE_ACCESS_BLOCKED，改用合法公开渠道反查，不得猜姓名或个人号码。不得因COMPANY_ROUTE_READY而停止 named-person research；公司 route 与 named-person route 必须分开验证；CONTACT_PENDING需独立终止性 receipt，终止性 receipt不等于不存在账号。海关one-shot仅表示最终一次性呈现，不是第二调查模式：全部历史提单去重、进口人/真实采购人、供应商竞争、12模块和六分支网络都在同一FULL_AUDIT执行。不得把公司总机、通用邮箱或公司级 route 冒充具体决策人的个人直线。使用真实证据和关联Source Attempt，不把搜索片段、重复镜像或模型判断当独立事实；评估正反证、剩余EIV、Decision Saturation及正式Closure。28分钟为实质调查默认主动研究下限而非完整性证明；未实测有效研究时长、被阻断或会话中止时，必须交付中断交接报告，不得假称已跑满、完成或云端自动持续执行。ChatGPT平台若无法提供真实可恢复的长任务执行环境，不得承诺持续工作。默认只记录经证实的调查Evidence；CRM/Excel写入、付费Provider、持续监控、草稿发送或任何外联执行均须单独明确授权。WAL durability与历史记录保持兼容。 个人档案搜寻必须包含公开 LinkedIn 资料；draft-only outreach 仅允许生成文字草稿，未授权不得发送。",
     "developerName": "Xinghuai Sales Intelligence",
     "category": "Business",
     "capabilities": [
@@ -43,10 +43,10 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "使用 $investigate-customs-buyers 对下一家或指定公司运行唯一的 CBI FULL_AUDIT（EXHAUSTIVE）+ Decision-Grade Evidence Saturation：强制先企业/行业→Google Maps→官网→官网负责人和官方Facebook/Instagram/LinkedIn→逐一决策人个人社媒及公开联系方式，然后跑12模块、六分支、反证与28分钟主动研究下限；无法达到饱和则中断交接。仅证据入Runtime；不写CRM、不付费、不发送。",
-      "使用 $investigate-customs-buyers 将选定且已核实的调查结果批量写回最新生产CRM。这是单独获得授权的写回操作，不构成第二调查模式；保留Canonical与历史并执行回滚/完整性检查。",
-      "使用 $customs-buyer-one-shot 执行统一 CBI FULL_AUDIT 的海关数据入口并一次性呈现结果：实际核验身份/Maps/官网/社媒/决策人，然后历史去重、Buyer/IOR/Ultimate Buyer、贸易/机器/供应商、六分支、证据饱和和Closure；如受阻输出中断交接，禁止假装已经完整。 这不是第二调查模式。",
-      "使用 $investigate-customs-buyers 继续同一EXHAUSTIVE调查，恢复上轮Claim/Evidence/Pivot/Peer和未完成联系人社媒路径，直到Decision Saturation或客观受阻；绝不重开重复调查，也不自动发送。"
+      "使用 $investigate-customs-buyers 运行唯一 CBI FULL_AUDIT（EXHAUSTIVE）＋Decision-Grade：先公司/行业→Google Maps→官网→官方Facebook等和管理层→每个决策人个人社媒与联系方式，再完成海关、供应商、设备适配、六分支、反证和饱和。必须引用每个来源；若无法证明有效28分钟研究或完成Closure，输出中断交接，不许假称完成。不写CRM、不付费、不发送。",
+      "使用 $investigate-customs-buyers 继续当前同一企业的 FULL_AUDIT，先恢复该公司的独立Evidence与未关闭Pivot，补查全部未验证的公司/个人社媒及决策链，不重置历史。",
+      "使用 $investigate-customs-buyers 对海关/提单线索运行同一 FULL_AUDIT，按统一调查规则完成采购实体、历史交易、供应商、Buying Group、六分支裂变和证据饱和；只在Closure有效时宣称全部完成。",
+      "将已经完成验证的结果写入生产 CRM（单独操作）：仅在我另外明确授权写回的范围内，执行去重、历史保留、验证、审计与回滚；绝不自动发送外联。"
     ],
     "brandColor": "#0F766E",
     "composerIcon": "./assets/customs-buyer-intelligence.svg",

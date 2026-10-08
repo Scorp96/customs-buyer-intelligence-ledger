@@ -43,6 +43,21 @@ class PortablePluginManifestTests(unittest.TestCase):
         self.assertTrue((ROOT / ".codex-plugin" / "plugin.json").is_file())
         self.assertTrue((ROOT / ".mcp.json").is_file())
 
+    def test_codex_plugin_uses_only_portable_cloud_mcp(self):
+        manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["mcpServers"], "./mcp.json")
+        portable = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
+        exposed = portable["mcpServers"]["buyer-outreach-actions"]
+        self.assertEqual(exposed["type"], "streamable-http")
+        self.assertEqual(exposed["url"], "https://cbi-v61-preview.onrender.com/mcp")
+        self.assertNotIn("command", exposed)
+        self.assertNotIn("args", exposed)
+
+    def test_legacy_engineering_launcher_not_referenced_by_active_manifest(self):
+        manifest = json.loads((ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertNotEqual(manifest["mcpServers"], "./.mcp.json")
+        legacy = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        self.assertIn("command", legacy["mcpServers"]["buyer-outreach-actions"])
 
 if __name__ == "__main__":
     unittest.main()
