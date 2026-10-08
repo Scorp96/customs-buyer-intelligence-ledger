@@ -262,6 +262,21 @@ def evaluate_capability_fit(capability: dict[str, Any], demand: dict[str, Any]) 
             "missing_verified_claims": list(demand.get("required_claims") or []),
         }
 
+    # The legacy sheet matcher knows sheet dimensions and density, not machine
+    # throughput, automation, utilities, safety or installation requirements.
+    # Fail closed until a model-level machinery specification matcher exists.
+    if str(capability.get("product_profile_id") or "").upper() == "SOAP_MACHINERY":
+        required = {str(v).strip().upper() for v in demand.get("required_claims", []) if str(v).strip()}
+        verified = set(capability.get("verified_claims") or [])
+        return {
+            "capability_fit": "NEEDS_VERIFICATION",
+            "reasons": ["MACHINERY_TECHNICAL_SPEC_MATCHER_UNCONFIGURED"],
+            "missing_verified_claims": sorted(required - verified),
+            "product_profile_id": "SOAP_MACHINERY",
+            "product_variant": str(demand.get("product_variant") or "").upper() or None,
+            "evidence_sources": copy.deepcopy(capability.get("evidence_sources") or []),
+        }
+
     reasons: list[str] = []
     variant = str(demand.get("product_variant") or "").upper()
     supported_variants = set(capability.get("supported_variants") or [])
