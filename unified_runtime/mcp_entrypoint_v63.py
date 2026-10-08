@@ -24,7 +24,20 @@ def resolve_active_mcp_entrypoint(repo_root: str | Path) -> str | None:
     root = Path(repo_root).resolve()
     # Isolated offline acceptance harness only; never discover a repository-root
     # stdio MCP transport as an alternative to the cloud plugin mcp.json.
-    path = root / "tests" / "fixtures" / "mcp" / "legacy_windows_launcher.json"
+    fixture = root / "tests" / "fixtures" / "mcp" / "legacy_windows_launcher.json"
+    cloud = root / "mcp.json"
+    plugin_manifest = root / "plugin.json"
+    codex_manifest = root / ".codex-plugin" / "plugin.json"
+    if cloud.is_file():
+        # Real plugin checkout: only the explicitly non-discoverable test fixture
+        # may describe the stdio acceptance harness. No root dotfile fallback.
+        path = fixture
+    elif not plugin_manifest.exists() and not codex_manifest.exists():
+        # Historical synthetic/temp *test checkout*, not a real plugin:
+        # preserve the exact old source probes and migration acceptance tests.
+        path = root / ".mcp.json"
+    else:
+        return None
     if not path.is_file():
         return None
     try:
