@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SingleMcpEntrypointTests(unittest.TestCase):
     def test_only_cloud_mcp_is_discoverable_at_repository_root(self):
-        self.assertFalse((ROOT / ".mcp.json").exists())
+        self.assertTrue((ROOT / ".mcp.json").is_file())
         mcp = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
         self.assertEqual(set(mcp["mcpServers"]), {"buyer-outreach-actions"})
         server = mcp["mcpServers"]["buyer-outreach-actions"]
@@ -30,11 +30,15 @@ class SingleMcpEntrypointTests(unittest.TestCase):
         payload = json.loads(path.read_text(encoding="utf-8"))
         launcher = payload["mcpServers"]["buyer-outreach-actions"]
         self.assertEqual(launcher["command"].lower(), "powershell.exe")
-        self.assertFalse((ROOT / ".mcp.json").exists())
+        compatibility = json.loads((ROOT / ".mcp.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(compatibility), {"mcp_servers"})
+        remote = compatibility["mcp_servers"]["buyer-outreach-actions"]
+        self.assertEqual(remote, {"url": "https://cbi-v61-preview.onrender.com/mcp"})
+        self.assertNotIn("command", remote)
 
     def test_plugin_manifest_points_to_single_cloud_endpoint(self):
         manifest = json.loads((ROOT / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["mcpServers"], "./mcp.json")
+        self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         self.assertNotIn("mcpServers", json.loads((ROOT / "plugin.json").read_text(encoding="utf-8")))
 
     def test_synthetic_legacy_checkout_isolated_from_real_plugin_root(self):
