@@ -92,6 +92,10 @@ class RenderEphemeralStartupSafetyTests(unittest.TestCase):
     def test_server_entrypoint_checks_safety_before_mutable_runtime_import(self):
         src = (ROOT / "mcp/server_v61_remote.py").read_text(encoding="utf-8")
         self.assertLess(
+            src.index("sys.path.insert(0, str(ROOT))"),
+            src.index("from mcp.cloud_runtime_startup_guard import require_remote_environment_safety"),
+        )
+        self.assertLess(
             src.index("require_remote_environment_safety(os.environ)"),
             src.index("from mcp import server_v61_backup_recovery as _production"),
         )
