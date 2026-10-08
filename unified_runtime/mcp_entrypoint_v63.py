@@ -22,7 +22,9 @@ def _walk_strings(value: Any) -> Iterable[str]:
 
 def resolve_active_mcp_entrypoint(repo_root: str | Path) -> str | None:
     root = Path(repo_root).resolve()
-    path = root / ".mcp.json"
+    # Isolated offline acceptance harness only; never discover a repository-root
+    # stdio MCP transport as an alternative to the cloud plugin mcp.json.
+    path = root / "tests" / "fixtures" / "mcp" / "legacy_windows_launcher.json"
     if not path.is_file():
         return None
     try:
