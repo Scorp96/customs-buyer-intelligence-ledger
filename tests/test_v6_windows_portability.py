@@ -76,6 +76,12 @@ class V6WindowsPortabilityTests(unittest.TestCase):
             )
             environment = dict(os.environ)
             environment["USERPROFILE"] = str(profile)
+            # The offline launcher must not recursively search the CI host's
+            # real LOCALAPPDATA/Python inventory: it can be arbitrarily large
+            # and introduces non-deterministic 30-second timeouts.
+            isolated_local = base / "LocalAppData"
+            isolated_local.mkdir()
+            environment["LOCALAPPDATA"] = str(isolated_local)
             environment["CBI_SESSION_ROOT"] = str(base / "会话 数据")
             environment["PYTHONDONTWRITEBYTECODE"] = "1"
             completed = subprocess.run(
@@ -86,7 +92,7 @@ class V6WindowsPortabilityTests(unittest.TestCase):
                 capture_output=True,
                 env=environment,
                 check=False,
-                timeout=30,
+                timeout=90,  # still fail if the full cold-start/JSON-RPC handshake stalls
             )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)

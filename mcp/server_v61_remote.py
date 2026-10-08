@@ -27,6 +27,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Direct script execution starts with /app/mcp on sys.path; import only
+# AFTER inserting repository root, exactly like the Render bootstrap path.
+from mcp.cloud_runtime_startup_guard import require_remote_environment_safety  # noqa: E402
+
 _GIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _DEPLOYMENT_IDENTITY_SCHEMA = "cbi.remote-deployment-identity.v6.3"
 
@@ -82,6 +86,7 @@ def _require_explicit_durable_root() -> Path:
 _ACCEPTANCE_PIN_REQUIRED = _env_flag("CBI_V63_ACCEPTANCE_PIN_DEPLOYMENT_SHA")
 _DEPLOYMENT_GIT_SHA = _resolve_deployment_git_sha(pin_required=_ACCEPTANCE_PIN_REQUIRED)
 _DEPLOYMENT_INSTANCE_ID = str(os.environ.get("RENDER_INSTANCE_ID") or "").strip() or None
+require_remote_environment_safety(os.environ)
 _EXPECTED_ROOT = _require_explicit_durable_root()
 _LIVE_ROOT = _EXPECTED_ROOT.parent
 

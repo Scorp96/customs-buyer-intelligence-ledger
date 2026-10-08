@@ -29,6 +29,23 @@ services:
         sync: false
       - key: CBI_REMOTE_GITHUB_ALLOWED_LOGINS
         value: Scorp96
+      # This Blueprint uses Render's ephemeral Free web service.
+      # Never start a writable production Runtime without R2/S3 recovery.
+      - key: CBI_REQUIRE_EPHEMERAL_DURABILITY
+        value: "1"
+      - key: CBI_OBJECT_STORE_MODE
+        value: r2
+      # Secrets and resource names are supplied through the Render Dashboard,
+      # NEVER committed. For existing Blueprints, sync:false additions must
+      # be set manually; Render only prompts at initial Blueprint creation.
+      - key: CBI_OBJECT_STORE_ENDPOINT
+        sync: false
+      - key: CBI_OBJECT_STORE_BUCKET
+        sync: false
+      - key: CBI_OBJECT_STORE_ACCESS_KEY_ID
+        sync: false
+      - key: CBI_OBJECT_STORE_SECRET_ACCESS_KEY
+        sync: false
       - key: CBI_REMOTE_MAX_BODY_BYTES
         value: "8388608"
       - key: CBI_CRAWLER_ENABLED

@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from mcp.object_store_recovery_v63 import RecoveryObjectStoreStateManagerV63
+from mcp.cloud_runtime_startup_guard import require_remote_environment_safety
 
 
 def _live_root() -> Path:
@@ -99,9 +100,6 @@ class BootstrapHandler(BaseHTTPRequestHandler):
                 {
                     "status": "bootstrap_required",
                     "service": "customs-buyer-intelligence",
-                    "durable_state_loaded": False,
-                    "mcp_enabled": False,
-                    "object_store_configured": RecoveryObjectStoreStateManagerV63.from_env() is not None,
                 },
             )
             return
@@ -111,8 +109,6 @@ class BootstrapHandler(BaseHTTPRequestHandler):
                 {
                     "status": "bootstrap_required",
                     "service": "customs-buyer-intelligence",
-                    "health": "/healthz",
-                    "mcp": "/mcp",
                 },
             )
             return
@@ -149,6 +145,7 @@ def _serve_bootstrap() -> int:
 
 
 def main() -> int:
+    require_remote_environment_safety(os.environ)
     live = _live_root()
     state = _state(live)
 
