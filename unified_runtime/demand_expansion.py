@@ -469,6 +469,17 @@ class V63DemandExpansionMixin:
                 "reason": "CAPABILITY_PROFILE_NOT_BOUND",
                 "persistent_mutation_performed": False,
             }
+        if profile_id == "SOAP_MACHINERY":
+            requested_seller = str(args.get("seller_identity") or "").strip().casefold()
+            bound_seller = str(capability.get("seller_identity") or "").strip().casefold()
+            if not requested_seller or not bound_seller or requested_seller != bound_seller:
+                return {
+                    "status": "UNCONFIGURED",
+                    "product_profile_id": profile_id,
+                    "capability_profile": None,
+                    "reason": "MACHINERY_SELLER_IDENTITY_BINDING_REQUIRED",
+                    "persistent_mutation_performed": False,
+                }
         return {
             "status": "READY",
             "product_profile_id": profile_id,
@@ -486,7 +497,7 @@ class V63DemandExpansionMixin:
                 "reason": "EXPLICIT_SELLER_PRODUCT_PROFILE_REQUIRED",
                 "persistent_mutation_performed": False,
             }
-        current = self.get_capability_profile({"product_profile_id": profile_id})
+        current = self.get_capability_profile({"product_profile_id": profile_id, "seller_identity": arguments.get("seller_identity")})
         if current["status"] != "READY":
             return {
                 "status": "UNCONFIGURED",
@@ -649,7 +660,7 @@ class V63DemandExpansionMixin:
         opportunity = self._v63_resolve_opportunity(arguments)
         arguments = {**copy.deepcopy(arguments), "opportunity": opportunity}
         profile_id = str(opportunity.get("product_profile_id") or arguments.get("product_profile_id") or "").strip().upper()
-        current = self.get_capability_profile({"product_profile_id": profile_id})
+        current = self.get_capability_profile({"product_profile_id": profile_id, "seller_identity": arguments.get("seller_identity")})
         if current["status"] != "READY":
             return {
                 "status": "UNCONFIGURED",
