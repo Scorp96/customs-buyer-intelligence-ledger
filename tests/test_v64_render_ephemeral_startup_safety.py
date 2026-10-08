@@ -104,11 +104,42 @@ class RenderEphemeralStartupSafetyTests(unittest.TestCase):
                 ):
                     handler.do_GET()
                 self.assertEqual(len(captured), 1)
-                self.assertEqual(captured[0][0], 200)
+                expected_http = 503 if path == "/readyz" else 200
+                self.assertEqual(captured[0][0], expected_http)
                 self.assertEqual(captured[0][1], {
                     "status": "bootstrap_required",
                     "service": "customs-buyer-intelligence",
                 })
+
+    def test_bootstrap_head_liveness_and_readiness_are_distinct(self):
+        from mcp import render_bootstrap
+        for path, expected in (
+            ("/", 200), ("/healthz", 200), ("/readyz", 503),
+            ("/mcp", 404), ("/notfound", 404),
+        ):
+            with self.subTest(path=path):
+                handler = object.__new__(render_bootstrap.BootstrapHandler)
+                codes = []
+                headers = []
+                handler._path = lambda p=path: p
+                handler.send_response = lambda code: codes.append(code)
+                handler.send_header = lambda k, v: headers.append((k, v))
+                handler.end_headers = lambda: None
+                handler.do_HEAD()
+                self.assertEqual(codes, [expected])
+                self.assertIn(("Content-Length", "0"), headers)
+                self.assertIn(("Cache-Control", "no-store"), headers)
+
+    def test_bootstrap_mcp_post_remains_unavailable(self):
+        from mcp import render_bootstrap
+        handler = object.__new__(render_bootstrap.BootstrapHandler)
+        calls = []
+        handler._path = lambda: "/mcp"
+        handler._json = lambda status, payload: calls.append((status, payload))
+        handler.do_POST()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], 503)
+        self.assertEqual(calls[0][1]["error"]["code"], -32004)
 
     def test_server_entrypoint_checks_safety_before_mutable_runtime_import(self):
         src = (ROOT / "mcp/server_v61_remote.py").read_text(encoding="utf-8")
