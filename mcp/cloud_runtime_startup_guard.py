@@ -42,6 +42,7 @@ def require_remote_environment_safety(env: Mapping[str, str] | None = None) -> N
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
+        or parsed.path not in ("", "/")
         or parsed.query
         or parsed.fragment
     ):
