@@ -49,13 +49,13 @@ _PLANNERS = frozenset({
 
 _DESCRIPTIONS = {
     "get_product_profiles": "List version-pinned v6.3 product profiles and PVC-first portfolio metadata.",
-    "get_capability_profile": "Read seller manufacturing capability profile without inferring unsupported technical claims.",
+    "get_capability_profile": "Read a seller manufacturing capability profile only for an explicitly selected product_profile_id; historical XingHuai PVC profiles are NOT SMARTORS machinery capabilities. Without an explicit profile fail closed, never assume PVC.",
     "get_product_opportunities": "Rebuild Account × Product Opportunity read models from the existing append-only investigation event chain.",
     "get_demand_anchors": "Derive demand-anchor views from immutable evidence inputs without persistence.",
     "get_market_cells": "Derive market-cell views from demand anchors without persistence.",
     "evaluate_market_acceptance": "Evaluate M0-M5 market acceptance from verified demand-anchor views without persistence.",
     "get_expansion_state": "Return the read-only v6.3 expansion projection for an investigation.",
-    "evaluate_capability_fit": "Compare verified seller capability against a product demand without inventing unsupported specifications or certifications.",
+    "evaluate_capability_fit": "Compare only an explicitly selected, source-verified seller product_profile_id; do not apply legacy PVC or WPC capability to SMARTORS machinery. If current machinery capability is not bound, return UNCONFIGURED, never a guessed fit.",
     "assess_candidate_researchability": "Keep discovery high-recall: classify D1-D4 candidates for continued research without treating missing canonical identity, procurement proof, or contact as rejection.",
     "rank_candidate_research_queue": "Rank D1-D4 discovery candidates for further research without requiring a commercial grade; evidence tier and portfolio weight affect research order only.",
     "preview_customs_seed_expansion": "Preview Customs → Demand Anchor → Market Cell → buyer-expansion planning without persistence.",

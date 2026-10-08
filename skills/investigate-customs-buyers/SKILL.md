@@ -27,6 +27,10 @@ Stage outcomes are `VERIFIED`, `CANDIDATE_UNVERIFIED`, `CONFLICTED`, `BLOCKED`, 
 
 **Side-effect boundary**: the full audit may create append-only investigation Evidence/Pivot/Peer state. CRM/workbook mutation, paid-provider calls, activation of recurring monitoring and external outreach/send remain separate explicit user permissions. Draft email + instant chat are review-only; do not produce executable send actions by default.
 
+## Mandatory seller-identity and capability-fit gate (no legacy PVC contamination)
+
+Before rating any buyer-to-seller fit, bind the *current* seller legal/brand identity and the actual current product catalogue to inspectable source evidence. **SMARTORS machinery / Guangzhou Smartors Machinery** must not inherit XingHuai PVC/WPC board profiles, thickness/spec matrices, seller signature or capability grades. CBI's historical private PVC/WPC capability bundle is maintained only for explicitly identified legacy sheet inquiries; it is not evidence for soap/detergent machinery. `get_capability_profile` and `evaluate_capability_fit` must be called with an explicit, matching `product_profile_id`; without a confirmed machinery profile or current verified machine specs, respond `UNCONFIGURED` / `NEEDS_VERIFICATION`, do not infer machines or create product-fit scores. Continue company/public contact evidence acquisition even when seller fit is unconfigured.
+
 ## One hosted cloud entry and evidence-saturation source of truth
 
 Use **only** the hosted MCP address configured by the plugin's explicit `mcp.json` binding. The repository-root `.mcp.json` is an isolated legacy engineering/crash-recovery test fixture, **not referenced by the plugin manifest** and never an authorized CBI research fallback. Do not spawn local PowerShell, Windows, Python MCP, or a second CBI Runtime. Do not fall back to obsolete Render v6.3 acceptance or v5/main services. If the hosted MCP is unavailable, report a blocked/interrupted full audit and preserve externally verified leads without claiming a Runtime receipt.
