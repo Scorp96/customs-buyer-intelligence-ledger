@@ -27,7 +27,7 @@ class TemplateRouteSafetyTests(unittest.TestCase):
 
     def test_genuine_looking_official_contact_not_blanket_blocked(self):
         for channel, value in (
-            ("EMAIL", "admin@gzsmartors.com"),
+            ("EMAIL", "sales@example.com"),
             ("EMAIL", "contact@example.com"),
             ("PHONE", "0086-13710005492"),
             ("PHONE", "+15550101001"),
