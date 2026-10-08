@@ -165,6 +165,15 @@ mode after a valid restore, the real MCP HTTP transport handles readiness
 normally. Never infer business-readiness, valid authentication or latest R2
 self-restore solely from Render showing a deployment as `live`.
 
+The **normal post-bootstrap remote transport** must preserve the same
+separation: `GET /healthz` may return 200 for a live process reporting
+`status=degraded`, but `GET /readyz` returns HTTP **503** for any non-`ok`
+status. A current R2 checkpoint failure can therefore be visible to
+readiness monitors without forcing the operator's recovery process to exit.
+An error thrown by the health callback produces HTTP 503 on both routes.
+This policy is tested with actual loopback HTTP GET requests and never
+requires deliberately corrupting live cloud state.
+
 The unauthenticated health and readiness response bodies reveal only a
 minimal `status` and `service` indicator; object-store credentials,
 deployment identity, WAL fingerprint, session records and private restore
