@@ -1,8 +1,8 @@
-# Current Architecture Audit — v5.4.1 Baseline
+# Archived v5.4.1 Architecture Audit (Historical Only)
 
 ## Scope
 
-This audit describes the production baseline captured before the v6 reconstruction. It is an engineering record, not a claim about newly researched buyers.
+This archived audit describes the production baseline captured before the v6 reconstruction. Its `ANSWER_FIRST` observation is historical, not the current CBI invocation policy; current CBI new investigations use FULL_AUDIT / EXHAUSTIVE. It is an engineering record, not a claim about newly researched buyers.
 
 ## Preserved strengths
 
