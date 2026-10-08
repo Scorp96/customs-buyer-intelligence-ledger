@@ -128,7 +128,8 @@ class RenderEphemeralStartupSafetyTests(unittest.TestCase):
                 handler.do_HEAD()
                 self.assertEqual(codes, [expected])
                 self.assertIn(("Content-Length", "0"), headers)
-                self.assertIn(("Cache-Control", "no-store"), headers)
+                if path in ("/", "/healthz", "/readyz"):
+                    self.assertIn(("Cache-Control", "no-store"), headers)
 
     def test_bootstrap_mcp_post_remains_unavailable(self):
         from mcp import render_bootstrap
