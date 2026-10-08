@@ -52,7 +52,7 @@ class UnifiedFullAuditPolicyTests(unittest.TestCase):
         self.assertIn("FULL_AUDIT", manifest["interface"]["defaultPrompt"][0])
         agent = (ROOT / "skills/investigate-customs-buyers/agents/openai.yaml").read_text(encoding="utf-8")
         self.assertIn("ONE CBI FULL_AUDIT", agent)
-        self.assertIn("do not", agent.lower())
+        self.assertIn("never mutate crm/workbooks", agent.lower())
 
 if __name__ == "__main__":
     unittest.main()
