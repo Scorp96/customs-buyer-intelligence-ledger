@@ -105,7 +105,8 @@ def build_v63_production_source_snapshot(repo_root: str | Path) -> dict[str, Any
         blockers.extend(overlay_blockers)
 
     required = [
-        ".mcp.json",
+        "mcp.json",
+        "tests/fixtures/mcp/legacy_windows_launcher.json",
         "unified_runtime/__init__.py",
         "unified_runtime/research_orchestration_hardening.py",
         "unified_runtime/v6.py",
