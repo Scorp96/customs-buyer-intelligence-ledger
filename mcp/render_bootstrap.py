@@ -100,9 +100,6 @@ class BootstrapHandler(BaseHTTPRequestHandler):
                 {
                     "status": "bootstrap_required",
                     "service": "customs-buyer-intelligence",
-                    "durable_state_loaded": False,
-                    "mcp_enabled": False,
-                    "object_store_configured": RecoveryObjectStoreStateManagerV63.from_env() is not None,
                 },
             )
             return
@@ -112,8 +109,6 @@ class BootstrapHandler(BaseHTTPRequestHandler):
                 {
                     "status": "bootstrap_required",
                     "service": "customs-buyer-intelligence",
-                    "health": "/healthz",
-                    "mcp": "/mcp",
                 },
             )
             return
