@@ -45,7 +45,7 @@
     "defaultPrompt": [
       "使用 $investigate-customs-buyers 对下一家或指定公司运行唯一的 CBI FULL_AUDIT（EXHAUSTIVE）+ Decision-Grade Evidence Saturation：强制先企业/行业→Google Maps→官网→官网负责人和官方Facebook/Instagram/LinkedIn→逐一决策人个人社媒及公开联系方式，然后跑12模块、六分支、反证与28分钟主动研究下限；无法达到饱和则中断交接。仅证据入Runtime；不写CRM、不付费、不发送。",
       "使用 $investigate-customs-buyers 将选定且已核实的调查结果批量写回最新生产CRM。这是单独获得授权的写回操作，不构成第二调查模式；保留Canonical与历史并执行回滚/完整性检查。",
-      "使用 $customs-buyer-one-shot 执行统一 CBI FULL_AUDIT 的海关数据入口并一次性呈现结果：实际核验身份/Maps/官网/社媒/决策人，然后历史去重、Buyer/IOR/Ultimate Buyer、贸易/机器/供应商、六分支、证据饱和和Closure；如受阻输出中断交接，禁止假装已经完整。",
+      "使用 $customs-buyer-one-shot 执行统一 CBI FULL_AUDIT 的海关数据入口并一次性呈现结果：实际核验身份/Maps/官网/社媒/决策人，然后历史去重、Buyer/IOR/Ultimate Buyer、贸易/机器/供应商、六分支、证据饱和和Closure；如受阻输出中断交接，禁止假装已经完整。 这不是第二调查模式。",
       "使用 $investigate-customs-buyers 继续同一EXHAUSTIVE调查，恢复上轮Claim/Evidence/Pivot/Peer和未完成联系人社媒路径，直到Decision Saturation或客观受阻；绝不重开重复调查，也不自动发送。"
     ],
     "brandColor": "#0F766E",
