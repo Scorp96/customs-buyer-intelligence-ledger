@@ -48,7 +48,7 @@ _PLANNERS = frozenset({
 })
 
 _DESCRIPTIONS = {
-    "get_product_profiles": "List version-pinned v6.3 product profiles and PVC-first portfolio metadata.",
+    "get_product_profiles": "List version-pinned buyer discovery taxonomies. Historical PVC portfolio priority is NOT active seller identity or capability; explicitly bind any SMARTORS machinery profile.",
     "get_capability_profile": "Read a seller manufacturing capability profile only for an explicitly selected product_profile_id; historical XingHuai PVC profiles are NOT SMARTORS machinery capabilities. Without an explicit profile fail closed, never assume PVC.",
     "get_product_opportunities": "Rebuild Account × Product Opportunity read models from the existing append-only investigation event chain.",
     "get_demand_anchors": "Derive demand-anchor views from immutable evidence inputs without persistence.",
