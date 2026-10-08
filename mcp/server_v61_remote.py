@@ -236,11 +236,24 @@ def _health() -> dict[str, Any]:
     return health
 
 
-def main() -> int:
-    # Delegate CLI parsing to the ChatGPT-aware remote transport so --host/--port
+def _public_health() -> dict[str, Any]:
+    """Minimal unauthenticated HTTP readiness: never emit operator state.
+
+    Detailed deployment, crawler and object-store recovery identities remain
+    available through the authenticated operator MCP and internal _health().
+    This is the sole health callback supplied to the HTTP transport.
+    """
+    full = _health()
+    status = str(full.get("status") or "error")
+    if status not in {"ok", "degraded", "bootstrap_required"}:
+        status = "error"
+    return {"status": status, "service": "customs-buyer-intelligence"}
+
+
+def main() -> int:    # Delegate CLI parsing to the ChatGPT-aware remote transport so --host/--port
     # remain operator overrides while auth can accept static admin bearer and
     # explicitly allowlisted GitHub OAuth identities.
-    return _remote_transport_main(_dispatch, health=_health)
+    return _remote_transport_main(_dispatch, health=_public_health)
 
 
 if __name__ == "__main__":
