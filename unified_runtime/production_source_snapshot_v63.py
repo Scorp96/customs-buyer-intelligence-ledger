@@ -104,9 +104,18 @@ def build_v63_production_source_snapshot(repo_root: str | Path) -> dict[str, Any
         overlay_files, overlay_blockers = _collect_active_overlay_chain(root, entrypoint)
         blockers.extend(overlay_blockers)
 
+    # Real plug-in checkouts pin the cloud manifest + isolated offline fixture.
+    # Synthetic legacy test trees without plugin manifests may pin their local
+    # test-only .mcp.json. This is not a production transport fallback.
+    if (root / "mcp.json").is_file():
+        mcp_source_pins = ["mcp.json", "tests/fixtures/mcp/legacy_windows_launcher.json"]
+    elif not (root / "plugin.json").exists() and not (root / ".codex-plugin/plugin.json").exists():
+        mcp_source_pins = [".mcp.json"]
+    else:
+        mcp_source_pins = ["mcp.json"]
+
     required = [
-        "mcp.json",
-        "tests/fixtures/mcp/legacy_windows_launcher.json",
+        *mcp_source_pins,
         "unified_runtime/__init__.py",
         "unified_runtime/research_orchestration_hardening.py",
         "unified_runtime/v6.py",
