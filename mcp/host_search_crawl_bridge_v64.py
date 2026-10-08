@@ -289,11 +289,13 @@ def _append_ready_payload(
     else:
         evidence = []
         crawler_results = {str(row.get("result") or "").upper() for row in receipts}
-        # One or two crawled URLs cannot prove source-family exhaustion. Preserve
-        # the distinction between a real negative observation and access failure.
+        # At most two crawled URLs can establish a page-scoped NEGATIVE
+        # observation but CANNOT prove source-family/person absence. Do not
+        # accidentally close the broader search with a negative terminal
+        # receipt; the required independent follow-up stays open.
         if "NEGATIVE_EXHAUSTED" in crawler_results:
-            result = "NEGATIVE"
-            blocked_reason = ""
+            result = "BLOCKED"
+            blocked_reason = "SEED_NEGATIVE_SOURCE_FAMILY_NOT_EXHAUSTED"
         else:
             result = "BLOCKED"
             statuses = sorted({
@@ -331,14 +333,11 @@ def _append_ready_payload(
     execution_id = "EXEC-HSC-" + _digest({"attempt": identity_material})[:20].upper()
     evidence_ids = [row["evidence_id"] for row in evidence]
 
+    # This bounded host-search/crawl bridge never settles a Claim or a Pivot:
+    # even one reachable public page is not an adjudication of the open
+    # research obligation. A separately evidenced decision/closure tool must
+    # consume Pivots only after independent source validation.
     pivots_consumed: list[dict[str, Any]] = []
-    pivot_id = str(task.get("pivot_id") or "").strip()
-    pivot_value = str(task.get("pivot_value") or "").strip()
-    if pivot_id and result != "BLOCKED" and (not pivot_value or pivot_value.casefold() in str(task.get("query") or "").casefold()):
-        pivots_consumed.append({
-            "pivot_id": pivot_id,
-            "consumption_result": f"HOST_SEARCH_CRAWL_{result}",
-        })
 
     return {
         "investigation_id": investigation_id,
@@ -453,7 +452,7 @@ def execute_host_search_crawl_bridge_handler(arguments: dict[str, Any]) -> dict[
         ],
         "final_result": final_result,
         "negative_exhaustion_proven": False,
-        "source_coverage_terminal": final_result == "POSITIVE",
+        "source_coverage_terminal": False,  # bounded page retrieval is never source-family saturation
         "append_ready": append_ready,
         "append_tool": "append_execution_receipt" if append_ready else None,
         "append_execution_receipt_payload": append_payload,
