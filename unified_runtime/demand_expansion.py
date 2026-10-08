@@ -443,7 +443,15 @@ class V63DemandExpansionMixin:
 
     def get_capability_profile(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         args = dict(arguments or {})
-        profile_id = str(args.get("product_profile_id") or "PVC").strip().upper()
+        profile_id = str(args.get("product_profile_id") or "").strip().upper()
+        if not profile_id:
+            return {
+                "status": "UNCONFIGURED",
+                "product_profile_id": None,
+                "capability_profile": None,
+                "reason": "EXPLICIT_SELLER_PRODUCT_PROFILE_REQUIRED",
+                "persistent_mutation_performed": False,
+            }
         profiles = getattr(self, "_v63_capability_profiles", {}) or {}
         if not profiles:
             loader = getattr(self, "_load_v63_capability_bundle", None)
@@ -469,7 +477,15 @@ class V63DemandExpansionMixin:
         }
 
     def evaluate_capability_fit(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        profile_id = str(arguments.get("product_profile_id") or "PVC").strip().upper()
+        profile_id = str(arguments.get("product_profile_id") or "").strip().upper()
+        if not profile_id:
+            return {
+                "status": "UNCONFIGURED",
+                "product_profile_id": None,
+                "capability_fit": None,
+                "reason": "EXPLICIT_SELLER_PRODUCT_PROFILE_REQUIRED",
+                "persistent_mutation_performed": False,
+            }
         current = self.get_capability_profile({"product_profile_id": profile_id})
         if current["status"] != "READY":
             return {
