@@ -164,6 +164,11 @@ def build_capability_profile(payload: dict[str, Any]) -> dict[str, Any]:
         "variant_capabilities": variant_capabilities,
         "validation_status": str(payload.get("validation_status") or "PARTIALLY_VERIFIED").strip().upper(),
     }
+    # Legacy profiles retain their exact hash unless a seller scope is explicitly set.
+    # Machine capabilities must never be reused across sellers by product family alone.
+    seller_identity = str(payload.get("seller_identity") or "").strip()
+    if seller_identity:
+        result["seller_identity"] = seller_identity
     result["sha256"] = _digest(result)
     return result
 
