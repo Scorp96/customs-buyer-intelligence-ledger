@@ -31,7 +31,7 @@
     "穷尽搜索"
   ],
   "skills": "./skills/",
-  "mcpServers": "./mcp.json",
+  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Customs Buyer Intelligence",
     "shortDescription": "唯一FULL_AUDIT；公司→地图→官网→官方社媒→逐人社媒；独立证据饱和",

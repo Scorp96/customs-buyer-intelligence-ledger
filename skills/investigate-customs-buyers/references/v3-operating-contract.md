@@ -1,5 +1,7 @@
 # v4.2 Intelligence-First Operating Contract
 
+**Historical v4.2 compatibility record:** The Fast Scan / Deep Dive terms and `fast_scan_complete` below describe earlier data schemas; they are NOT permitted new CBI research routes. The active policy is ONE `FULL_AUDIT` / `EXHAUSTIVE` with independently verified evidence, 28 minutes of active research when measurable, and an interrupted handoff otherwise. See `unified-runtime-contract.md` for current behavior. No prior Fast Scan claim authorizes research completion.
+
 The outreach-specific evidence, suppression, content-firewall, language/time, draft, and send boundaries are defined in [outreach-contract.md](outreach-contract.md). Research status and outreach readiness remain independent.
 
 The strategic relationship, procurement decision-center, brand/OEM, related-party pricing, four-dimensional commercial value, three-layer CRM, and controlled-learning boundaries are defined in [strategic-decision-contract.md](strategic-decision-contract.md).

@@ -180,17 +180,16 @@ Restart/redeploy the Render service after a successful import. The bootstrap
 gate now sees the complete imported bundle and launches
 `mcp/server_v61_remote.py`.
 
-Expected `/healthz` shape:
+Expected **public, unauthenticated** `/healthz` and `/readyz` shape (v6.4 security hardening):
 
 ```json
 {
   "status": "ok",
-  "service": "customs-buyer-intelligence",
-  "transport": "streamable-http-stateless",
-  "durable_root_bound": true,
-  "backup_recovery_enabled": true
+  "service": "customs-buyer-intelligence"
 }
 ```
+
+Internal deployment Git SHA, R2 object-store generation, recovery fingerprint, crawler executable paths and process identity must **not** appear in the public health response. For validated operator diagnostics use the authenticated CBI MCP operator tools; health status alone never proves runtime state durability or a completed FULL_AUDIT.
 
 The MCP endpoint is:
 

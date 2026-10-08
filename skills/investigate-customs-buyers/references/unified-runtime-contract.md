@@ -2,9 +2,13 @@
 
 The Governance Runtime is authoritative for durable Claim state, Peer stage, Decision Saturation, Closure IDs, CRM transaction receipts and executable draft cards. It does not perform web search, does not call another provider, does not write Excel and never sends a message.
 
-## Answer-first boundary
+## Single investigation entry and legacy compatibility
 
-Ordinary Buyer/company/contact/email/phone/person/route lookups stay in `ANSWER_FIRST`. Use host-visible public research, answer immediately with concrete source links and boundaries, and provide one tailored development email plus one instant-chat draft. Do not call any CBI MCP tool, create history, open CRM, issue Closure or render an executable link unless the user explicitly requests persistence, full audit, CRM or outreach preparation.
+All new CBI buyer/company/contact/email/phone/person/customs investigations use **one** `FULL_AUDIT` with Runtime `mode=EXHAUSTIVE`. `ANSWER_FIRST` and `FAST_SCAN` are historical protocol enums only, **not** selectable new research paths; no separate customs one-shot route. Start with company/industry identity → Maps business → official website → official company social/leadership → each relevant named person's public social and source-owned routes, then customs, twelve modules, source execution, six Peer branches, independent falsification, Pivot/EIV resolution and formal Decision Saturation/Closure. Host search, not planning or Runtime, must actually acquire independent public evidence. A compiled claim does not prove that its source was accessed.
+
+The default research floor is **28 minutes of active useful work**, not idle time. The current server does NOT attest that duration; if not independently verified, return `INTERRUPTED` / `PAUSED_RESOURCE_LIMIT` and a `中断交接报告`, never claim that the 28-minute contract or Closure passed. The capability profile is seller-scoped: SMARTORS machinery may not inherit the old XingHuai PVC/WPC supplier's abilities. A source-verified machinery product taxonomy is discovery-only, not a model-level engineering fit.
+
+Append-only governed research Evidence is authorized for the requested audit. CRM/workbook writes, paid providers, recurring monitoring, and outreach/send remain separately authorized; drafts are review-only. Use ONE hosted cloud MCP: portable `mcp.json` and compatibility `.mcp.json` are aliases for the identical HTTPS Render destination. The Windows-local launcher is test-only under `tests/fixtures/mcp/legacy_windows_launcher.json`, not a transport fallback.
 
 ## Architecture
 

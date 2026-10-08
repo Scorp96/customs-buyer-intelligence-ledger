@@ -72,9 +72,7 @@ A notification should include, when available:
 
 ## Interaction with CBI modes
 
-`ANSWER_FIRST`: the Host may search current customs/public sources and answer immediately. No Runtime persistence is implied.
-
-`FULL_AUDIT`: perform the historical backfill and all required entity/product/trade/evidence work. A valid historical backfill can become the baseline for later monitoring.
+`FULL_AUDIT` / Runtime `EXHAUSTIVE` is the only new CBI investigation mode. Use the Host to research current customs/public sources, verify company identity and named-person routes, and append governed Evidence. Never choose legacy `ANSWER_FIRST` or `FAST_SCAN` as a new route. Formal Closure is separate from report delivery, and lack of verified active research duration requires an interrupted handoff. A verified historical backfill may become a monitored baseline.
 
 `WATCH_NEW_CUSTOMS`: monitoring is an ongoing Host/cloud task after a baseline exists. It is not a claim that the Runtime itself performs web search. The Host performs the searches using tools actually available on each scheduled run.
 
