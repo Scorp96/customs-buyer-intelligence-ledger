@@ -98,6 +98,7 @@ _LIVE_ROOT = _EXPECTED_ROOT.parent
 # observe CBI_SESSION_ROOT; acceptance pin failures must occur before it starts.
 from mcp import server_v61_backup_recovery as _production  # noqa: E402
 from mcp.authoritative_source_evidence_v64 import (  # noqa: E402
+    TOOL_NAME as _OPERATOR_READ_ONLY_TOOL_NAME,
     install_remote_authoritative_source_evidence_tool,
 )
 from mcp.chatgpt_oauth_transport import (  # noqa: E402
@@ -166,6 +167,12 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
     if method == "tools/list":
         return decorate_tools_list_for_chatgpt(_BASE_DISPATCH(method, params))
     if method != "tools/call":
+        return _BASE_DISPATCH(method, params)
+    # Authenticated operator recovery/source-capture reads must not trigger the
+    # post-call R2 sync path, even if some unrelated external mutation occurred
+    # concurrently. The tool is intrinsically read-only and explicitly returns
+    # production_write_performed=False. Other calls retain both checkpoints.
+    if isinstance(params, dict) and params.get("name") == _OPERATOR_READ_ONLY_TOOL_NAME:
         return _BASE_DISPATCH(method, params)
     try:
         result = _BASE_DISPATCH(method, params)
