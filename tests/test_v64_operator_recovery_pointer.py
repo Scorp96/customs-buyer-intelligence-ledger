@@ -124,7 +124,15 @@ class RecoveryPointerOperatorTests(unittest.TestCase):
             "mcp.authoritative_source_evidence_v64.build_recovery_self_restore_proof",
             return_value={"verified": True},
         ) as exact:
-            self.assertTrue(handler({"operation": operation})["verified"])
+            with self.assertRaisesRegex(
+                AuthoritativeSourceEvidenceError, "explicit acknowledgement"
+            ):
+                handler({"operation": operation})
+            auto.assert_not_called()
+            self.assertTrue(handler({
+                "operation": operation,
+                "acknowledge_private_state": True,
+            })["verified"])
             auto.assert_called_once()
             exact.assert_not_called()
             for invalid in (
