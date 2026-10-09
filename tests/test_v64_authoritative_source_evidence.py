@@ -15,6 +15,7 @@ from mcp.object_store_recovery_v63 import _recovery_fingerprint
 from mcp.authoritative_source_evidence_v64 import (
     AuthoritativeSourceEvidenceError,
     build_recovery_self_restore_proof,
+    build_server_pinned_recovery_self_restore_proof,
     capture_exact_session_source,
     install_remote_authoritative_source_evidence_tool,
 )
@@ -117,6 +118,66 @@ class AuthoritativeSourceEvidenceV64Test(unittest.TestCase):
             self.assertEqual(persistence.restore_calls, 1)
             self.assertEqual(_recovery_fingerprint(live_root), before)
             self.assertNotIn("archive_key", result)
+
+    def test_server_pinned_restore_isolated_real_temp_no_live_or_r2_writes(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            live_root = self._live_root(Path(tmp_name))
+            persistence = _FakePersistence(live_root)
+            before = _recovery_fingerprint(live_root)
+            result = build_server_pinned_recovery_self_restore_proof(
+                persistence=persistence, live_root=live_root,
+            )
+            self.assertTrue(result["verified"])
+            self.assertEqual(result["generation"], 1093)
+            self.assertEqual(result["expectation_source"], "SERVER_POINTER_READ_AT_START")
+            self.assertFalse(result["independent_operator_expectation_proven"])
+            self.assertTrue(result["restore_target_isolated"])
+            self.assertTrue(result["production_live_root_unchanged"])
+            self.assertFalse(result["object_store_write_performed"])
+            self.assertFalse(result["production_write_performed"])
+            self.assertEqual(persistence.write_calls, 0)
+            self.assertEqual(persistence.restore_calls, 1)
+            self.assertGreaterEqual(persistence.read_calls, 3)
+            self.assertEqual(_recovery_fingerprint(live_root), before)
+
+    def test_server_pinned_proof_detects_live_mutation_and_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            live_root = self._live_root(Path(tmp_name))
+            persistence = _FakePersistence(live_root, mutate_live=True)
+            with self.assertRaisesRegex(AuthoritativeSourceEvidenceError, "changed"):
+                build_server_pinned_recovery_self_restore_proof(
+                    persistence=persistence, live_root=live_root,
+                )
+            self.assertEqual(persistence.write_calls, 0)
+            self.assertEqual(persistence.restore_calls, 1)
+
+    def test_server_pinned_proof_rejects_r2_pointer_change_during_restore(self):
+        with tempfile.TemporaryDirectory() as tmp_name:
+            live_root = self._live_root(Path(tmp_name))
+            persistence = _FakePersistence(live_root)
+            original_restore = persistence.restore_into
+
+            def concurrent_pointer_change(target):
+                result = original_restore(target)
+                persistence.pointer = SimpleNamespace(
+                    generation=1094,
+                    archive_key="cbi-v61/state/new-concurrent-generation.tar.gz",
+                    archive_sha256="a" * 64,
+                    sessions_fingerprint_sha256="b" * 64,
+                    recovery_fingerprint_sha256=_recovery_fingerprint(live_root),
+                    archive_format="object_state_v2",
+                )
+                return result
+
+            persistence.restore_into = concurrent_pointer_change
+            with self.assertRaisesRegex(
+                AuthoritativeSourceEvidenceError, "pointer changed"
+            ):
+                build_server_pinned_recovery_self_restore_proof(
+                    persistence=persistence, live_root=live_root,
+                )
+            self.assertEqual(persistence.restore_calls, 1)
+            self.assertEqual(persistence.write_calls, 0)
 
     def test_recovery_self_restore_fails_closed_on_generation_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp_name:

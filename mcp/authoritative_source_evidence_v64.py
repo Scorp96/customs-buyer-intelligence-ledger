@@ -220,6 +220,37 @@ def _session_export_window(investigation_id: str) -> int:
     return max_bytes
 
 
+def build_server_pinned_recovery_self_restore_proof(
+    *,
+    persistence: Any,
+    live_root: Path,
+) -> dict[str, Any]:
+    """Use an independently fetched R2 pointer as a server-local, short-lived pin.
+
+    This is a compatibility mode for already registered MCP clients whose
+    RECOVERY_SELF_RESTORE_PROOF enum exists but whose READ_RECOVERY_POINTER
+    operation has not refreshed. It does NOT claim an independently supplied
+    operator expectation. The existing full restore proof will re-read the
+    pointer, verify the live state and test isolation before/after the restore.
+    """
+    if persistence is None:
+        raise AuthoritativeSourceEvidenceError("production object store is not bound")
+    pointer = persistence.read_pointer(required=True)
+    if pointer is None:
+        raise AuthoritativeSourceEvidenceError("production object-store pointer is missing")
+    generation, _archive_sha, _sessions_fp, recovery_fp, _archive_format = _pointer_identity(pointer)
+    proof = build_recovery_self_restore_proof(
+        persistence=persistence,
+        live_root=live_root,
+        expected_generation=generation,
+        expected_recovery_fingerprint_sha256=recovery_fp,
+    )
+    result = dict(proof)
+    result["expectation_source"] = "SERVER_POINTER_READ_AT_START"
+    result["independent_operator_expectation_proven"] = False
+    return result
+
+
 def capture_exact_session_source(
     *,
     runtime: Any,
@@ -288,7 +319,7 @@ def _tool_descriptor() -> dict[str, Any]:
         "name": TOOL_NAME,
         "description": (
             "[OPERATOR_READ_ONLY] Produce authoritative production acceptance evidence. "
-            "READ_RECOVERY_POINTER returns exact generation/fingerprint to authenticated operators; public health never includes them. RECOVERY_SELF_RESTORE_PROOF restores the current object-state generation only into an isolated temporary target and returns hashes only. "
+            "READ_RECOVERY_POINTER returns exact generation/fingerprint to authenticated operators; public health never includes them. RECOVERY_SELF_RESTORE_PROOF restores the current object-state generation only into an isolated temporary target and returns hashes only. Both supplied pin fields use independent caller expectations; omitting BOTH auto-pins from the current server-side R2 pointer and explicitly reports that operator independence is unproven. A single supplied pin field fails closed. The auto-pinned branch requires acknowledge_private_state=true to avoid accidental heavy recovery work. "
             "EXACT_SESSION_CAPTURE returns one exact private append-only session only while a short-lived server-side allowlist window is explicitly enabled. Never sends outreach and never mutates production state."
         ),
         "inputSchema": {
@@ -334,11 +365,29 @@ def install_remote_authoritative_source_evidence_tool(
         if operation == "READ_RECOVERY_POINTER":
             return read_operator_recovery_pointer(persistence=persistence)
         if operation == "RECOVERY_SELF_RESTORE_PROOF":
+            has_generation = "expected_generation" in args
+            has_fingerprint = "expected_recovery_fingerprint_sha256" in args
+            if has_generation != has_fingerprint:
+                raise AuthoritativeSourceEvidenceError(
+                    "recovery proof expectations require both generation and fingerprint"
+                )
+            if not has_generation:
+                # Without an independent caller pin, require a deliberate
+                # acknowledgement on the already-registered schema rather
+                # than allowing accidental expensive S3/R2 restore proofs.
+                if args.get("acknowledge_private_state") is not True:
+                    raise AuthoritativeSourceEvidenceError(
+                        "server-pinned isolated recovery proof requires explicit acknowledgement"
+                    )
+                return build_server_pinned_recovery_self_restore_proof(
+                    persistence=persistence,
+                    live_root=live_root,
+                )
             return build_recovery_self_restore_proof(
                 persistence=persistence,
                 live_root=live_root,
-                expected_generation=args.get("expected_generation"),
-                expected_recovery_fingerprint_sha256=args.get("expected_recovery_fingerprint_sha256"),
+                expected_generation=args["expected_generation"],
+                expected_recovery_fingerprint_sha256=args["expected_recovery_fingerprint_sha256"],
             )
         if operation == "EXACT_SESSION_CAPTURE":
             return capture_exact_session_source(
