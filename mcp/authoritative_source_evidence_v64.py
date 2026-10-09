@@ -319,7 +319,7 @@ def _tool_descriptor() -> dict[str, Any]:
         "name": TOOL_NAME,
         "description": (
             "[OPERATOR_READ_ONLY] Produce authoritative production acceptance evidence. "
-            "READ_RECOVERY_POINTER returns exact generation/fingerprint to authenticated operators; public health never includes them. RECOVERY_SELF_RESTORE_PROOF restores the current object-state generation only into an isolated temporary target and returns hashes only. Both supplied pin fields use independent caller expectations; omitting BOTH auto-pins from the current server-side R2 pointer and explicitly reports that operator independence is unproven. A single supplied pin field fails closed. "
+            "READ_RECOVERY_POINTER returns exact generation/fingerprint to authenticated operators; public health never includes them. RECOVERY_SELF_RESTORE_PROOF restores the current object-state generation only into an isolated temporary target and returns hashes only. Both supplied pin fields use independent caller expectations; omitting BOTH auto-pins from the current server-side R2 pointer and explicitly reports that operator independence is unproven. A single supplied pin field fails closed. The auto-pinned branch requires acknowledge_private_state=true to avoid accidental heavy recovery work. "
             "EXACT_SESSION_CAPTURE returns one exact private append-only session only while a short-lived server-side allowlist window is explicitly enabled. Never sends outreach and never mutates production state."
         ),
         "inputSchema": {
@@ -372,6 +372,13 @@ def install_remote_authoritative_source_evidence_tool(
                     "recovery proof expectations require both generation and fingerprint"
                 )
             if not has_generation:
+                # Without an independent caller pin, require a deliberate
+                # acknowledgement on the already-registered schema rather
+                # than allowing accidental expensive S3/R2 restore proofs.
+                if args.get("acknowledge_private_state") is not True:
+                    raise AuthoritativeSourceEvidenceError(
+                        "server-pinned isolated recovery proof requires explicit acknowledgement"
+                    )
                 return build_server_pinned_recovery_self_restore_proof(
                     persistence=persistence,
                     live_root=live_root,
