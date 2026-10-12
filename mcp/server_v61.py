@@ -1125,6 +1125,59 @@ _server.TOOL_HANDLERS['create_product_opportunity'] = _v63_create_product_opport
 _server.TOOL_HANDLERS['promote_opportunity_anchor'] = _v63_promote_opportunity_anchor_handler
 
 
+
+# Optional operator-only projection health probe; never enables raw session
+# export or modifies the production WAL / append-only event chain.
+from mcp.operator_projection_diagnostic_v64 import inspect_authoritative_projection as _inspect_v64_projection
+
+_V64_PROJECTION_DIAG_TOOL_NAME = "inspect_opportunity_projection_integrity"
+_V64_PROJECTION_DIAG_DESCRIPTORS = _server.tool_descriptors
+
+def _v64_projection_tool_descriptors():
+    tools = list(_V64_PROJECTION_DIAG_DESCRIPTORS())
+    if not any(row.get("name") == _V64_PROJECTION_DIAG_TOOL_NAME for row in tools):
+        tools.append({
+            "name": _V64_PROJECTION_DIAG_TOOL_NAME,
+            "description": (
+                "[OPERATOR_READ_ONLY; DEFAULT_DISABLED] Inspect ONE production "
+                "investigation's opportunity-create collisions without returning "
+                "raw events, Account IDs, correlation IDs or WAL bodies. "
+                "Server-side CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED=1, "
+                "an explicit acknowledgement and an exact current seq/tail "
+                "hash are mandatory; this never repairs the projection."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "investigation_id", "expected_last_safe_seq",
+                    "expected_last_safe_event_hash", "acknowledge_private_state"
+                ],
+                "properties": {
+                    "investigation_id": {
+                        "type": "string", "pattern": "^INV-[A-Za-z0-9._:-]{1,150}$"
+                    },
+                    "expected_last_safe_seq": {
+                        "type": "integer", "minimum": 1
+                    },
+                    "expected_last_safe_event_hash": {
+                        "type": "string", "pattern": "^[0-9a-fA-F]{64}$"
+                    },
+                    "acknowledge_private_state": {
+                        "type": "boolean", "const": True
+                    },
+                },
+            },
+        })
+    return tools
+
+def _v64_projection_diag_handler(arguments):
+    return _inspect_v64_projection(_server.RUNTIME, arguments)
+
+_server.tool_descriptors = _v64_projection_tool_descriptors
+_server.TOOL_HANDLERS[_V64_PROJECTION_DIAG_TOOL_NAME] = _v64_projection_diag_handler
+
+
 def main() -> int:
     return _server.main()
 

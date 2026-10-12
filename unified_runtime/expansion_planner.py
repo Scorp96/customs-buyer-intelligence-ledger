@@ -58,6 +58,18 @@ BRANCH_GROUPS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# Machined-equipment importers, distributors and turnkey integrators are
+# distinct from the PVC/WPC sign and building-material supply chain. This is
+# a research planning prior, NOT proof of actual import or seller capability.
+_MACHINERY_CHANNEL_BRANCHES: tuple[str, ...] = (
+    "machinery_importer",
+    "machinery_distributor",
+    "equipment_integrator",
+    "turnkey_production_line_integrator",
+    "industrial_equipment_wholesaler",
+    "machinery_service_parts_network",
+)
+
 _RELATIVE_MODIFIER = {
     "UPGRADE_TARGET": 1.30,
     "SAME_TIER_HIGH": 1.15,
@@ -99,6 +111,10 @@ def plan_expansion(context: dict[str, Any]) -> dict[str, Any]:
     # Validate the profile and obtain scheduling priority without changing evidence/grade.
     profile_weight = portfolio_priority(profile_id)
     branches = {name: list(values) for name, values in BRANCH_GROUPS.items()}
+    if profile_id == "SOAP_MACHINERY":
+        # Keep the same six branch groups and source-family execution contract,
+        # but never reuse plastics/signage channel archetypes for machines.
+        branches["CHANNEL_GRAPH"] = list(_MACHINERY_CHANNEL_BRANCHES)
     branches["MARKET_GRAPH"] = list(_market_branches(level))
     branches["CROSS_SELL_GRAPH"] = list(_cross_sell_branches(level))
     return {
@@ -204,6 +220,22 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
     variant = str(context.get("product_variant") or "").upper()
     local_terms = [str(v).strip() for v in context.get("local_language_terms", []) if str(v).strip()]
     locale = str(context.get("locale") or "").strip()
+    # Conservative country auto-detection for machinery discovery ONLY.
+    # Do not assume a national language for unconfigured or multinational
+    # markets; caller-supplied locale has priority.
+    market_locale = {
+        "indonesia": "id-ID",
+        "vietnam": "vi-VN",
+        "brazil": "pt-BR",
+        "mexico": "es-MX",
+    }
+    locale_auto_selected = False
+    if (profile_id == "SOAP_MACHINERY" and not locale
+            and context.get("auto_market_locale", True) is not False):
+        inferred = market_locale.get(geography.casefold())
+        if inferred:
+            locale = inferred
+            locale_auto_selected = True
     locale_pack_status = "NOT_REQUESTED"
     locale_pack_version = None
     limit = int(context.get("limit") or 100)
@@ -307,6 +339,24 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         for term in commercial_terms:
             add(f'{product} "{term}" {geography}', "PRODUCT_X_COMMERCIAL_TERM_X_GEOGRAPHY")
 
+    # For machinery, preserve BOTH local and English/core queries in
+    # short budgets. This is only query allocation, not execution proof.
+    # Legacy PVC/WPC priorities and preexisting discovery IDs remain intact.
+    if profile_id == "SOAP_MACHINERY" and local_terms:
+        native = [row for row in rows if row["basis"] in {
+            "PRODUCT_X_LOCAL_TERM_X_GEOGRAPHY", "LOCAL_TERM_X_GEOGRAPHY"
+        }]
+        core = [row for row in rows if row["basis"] not in {
+            "PRODUCT_X_LOCAL_TERM_X_GEOGRAPHY", "LOCAL_TERM_X_GEOGRAPHY"
+        }]
+        interleaved: list[dict[str, Any]] = []
+        for ix in range(max(len(native), len(core))):
+            if ix < len(native):
+                interleaved.append(native[ix])
+            if ix < len(core):
+                interleaved.append(core[ix])
+        rows = interleaved
+
     candidate_count = len(rows)
     returned = rows[:limit]
     return {
@@ -321,6 +371,8 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         "source_coverage_status": "UNPROVEN_UNTIL_REAL_RECEIPTS",
         "host_execution_required": True,
         "locale": locale or None,
+        "locale_auto_selected": locale_auto_selected,
+        "local_and_global_query_budget_balanced": profile_id == "SOAP_MACHINERY" and bool(local_terms),
         "locale_pack_status": locale_pack_status,
         "locale_pack_version": locale_pack_version,
         "localized_terms_are_planning_only": True,
