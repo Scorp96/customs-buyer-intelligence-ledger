@@ -9,7 +9,8 @@ import re
 from datetime import date
 from typing import Any
 
-from .demand_market import is_direct_procurement_source
+# Purchase orders and invoices show procurement, not a customs frontier crossing.
+_IMPORT_PROOF_SOURCES = {"CUSTOMS", "TRADE_DATA", "SUPPLIER_BUYER_SHIPMENT", "BOL", "BILL_OF_LADING"}
 
 
 _ALLOWED_ROLES = {"BUYER", "IMPORTER_OF_RECORD", "CONSIGNEE", "ULTIMATE_BUYER"}
@@ -71,9 +72,7 @@ def assess_machinery_trade_buyer(
         blockers.append("NATIONAL_TARIFF_NOT_OFFICIALLY_BOUND")
 
     goods_kind = _text(shipment, "goods_kind").upper()
-    direct_source = is_direct_procurement_source(_text(shipment, "source_type"))
-    if _text(shipment, "source_type").upper() in {"BOL", "BILL_OF_LADING"}:
-        direct_source = True
+    direct_source = _text(shipment, "source_type").upper() in _IMPORT_PROOF_SOURCES
     shipment_locator = _text(shipment, "source_locator")
     shipment_key = _text(shipment, "bill_of_lading") or _text(shipment, "shipment_id")
     shipment_date = _text(shipment, "shipment_date")
@@ -124,8 +123,12 @@ def assess_machinery_trade_buyer(
     )
     if ultimate_buyer_supported:
         stage = "VERIFIED_ACTUAL_MACHINE_BUYER"
+    elif shipment_supported and role == "IMPORTER_OF_RECORD":
+        stage = "VERIFIED_MACHINE_IMPORTER_OF_RECORD"
+    elif shipment_supported and role == "CONSIGNEE":
+        stage = "VERIFIED_MACHINE_CONSIGNEE_NOT_NECESSARILY_BUYER"
     elif shipment_supported:
-        stage = "VERIFIED_MACHINE_IMPORT_PARTY"
+        stage = "VERIFIED_MACHINE_TRADE_BUYER_ULTIMATE_UNRESOLVED"
     elif identity_bound and (
         exact_machine or _text(buyer, "industry_product_evidence_locator")
     ):
@@ -147,6 +150,7 @@ def assess_machinery_trade_buyer(
         "hs6_candidate": code if valid_hs else None,
         "national_tariff_verified_as_source_claim": national_verified,
         "shipment_supported": shipment_supported,
+        "import_provenance_type": _text(shipment, "source_type").upper() if direct_source else None,
         "ultimate_buyer_supported": ultimate_buyer_supported,
         "machine_identity_supported": exact_machine,
         "seller_capability_supported_for_model": capability_verified,
