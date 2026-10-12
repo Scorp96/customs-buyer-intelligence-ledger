@@ -45,23 +45,26 @@ class MachineryTradeEvidenceTests(unittest.TestCase):
 
     def test_importer_of_record_does_not_become_ultimate_buyer(self):
         r = self._check()
-        self.assertEqual(r["stage"], "VERIFIED_MACHINE_IMPORTER_OF_RECORD")
+        self.assertEqual(r["stage"], "CLAIMED_MACHINE_IMPORTER_OF_RECORD_REQUIRES_INDEPENDENT_SOURCE_CHECK")
         self.assertTrue(r["shipment_supported"])
+        self.assertFalse(r["actual_import_independently_verified"])
+        self.assertTrue(r["independent_source_check_required"])
         self.assertFalse(r["ultimate_buyer_supported"])
         self.assertIsNone(r["commercial_value_grade"])
 
     def test_unverified_consignee_is_not_ultimate_buyer(self):
         buyer = {**BUYER, "trade_role": "CONSIGNEE"}
         r = self._check(buyer=buyer)
-        self.assertEqual(r["stage"], "VERIFIED_MACHINE_CONSIGNEE_NOT_NECESSARILY_BUYER")
+        self.assertEqual(r["stage"], "CLAIMED_MACHINE_CONSIGNEE_NOT_NECESSARILY_BUYER")
         self.assertFalse(r["ultimate_buyer_supported"])
 
     def test_ultimate_buyer_requires_separate_evidence(self):
         buyer = {**BUYER, "trade_role": "ULTIMATE_BUYER",
                  "ultimate_buyer_evidence_locator": "https://example.test/contracts/synthetic"}
         r = self._check(buyer=buyer)
-        self.assertEqual(r["stage"], "VERIFIED_ACTUAL_MACHINE_BUYER")
+        self.assertEqual(r["stage"], "CLAIMED_ULTIMATE_MACHINE_BUYER_REQUIRES_INDEPENDENT_SOURCE_CHECK")
         self.assertTrue(r["ultimate_buyer_supported"])
+        self.assertFalse(r["ultimate_buyer_independently_verified"])
 
     def test_machine_parts_do_not_upgrade_to_complete_machine(self):
         shipment = {**SHIPMENT, "goods_kind": "SPARE_PARTS"}
