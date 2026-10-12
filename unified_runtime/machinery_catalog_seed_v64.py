@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections import deque
 from typing import Any
 
 _HS6 = re.compile(r"^[0-9]{6}$")
@@ -147,30 +148,62 @@ def plan_catalog_customs_queries(
     country = _require_clean_str(target_country, "TARGET_COUNTRY", 120)
     if type(limit) is not int or not 1 <= limit <= 1000:
         raise ValueError("CBI_MACHINERY_CATALOG_LIMIT_INVALID")
-    out: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    # Fair group/row scheduling avoids burning the initial query budget on
+    # the first category or even the first model in a 99-item audit catalogue.
+    # This remains a read-only plan with no source execution.
+    group_rows: dict[str, list[dict[str, Any]]] = {}
     for row in validated["rows"]:
+        group_rows.setdefault(row["catalog_group"], []).append(row)
+
+    def row_queries(row: dict[str, Any]):
         code = row.get("hs6_candidate")
         for name in row["search_aliases_english"]:
-            for query in (
-                (f'{code} "{name}" {country}' if code else None),
-                f'"{name}" {country}',
-            ):
-                if query is None:
+            if code:
+                yield (f'{code} "{name}" {country}', True)
+            yield (f'"{name}" {country}', False)
+
+    def group_queries(group: str):
+        row_pending = deque(row_queries(row) for row in group_rows[group])
+        rows = list(group_rows[group])
+        while row_pending:
+            count = len(row_pending)
+            for idx in range(count):
+                it = row_pending.popleft()
+                row = rows.pop(0)
+                try:
+                    query, uses_hs = next(it)
+                except StopIteration:
                     continue
-                key = query.casefold()
-                if key in seen:
-                    continue
-                seen.add(key)
-                out.append({
-                    "query": query,
-                    "catalog_row_id": row["catalog_row_id"],
-                    "hs6_candidate": code,
-                    "query_uses_unverified_hs6_candidate": bool(code),
-                    "search_execution_performed": False,
-                    "evidence_ids": [],
-                    "buyer_identity_verified": False,
-                })
+                row_pending.append(it)
+                rows.append(row)
+                yield query, row, uses_hs
+
+    pending_groups = deque(
+        group_queries(group) for group in sorted(group_rows)
+    )
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    while pending_groups:
+        it = pending_groups.popleft()
+        try:
+            query, row, uses_hs = next(it)
+        except StopIteration:
+            continue
+        pending_groups.append(it)
+        key = query.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "query": query,
+            "catalog_row_id": row["catalog_row_id"],
+            "catalog_group": row["catalog_group"],
+            "hs6_candidate": row["hs6_candidate"],
+            "query_uses_unverified_hs6_candidate": uses_hs,
+            "search_execution_performed": False,
+            "evidence_ids": [],
+            "buyer_identity_verified": False,
+        })
     return {
         "status": "PLANNED",
         "schema": "cbi.machinery-catalog-customs-query-plan.v6.4",
