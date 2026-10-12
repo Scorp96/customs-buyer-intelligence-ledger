@@ -21,6 +21,7 @@ This is an actual *planning/allocation* defect. It does not itself prove that an
 - First fifty spread approximately equally across six groups and contain multiple branches and source families.
 - Pagination over any page size reconstructs the same complete deduplicated plan with zero task loss/repetition.
 - A truncated plan never certifies source exhaustion.
+- Even the final continuation page has a nonzero offset; it is **partial scope**, so its local receipts cannot certify full-plan exhaustion. \`evaluate_source_coverage\` validates offset and candidate-count consistency even if a caller supplies \`truncated=false\`.
 - A stored old-version cursor is invalidated explicitly; operator must replan. Previously **executed** receipts can still be matched to stable call IDs and need not be reexecuted.
 - Existing PVC/WPC task identity, source family registry, and six-group contract remain stable.
 - CI on Linux/Windows × Python3.10/3.11 + isolated real planner canary before any production deployment.
