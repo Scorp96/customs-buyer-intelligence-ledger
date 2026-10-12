@@ -102,11 +102,19 @@ def assess_machinery_trade_buyer(
     shipment_owner = _text(shipment, "buyer_account_id")
     role = _text(buyer, "trade_role").upper()
     legal_source = _text(buyer, "identity_evidence_locator")
+    company_identity_supported = bool(
+        account_id and _text(buyer, "legal_entity_name") and legal_source
+    )
     identity_bound = bool(
-        account_id and shipment_owner == account_id
+        company_identity_supported and shipment_owner == account_id
         and role in _ALLOWED_ROLES
-        and _text(buyer, "legal_entity_name")
-        and legal_source
+    )
+    # Research candidates with genuine company/industry evidence must survive
+    # even before any shipment exists. This never upgrades them to importers.
+    industry_prospect = bool(
+        company_identity_supported
+        and role not in _NON_BUYER_ROLES
+        and _text(buyer, "industry_product_evidence_locator")
     )
     if role in _NON_BUYER_ROLES:
         blockers.append("PARTY_IS_NOT_BUYER")
@@ -130,9 +138,7 @@ def assess_machinery_trade_buyer(
         stage = "CLAIMED_MACHINE_CONSIGNEE_NOT_NECESSARILY_BUYER"
     elif shipment_supported:
         stage = "CLAIMED_MACHINE_TRADE_BUYER_ULTIMATE_UNRESOLVED"
-    elif identity_bound and (
-        exact_machine or _text(buyer, "industry_product_evidence_locator")
-    ):
+    elif industry_prospect:
         stage = "PROSPECT_UNVERIFIED_MACHINE_IMPORT"
     else:
         stage = "DISCOVERY_CANDIDATE"
@@ -158,6 +164,7 @@ def assess_machinery_trade_buyer(
         "ultimate_buyer_supported": ultimate_buyer_supported,
         "ultimate_buyer_independently_verified": False,
         "machine_identity_supported": exact_machine,
+        "industry_prospect_supported_as_research_lead": industry_prospect,
         "seller_capability_supported_for_model": capability_verified,
         "seller_capability_independently_verified": False,
         "commercial_value_grade": None,
