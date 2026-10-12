@@ -220,6 +220,22 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
     variant = str(context.get("product_variant") or "").upper()
     local_terms = [str(v).strip() for v in context.get("local_language_terms", []) if str(v).strip()]
     locale = str(context.get("locale") or "").strip()
+    # Conservative country auto-detection for machinery discovery ONLY.
+    # Do not assume a national language for unconfigured or multinational
+    # markets; caller-supplied locale has priority.
+    market_locale = {
+        "indonesia": "id-ID",
+        "vietnam": "vi-VN",
+        "brazil": "pt-BR",
+        "mexico": "es-MX",
+    }
+    locale_auto_selected = False
+    if (profile_id == "SOAP_MACHINERY" and not locale
+            and context.get("auto_market_locale", True) is not False):
+        inferred = market_locale.get(geography.casefold())
+        if inferred:
+            locale = inferred
+            locale_auto_selected = True
     locale_pack_status = "NOT_REQUESTED"
     locale_pack_version = None
     limit = int(context.get("limit") or 100)
@@ -323,6 +339,24 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         for term in commercial_terms:
             add(f'{product} "{term}" {geography}', "PRODUCT_X_COMMERCIAL_TERM_X_GEOGRAPHY")
 
+    # For machinery, preserve BOTH local and English/core queries in
+    # short budgets. This is only query allocation, not execution proof.
+    # Legacy PVC/WPC priorities and preexisting discovery IDs remain intact.
+    if profile_id == "SOAP_MACHINERY" and local_terms:
+        native = [row for row in rows if row["basis"] in {
+            "PRODUCT_X_LOCAL_TERM_X_GEOGRAPHY", "LOCAL_TERM_X_GEOGRAPHY"
+        }]
+        core = [row for row in rows if row["basis"] not in {
+            "PRODUCT_X_LOCAL_TERM_X_GEOGRAPHY", "LOCAL_TERM_X_GEOGRAPHY"
+        }]
+        interleaved: list[dict[str, Any]] = []
+        for ix in range(max(len(native), len(core))):
+            if ix < len(native):
+                interleaved.append(native[ix])
+            if ix < len(core):
+                interleaved.append(core[ix])
+        rows = interleaved
+
     candidate_count = len(rows)
     returned = rows[:limit]
     return {
@@ -337,6 +371,8 @@ def generate_discovery_queries(context: dict[str, Any]) -> dict[str, Any]:
         "source_coverage_status": "UNPROVEN_UNTIL_REAL_RECEIPTS",
         "host_execution_required": True,
         "locale": locale or None,
+        "locale_auto_selected": locale_auto_selected,
+        "local_and_global_query_budget_balanced": profile_id == "SOAP_MACHINERY" and bool(local_terms),
         "locale_pack_status": locale_pack_status,
         "locale_pack_version": locale_pack_version,
         "localized_terms_are_planning_only": True,

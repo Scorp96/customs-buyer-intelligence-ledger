@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import copy
 import os
+import hashlib
+from datetime import datetime, timezone, timedelta
 import unittest
 from unittest.mock import patch
 
@@ -83,6 +85,16 @@ def args(**override):
     return value
 
 
+def operator_env(*, inv=INV, minutes=5):
+    return {
+        "CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1",
+        "CBI_V64_OPERATOR_DIAG_SESSION_SHA256": hashlib.sha256(inv.encode("utf-8")).hexdigest(),
+        "CBI_V64_OPERATOR_DIAG_EXPIRES_AT": (
+            datetime.now(timezone.utc) + timedelta(minutes=minutes)
+        ).isoformat(),
+    }
+
+
 class OperatorProjectionDiagnosticTests(unittest.TestCase):
     def test_disabled_by_default_never_reads_any_session(self):
         runtime = FakeRuntime([event(1), event(2)])
@@ -93,7 +105,7 @@ class OperatorProjectionDiagnosticTests(unittest.TestCase):
 
     def test_enabled_exact_replay_returns_sanitized_candidate(self):
         runtime = FakeRuntime([event(1), event(2)])
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             result = inspect_authoritative_projection(runtime, args())
         self.assertEqual(result["status"], "REPLAY_CANDIDATES_NEED_INDEPENDENT_WAL_PROOF")
         self.assertTrue(result["read_only"])
@@ -108,58 +120,104 @@ class OperatorProjectionDiagnosticTests(unittest.TestCase):
 
     def test_distinct_correlation_remains_conflict(self):
         runtime = FakeRuntime([event(1), event(2, corr="MUTCORR-SYNTHETIC-2")])
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             result = inspect_authoritative_projection(runtime, args())
         self.assertEqual(result["status"], "CONFLICT")
         self.assertEqual(result["counts"]["distinct_correlation_conflicts"], 1)
 
     def test_tampered_result_snapshot_fails_closed(self):
         runtime = FakeRuntime([event(1, tamper=True), event(2)])
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             result = inspect_authoritative_projection(runtime, args())
         self.assertEqual(result["status"], "INVALID_EVENT_PROOF")
         self.assertFalse(result["recovery_acceptance_achieved"])
 
     def test_tail_changed_between_reads_fails_closed(self):
         runtime = FakeRuntime([event(1), event(2)], change_on_second_read=True)
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             with self.assertRaisesRegex(RuntimeError, "CHAIN_CHANGED"):
                 inspect_authoritative_projection(runtime, args())
 
     def test_wrong_tail_hash_refused(self):
         runtime = FakeRuntime([event(1), event(2)])
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             with self.assertRaisesRegex(RuntimeError, "EXPECTATION_MISMATCH"):
                 inspect_authoritative_projection(runtime, args(expected_last_safe_event_hash="a" * 64))
 
     def test_bool_sequence_not_accepted_as_integer(self):
         runtime = FakeRuntime([event(1), event(2)])
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             with self.assertRaisesRegex(ValueError, "SEQ_REQUIRED"):
                 inspect_authoritative_projection(runtime, args(expected_last_safe_seq=True))
 
     def test_arbitrary_file_paths_and_event_arguments_rejected(self):
         runtime = FakeRuntime([event(1), event(2)])
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             with self.assertRaisesRegex(ValueError, "UNKNOWN_ARGUMENTS"):
                 inspect_authoritative_projection(runtime, args(source_path="/var/lib/cbi/live/sessions"))
 
     def test_explicit_ack_required(self):
         runtime = FakeRuntime([event(1), event(2)])
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             with self.assertRaisesRegex(ValueError, "ACK_REQUIRED"):
                 inspect_authoritative_projection(runtime, args(acknowledge_private_state=False))
 
     def test_malformed_session_identity_rejected(self):
         runtime = FakeRuntime([event(1), event(2)])
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             with self.assertRaisesRegex(ValueError, "SESSION_INVALID"):
                 inspect_authoritative_projection(runtime, args(investigation_id="../../etc/passwd"))
+
+    def test_enabled_without_exact_session_allowlist_fails_closed(self):
+        runtime = FakeRuntime([event(1), event(2)])
+        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "ALLOWLIST_MISSING"):
+                inspect_authoritative_projection(runtime, args())
+        self.assertEqual(runtime.store.read_count, 0)
+
+    def test_wrong_session_allowlist_denied_before_data_read(self):
+        runtime = FakeRuntime([event(1), event(2)])
+        with patch.dict(os.environ, operator_env(inv="INV-SYNTHETIC-OTHER"), clear=True):
+            with self.assertRaisesRegex(RuntimeError, "SESSION_NOT_ALLOWED"):
+                inspect_authoritative_projection(runtime, args())
+        self.assertEqual(runtime.store.read_count, 0)
+
+    def test_expired_operator_window_fails_closed(self):
+        runtime = FakeRuntime([event(1), event(2)])
+        with patch.dict(os.environ, operator_env(minutes=-1), clear=True):
+            with self.assertRaisesRegex(RuntimeError, "WINDOW_CLOSED"):
+                inspect_authoritative_projection(runtime, args())
+        self.assertEqual(runtime.store.read_count, 0)
+
+    def test_window_longer_than_15_minutes_fails_closed(self):
+        runtime = FakeRuntime([event(1), event(2)])
+        with patch.dict(os.environ, operator_env(minutes=45), clear=True):
+            with self.assertRaisesRegex(RuntimeError, "WINDOW_CLOSED"):
+                inspect_authoritative_projection(runtime, args())
+        self.assertEqual(runtime.store.read_count, 0)
+
+    def test_expiry_without_timezone_fails_closed(self):
+        runtime = FakeRuntime([event(1), event(2)])
+        env = operator_env()
+        env["CBI_V64_OPERATOR_DIAG_EXPIRES_AT"] = "2026-10-12T17:00:00"
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "EXPIRY_INVALID"):
+                inspect_authoritative_projection(runtime, args())
+        self.assertEqual(runtime.store.read_count, 0)
+
+    def test_collision_positions_are_not_exported(self):
+        runtime = FakeRuntime([event(1), event(2)])
+        with patch.dict(os.environ, operator_env(), clear=True):
+            report = inspect_authoritative_projection(runtime, args())
+        self.assertNotIn("input_indices", str(report))
+        self.assertNotIn("input_index", str(report))
+        self.assertTrue(report["operator_window_expiry_enforced"])
+        self.assertTrue(report["exact_session_allowlist_enforced"])
 
     def test_no_duplicate_healthy_session(self):
         only = [event(2)]
         runtime = FakeRuntime(only)
-        with patch.dict(os.environ, {"CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED": "1"}):
+        with patch.dict(os.environ, operator_env()):
             result = inspect_authoritative_projection(runtime, args())
         self.assertEqual(result["status"], "NO_DUPLICATE_CREATE_EVENTS")
         self.assertEqual(result["duplicate_opportunity_groups"], 0)
