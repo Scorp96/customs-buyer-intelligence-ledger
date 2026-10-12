@@ -193,7 +193,9 @@ def plan_public_source_tasks(
         raise ValueError("SOURCE_TASK_CONTINUATION_OFFSET_OUT_OF_RANGE")
     next_offset = offset + len(returned)
     has_more = next_offset < candidate_count
-    local_truncated = has_more
+    # A continuation page cannot independently prove exhaustive coverage.
+    # Even its final page omits every earlier task.
+    local_truncated = has_more or offset > 0
     next_token = _encode_cursor(plan_fingerprint, next_offset) if has_more else None
     upstream_truncated = bool(discovery_plan.get("truncated"))
     return {
@@ -208,7 +210,8 @@ def plan_public_source_tasks(
         "continuation_token": next_token,
         "next_cursor": next_token,
         "has_more": has_more,
-        "truncated": has_more or upstream_truncated,
+        "truncated": local_truncated or upstream_truncated,
+        "page_is_complete_plan": not (local_truncated or upstream_truncated),
         "local_task_truncated": local_truncated,
         "upstream_query_plan_truncated": upstream_truncated,
         "tasks": returned,
@@ -255,7 +258,27 @@ def evaluate_source_coverage(plan: dict[str, Any], receipts: list[dict[str, Any]
             terminal_ids.add(call_id)
 
     open_call_ids = [call_id for call_id in planned_ids if call_id not in terminal_ids]
-    is_truncated = bool(plan.get("truncated"))
+    # Final continuation pages and hand-assembled partial plans are not
+    # whole-plan coverage receipts, even when has_more=False.
+    offset = plan.get("offset", 0)
+    try:
+        offset_is_positive = int(offset) > 0
+    except (TypeError, ValueError):
+        offset_is_positive = True
+    candidate_count = plan.get("task_candidate_count")
+    try:
+        candidate_count_exceeds_page = (
+            candidate_count is not None and int(candidate_count) > len(planned_ids)
+        )
+    except (TypeError, ValueError):
+        candidate_count_exceeds_page = True
+    is_truncated = bool(
+        plan.get("truncated")
+        or plan.get("has_more")
+        or plan.get("upstream_query_plan_truncated")
+        or offset_is_positive
+        or candidate_count_exceeds_page
+    )
     if is_truncated:
         complete = False
         status = "INCOMPLETE_TRUNCATED_PLAN"
