@@ -117,6 +117,14 @@ def validate_machinery_catalog_candidates(
             "verified_buyer": False,
             "seller_model_capability_verified": False,
         })
+    if expected_row_count is not None:
+        expected_ids = [
+            f"SMARTORS-20261012-{n:04d}" for n in range(1, len(rows) + 1)
+        ]
+        if [row["catalog_row_id"] for row in rows] != expected_ids:
+            raise ValueError("CBI_MACHINERY_CATALOG_ROW_LINEAGE_NOT_CONTIGUOUS")
+        if len(source_hashes) != 1:
+            raise ValueError("CBI_MACHINERY_CATALOG_MIXED_SOURCE_FINGERPRINT")
     if expected_hs6_candidate_count is not None and candidates != expected_hs6_candidate_count:
         raise ValueError("CBI_MACHINERY_CATALOG_HS6_COUNT_MISMATCH")
     return {
