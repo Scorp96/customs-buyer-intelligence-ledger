@@ -134,5 +134,70 @@ class BalancedSourceTaskPlannerTests(unittest.TestCase):
             plan_public_source_tasks(p, changed, max_tasks=10, continuation_token=first["continuation_token"])
 
 
+    def test_last_page_not_confused_with_complete_plan(self):
+        p, d = fixtures()
+        first = plan_public_source_tasks(p, d, max_tasks=11)
+        page = first
+        while page["has_more"]:
+            page = plan_public_source_tasks(
+                p, d, max_tasks=11,
+                continuation_token=page["continuation_token"],
+            )
+        self.assertFalse(page["has_more"])
+        self.assertGreater(page["offset"], 0)
+        self.assertTrue(page["truncated"])
+        self.assertFalse(page["page_is_complete_plan"])
+        receipts = [
+            {
+                "call_id": row["call_id"],
+                "result": "NEGATIVE_EXHAUSTED",
+                "completed_at": "2026-10-12T00:00:00Z",
+                "raw_result_locator": "https://example.test/fixture/no-results",
+            }
+            for row in page["tasks"]
+        ]
+        verdict = evaluate_source_coverage(page, receipts)
+        self.assertFalse(verdict["source_coverage_complete"])
+        self.assertEqual(verdict["status"], "INCOMPLETE_TRUNCATED_PLAN")
+
+    def test_partial_plan_forged_truncated_false_still_blocked(self):
+        p, d = fixtures()
+        first = plan_public_source_tasks(p, d, max_tasks=9)
+        second = plan_public_source_tasks(
+            p, d, max_tasks=9,
+            continuation_token=first["continuation_token"],
+        )
+        second["truncated"] = False
+        second["has_more"] = False
+        receipts = [
+            {
+                "call_id": row["call_id"],
+                "result": "NEGATIVE_EXHAUSTED",
+                "completed_at": "2026-10-12T00:00:00Z",
+                "raw_result_locator": "https://example.test/fixture/no-results",
+            }
+            for row in second["tasks"]
+        ]
+        verdict = evaluate_source_coverage(second, receipts)
+        self.assertFalse(verdict["source_coverage_complete"])
+
+    def test_unpaginated_full_plan_remains_eligible_for_full_coverage(self):
+        p, d = fixtures()
+        full = plan_public_source_tasks(p, d, max_tasks=1000)
+        self.assertTrue(full["page_is_complete_plan"])
+        self.assertFalse(full["truncated"])
+        receipts = [
+            {
+                "call_id": row["call_id"],
+                "result": "NEGATIVE_EXHAUSTED",
+                "completed_at": "2026-10-12T00:00:00Z",
+                "raw_result_locator": "https://example.test/fixture/no-results",
+            }
+            for row in full["tasks"]
+        ]
+        verdict = evaluate_source_coverage(full, receipts)
+        self.assertTrue(verdict["source_coverage_complete"])
+
+
 if __name__ == "__main__":
     unittest.main()
