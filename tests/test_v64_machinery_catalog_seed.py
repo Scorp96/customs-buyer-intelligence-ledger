@@ -94,6 +94,27 @@ class MachineryCatalogueCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ROW_COUNT_MISMATCH"):
             validate_machinery_catalog_candidates(rows, expected_row_count=99)
 
+    def test_contiguous_row_lineage_required_for_strict_99_item_import(self):
+        rows = fixtures(99, 85)
+        rows[20]["catalog_row_id"] = "SMARTORS-20261012-0100"
+        with self.assertRaisesRegex(ValueError, "ROW_LINEAGE_NOT_CONTIGUOUS"):
+            validate_machinery_catalog_candidates(
+                rows, expected_row_count=99,
+                expected_hs6_candidate_count=85,
+            )
+
+    def test_order_swap_is_not_silently_accepted_as_same_catalogue(self):
+        rows = fixtures(99, 85)
+        rows[0], rows[1] = rows[1], rows[0]
+        with self.assertRaisesRegex(ValueError, "ROW_LINEAGE_NOT_CONTIGUOUS"):
+            validate_machinery_catalog_candidates(rows, expected_row_count=99)
+
+    def test_strict_catalogue_mixed_workbook_sources_fail_closed(self):
+        rows = fixtures(99, 85)
+        rows[5]["source_document_sha256"] = "c" * 64
+        with self.assertRaisesRegex(ValueError, "MIXED_SOURCE_FINGERPRINT"):
+            validate_machinery_catalog_candidates(rows, expected_row_count=99)
+
     def test_budget_spans_groups_and_is_not_search_execution(self):
         source = validate_machinery_catalog_candidates(fixtures())
         plan = plan_catalog_customs_queries(source, target_country="Indonesia", limit=5)
