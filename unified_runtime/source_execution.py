@@ -5,6 +5,7 @@ import binascii
 import hashlib
 import json
 from typing import Any
+from collections import deque
 
 
 SOURCE_FAMILIES_BY_BRANCH_GROUP: dict[str, tuple[str, ...]] = {
@@ -50,6 +51,7 @@ SOURCE_FAMILIES_BY_BRANCH_GROUP: dict[str, tuple[str, ...]] = {
 
 _TERMINAL_RESULTS = {"POSITIVE", "NEGATIVE_EXHAUSTED", "NOT_APPLICABLE_JUSTIFIED"}
 _CURSOR_SCHEMA = "cbi.v63-source-task-cursor.v1"
+_TASK_ORDER_POLICY = "BALANCED_GROUP_BRANCH_FAMILY_V1"
 
 
 def _call_id(payload: dict[str, Any]) -> str:
@@ -59,6 +61,7 @@ def _call_id(payload: dict[str, Any]) -> str:
 
 def _plan_fingerprint(expansion_plan: dict[str, Any], queries: list[str]) -> str:
     payload = {
+        "task_order_policy": _TASK_ORDER_POLICY,
         "product_profile_id": str(expansion_plan.get("product_profile_id") or "").upper(),
         "market_acceptance": str(expansion_plan.get("market_acceptance") or "").upper(),
         "branches": expansion_plan.get("branches") or {},
@@ -121,31 +124,63 @@ def plan_public_source_tasks(
     plan_fingerprint = _plan_fingerprint(expansion_plan, queries)
     offset = _decode_cursor(continuation_token or "", plan_fingerprint)
     branches = expansion_plan.get("branches") or {}
-    def iter_tasks():
-        seen: set[str] = set()
-        for branch_group, branch_names in branches.items():
-            if branch_group not in SOURCE_FAMILIES_BY_BRANCH_GROUP:
+
+    def branch_candidates(group: str, branch: str):
+        # Query-major produces source-family diversity before trying dozens of
+        # variants from the same data provider. Identity/call_id stay stable.
+        for query in queries:
+            for family in SOURCE_FAMILIES_BY_BRANCH_GROUP[group]:
+                yield {
+                    "branch_group": group,
+                    "branch": branch,
+                    "source_family": family,
+                    "query": query,
+                }
+
+    def group_candidates(group: str):
+        # Interleave branches inside each group so 'same_supplier_buyer'
+        # cannot consume the entire TRADE_GRAPH allocation.
+        pending = deque(
+            branch_candidates(group, str(branch))
+            for branch in (branches.get(group) or [])
+            if str(branch).strip()
+        )
+        while pending:
+            iterator = pending.popleft()
+            try:
+                item = next(iterator)
+            except StopIteration:
                 continue
-            for branch in branch_names or []:
-                for source_family in SOURCE_FAMILIES_BY_BRANCH_GROUP[branch_group]:
-                    for query in queries:
-                        identity = {
-                            "branch_group": str(branch_group),
-                            "branch": str(branch),
-                            "source_family": source_family,
-                            "query": query,
-                        }
-                        call_id = _call_id(identity)
-                        if call_id in seen:
-                            continue
-                        seen.add(call_id)
-                        yield {
-                            "call_id": call_id,
-                            **identity,
-                            "execution_required": True,
-                            "receipt_required": True,
-                            "search_execution_performed": False,
-                        }
+            pending.append(iterator)
+            yield item
+
+    def iter_tasks():
+        # Deterministic six-group round robin; the dict's incidental insertion
+        # order cannot change pagination with an unchanged plan fingerprint.
+        pending = deque(
+            group_candidates(group)
+            for group in SOURCE_FAMILIES_BY_BRANCH_GROUP
+            if branches.get(group)
+        )
+        seen: set[str] = set()
+        while pending:
+            iterator = pending.popleft()
+            try:
+                identity = next(iterator)
+            except StopIteration:
+                continue
+            pending.append(iterator)
+            call_id = _call_id(identity)
+            if call_id in seen:
+                continue
+            seen.add(call_id)
+            yield {
+                "call_id": call_id,
+                **identity,
+                "execution_required": True,
+                "receipt_required": True,
+                "search_execution_performed": False,
+            }
 
     candidate_count = 0
     returned: list[dict[str, Any]] = []
@@ -158,7 +193,9 @@ def plan_public_source_tasks(
         raise ValueError("SOURCE_TASK_CONTINUATION_OFFSET_OUT_OF_RANGE")
     next_offset = offset + len(returned)
     has_more = next_offset < candidate_count
-    local_truncated = has_more
+    # A continuation page cannot independently prove exhaustive coverage.
+    # Even its final page omits every earlier task.
+    local_truncated = has_more or offset > 0
     next_token = _encode_cursor(plan_fingerprint, next_offset) if has_more else None
     upstream_truncated = bool(discovery_plan.get("truncated"))
     return {
@@ -169,10 +206,12 @@ def plan_public_source_tasks(
         "returned_count": len(returned),
         "offset": offset,
         "plan_fingerprint": plan_fingerprint,
+        "task_order_policy": _TASK_ORDER_POLICY,
         "continuation_token": next_token,
         "next_cursor": next_token,
         "has_more": has_more,
-        "truncated": has_more or upstream_truncated,
+        "truncated": local_truncated or upstream_truncated,
+        "page_is_complete_plan": not (local_truncated or upstream_truncated),
         "local_task_truncated": local_truncated,
         "upstream_query_plan_truncated": upstream_truncated,
         "tasks": returned,
@@ -219,7 +258,27 @@ def evaluate_source_coverage(plan: dict[str, Any], receipts: list[dict[str, Any]
             terminal_ids.add(call_id)
 
     open_call_ids = [call_id for call_id in planned_ids if call_id not in terminal_ids]
-    is_truncated = bool(plan.get("truncated"))
+    # Final continuation pages and hand-assembled partial plans are not
+    # whole-plan coverage receipts, even when has_more=False.
+    offset = plan.get("offset", 0)
+    try:
+        offset_is_positive = int(offset) > 0
+    except (TypeError, ValueError):
+        offset_is_positive = True
+    candidate_count = plan.get("task_candidate_count")
+    try:
+        candidate_count_exceeds_page = (
+            candidate_count is not None and int(candidate_count) > len(planned_ids)
+        )
+    except (TypeError, ValueError):
+        candidate_count_exceeds_page = True
+    is_truncated = bool(
+        plan.get("truncated")
+        or plan.get("has_more")
+        or plan.get("upstream_query_plan_truncated")
+        or offset_is_positive
+        or candidate_count_exceeds_page
+    )
     if is_truncated:
         complete = False
         status = "INCOMPLETE_TRUNCATED_PLAN"

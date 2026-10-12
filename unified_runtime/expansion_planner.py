@@ -58,6 +58,18 @@ BRANCH_GROUPS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# Machined-equipment importers, distributors and turnkey integrators are
+# distinct from the PVC/WPC sign and building-material supply chain. This is
+# a research planning prior, NOT proof of actual import or seller capability.
+_MACHINERY_CHANNEL_BRANCHES: tuple[str, ...] = (
+    "machinery_importer",
+    "machinery_distributor",
+    "equipment_integrator",
+    "turnkey_production_line_integrator",
+    "industrial_equipment_wholesaler",
+    "machinery_service_parts_network",
+)
+
 _RELATIVE_MODIFIER = {
     "UPGRADE_TARGET": 1.30,
     "SAME_TIER_HIGH": 1.15,
@@ -99,6 +111,10 @@ def plan_expansion(context: dict[str, Any]) -> dict[str, Any]:
     # Validate the profile and obtain scheduling priority without changing evidence/grade.
     profile_weight = portfolio_priority(profile_id)
     branches = {name: list(values) for name, values in BRANCH_GROUPS.items()}
+    if profile_id == "SOAP_MACHINERY":
+        # Keep the same six branch groups and source-family execution contract,
+        # but never reuse plastics/signage channel archetypes for machines.
+        branches["CHANNEL_GRAPH"] = list(_MACHINERY_CHANNEL_BRANCHES)
     branches["MARKET_GRAPH"] = list(_market_branches(level))
     branches["CROSS_SELL_GRAPH"] = list(_cross_sell_branches(level))
     return {
