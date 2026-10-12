@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
+import hmac
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from unified_runtime.opportunity_duplicate_audit_v64 import diagnose_opportunity_create_events
@@ -41,6 +44,28 @@ def inspect_authoritative_projection(
     investigation_id = str(arguments.get("investigation_id") or "")
     if not _SESSION_ID.fullmatch(investigation_id):
         raise ValueError("CBI_V64_PROJECTION_DIAGNOSTIC_SESSION_INVALID")
+    # This is an operator-only server capability. The ordinary MCP bearer
+    # session and the request's acknowledgement are not authorization to
+    # enumerate private production investigations. A server-side per-session
+    # allowlist and expiry are required, even when ENABLED=1.
+    expected_identity = os.getenv("CBI_V64_OPERATOR_DIAG_SESSION_SHA256", "").lower()
+    expiry = os.getenv("CBI_V64_OPERATOR_DIAG_EXPIRES_AT", "")
+    if not _SHA256.fullmatch(expected_identity):
+        raise RuntimeError("CBI_V64_PROJECTION_DIAGNOSTIC_ALLOWLIST_MISSING")
+    actual_identity = hashlib.sha256(investigation_id.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(actual_identity, expected_identity):
+        raise RuntimeError("CBI_V64_PROJECTION_DIAGNOSTIC_SESSION_NOT_ALLOWED")
+    try:
+        expires_at = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("CBI_V64_PROJECTION_DIAGNOSTIC_EXPIRY_INVALID") from exc
+    if expires_at.tzinfo is None:
+        raise RuntimeError("CBI_V64_PROJECTION_DIAGNOSTIC_EXPIRY_INVALID")
+    now = datetime.now(timezone.utc)
+    remaining = expires_at.astimezone(timezone.utc) - now
+    if not (timedelta(0) < remaining <= timedelta(minutes=15)):
+        raise RuntimeError("CBI_V64_PROJECTION_DIAGNOSTIC_WINDOW_CLOSED")
+
     wanted_seq = arguments.get("expected_last_safe_seq")
     if type(wanted_seq) is not int or wanted_seq < 1:
         raise ValueError("CBI_V64_PROJECTION_DIAGNOSTIC_SEQ_REQUIRED")
@@ -96,7 +121,6 @@ def inspect_authoritative_projection(
             "investigation_equal": row["investigation_equal"],
             "account_equal": row["account_equal"],
             "profile_equal": row["profile_equal"],
-            "input_indices": row["input_indices"],
         }
         for row in details["collisions"]
     ]
@@ -114,15 +138,14 @@ def inspect_authoritative_projection(
         "duplicate_opportunity_groups": details["duplicate_opportunity_groups"],
         "invalid_event_count": details["invalid_event_count"],
         "counts": details["counts"],
-        "invalid_event_kinds": [
-            {"input_index": x["input_index"], "detail_code": x["detail_code"]}
-            for x in details["invalid_events"]
-        ],
+        "invalid_event_codes": sorted({x["detail_code"] for x in details["invalid_events"]}),
         "collisions": safe_collisions,
         "source_event_count": len(events),
         "source_last_safe_seq": wanted_seq,
         "raw_events_exported": False,
         "raw_identifiers_exposed": False,
+        "operator_window_expiry_enforced": True,
+        "exact_session_allowlist_enforced": True,
         "private_session_state_exported": False,
         "recovery_acceptance_achieved": False,
     }

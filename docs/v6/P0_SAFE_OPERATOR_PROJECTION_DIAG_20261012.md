@@ -10,13 +10,17 @@ The opt-in MCP tool `inspect_opportunity_projection_integrity` offers a narrower
 
 1. First independently confirm the active Render tenant, authenticated MCP route, Git SHA and service ID. Ensure no split-brain alternate CBI runtime is selected.
 2. Obtain the exact investigation's current `last_safe_seq` and `last_safe_event_hash` from `get_investigation_health`. Do not use stale evidence from another session or another timestamp.
-3. Only during an authorized, time-bounded operator window set server env `CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED=1`. This should be managed by the deployment operator; do not add an arbitrary model/client override.
+3. Only during a short approved operator window, configure three SERVER-SIDE settings together:
+   - `CBI_V64_OPERATOR_PROJECTION_DIAGNOSTIC_ENABLED=1`;
+   - `CBI_V64_OPERATOR_DIAG_SESSION_SHA256` = the lowercase SHA-256 of the **one** authorized canonical investigation ID (not the raw ID);
+   - `CBI_V64_OPERATOR_DIAG_EXPIRES_AT` = RFC3339 UTC time no more than **15 minutes ahead**.
+   Missing, mismatched, expired, timezone-free, or excessively long windows fail before a SessionStore read. A client-provided acknowledgement is *not* a substitute for operator authorization. Do not set this in the ordinary ChatGPT tool request.
 4. Call the new read-only tool with **only** these fields:
    - `investigation_id` (exact canonical)
    - `expected_last_safe_seq` (positive integer)
    - `expected_last_safe_event_hash` (exact 64-character SHA-256)
    - `acknowledge_private_state=true`
-5. Receipt: duplicate count, classification (same-correlation replay candidate vs distinct-correlation conflict), source event count, and exact-tail match. No unredacted WAL or identity data.
+5. Receipt: duplicate counts, classification (same-correlation replay candidate vs distinct-correlation conflict), source event count, and exact-tail match. No original event positions, unredacted WAL, Account IDs, or correlation identity data.
 6. Disable the server flag when the operator window ends. Never expose this tool to a public unauthenticated MCP endpoint.
 
 ## Non-negotiable boundaries
