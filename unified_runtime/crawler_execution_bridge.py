@@ -399,9 +399,36 @@ def _tokenize_goal_text(value: str) -> set[str]:
     }
 
 
+def _task_is_contact_research(task: dict[str, Any], task_key: str) -> bool:
+    """Keep route discovery distinct from generic public-source research.
+
+    Historically all task_id calls were treated as contact searches, which
+    mislabels a successful HS/product document fetch as NEGATIVE_EXHAUSTED
+    when the page naturally contains no phone or email. Preserve legacy
+    contact task behavior unless an explicit non-contact intent is supplied.
+    """
+    declared = str(task.get("research_type") or task.get("task_type") or "").strip().upper()
+    if declared in {"CONTACT", "CONTACT_DISCOVERY", "BUYER_ROUTE", "ROUTE"}:
+        return True
+    if declared in {"PUBLIC_INFORMATION", "HS_CLASSIFICATION", "PRODUCT", "TRADE", "PUBLIC_SOURCE", "COMPANY_PROFILE"}:
+        return False
+    family = str(task.get("source_family") or "").strip().lower()
+    target = str(task.get("route_target") or "").strip().upper()
+    if target in {"NAMED", "COMPANY"} or "contact" in family:
+        return True
+    if any(token in family for token in ("product", "catalog", "hs_classification", "tariff", "nomenclature")):
+        return False
+    if str(task.get("research_intent") or "").strip():
+        # An explicit free-text research objective is NOT proof of a
+        # contact-search task. Callers seeking contacts should set
+        # research_type=CONTACT or use a contact Source Family.
+        return False
+    return task_key == "task_id"
+
+
 def _task_goal_terms(task: dict[str, Any]) -> set[str]:
     terms: set[str] = set()
-    for key in ("query", "source_family", "route_target", "branch", "branch_group"):
+    for key in ("query", "research_intent", "source_family", "route_target", "branch", "branch_group"):
         terms.update(_tokenize_goal_text(str(task.get(key) or "")))
 
     route_target = str(task.get("route_target") or "").upper()
@@ -888,7 +915,7 @@ class CrawlExecutionBridge:
         failed_urls: list[dict[str, str]] = []
         source_family = str(task.get("source_family") or "")
         goal_terms = _task_goal_terms(task)
-        is_contact_task = task_key == "task_id"
+        is_contact_task = _task_is_contact_research(task, task_key)
 
         if max_elapsed_seconds is not None:
             max_elapsed_seconds = float(max_elapsed_seconds)
@@ -1096,7 +1123,7 @@ class CrawlExecutionBridge:
             "retryable": bool(source_throttled or source_access_blocked or source_unavailable),
             "fallback_required": bool(source_blocked),
             "fallback_search_plan": fallback_plan,
-            "negative_contact_conclusion_allowed": not source_blocked,
+            "negative_contact_conclusion_allowed": bool(is_contact_task and not source_blocked),
             "crawler_backend": getattr(self.backend, "name", type(self.backend).__name__),
             "search_execution_performed": True,
             "planning_is_execution_proof": False,

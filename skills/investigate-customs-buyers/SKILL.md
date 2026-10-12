@@ -109,6 +109,20 @@ An external data-provider plugin is an optional evidence source, not a copied da
 
 Preserve 4.2.1's product, customs, formula, entity, report and Chinese-review behavior; legacy Fast Scan data may be read but new CBI enterprise investigations are EXHAUSTIVE only. One shipment cannot prove an A-grade Buyer, repeat demand, normal monthly demand, warehouse/channel capability, sole supplier, specifications, density, structure or end use.
 
+## Machinery / HS nomenclature and customs-buyer evidence boundary
+
+When a mechanical-equipment catalogue or HS workbook is supplied, read the actual catalogue/model descriptions before building classification candidates. Keep three separate evidence layers:
+
+1. **Seller product**: exact machine model, main function, technical capability, automations, performance and origin; never upgrade discovery aliases or marketing copy into verified factory capability. Until independently bound, mark seller manufacturing capability `UNCONFIGURED`.
+2. **Customs classification**: WCO HS six-digit *candidate* (edition pinned), destination/import country, national 8–10 digit tariff, classification notes, competing headings, and official citation. Mixed-function systems, complete lines and components require separate General Interpretative Rules analysis; a six-digit match is not a binding country-specific classification. An unverified 10-digit code must remain empty.
+3. **Actual demand and buyer**: independent current shipment/import evidence tied to the legal buyer, quantity/period, customs/product description, consignee/IOR/Ultimate Buyer role and supplier continuity. A correct HS code, manufacturer's website or an adjacent industry company is not evidence of actual machine purchase.
+
+For public HS/reference-document research, declare `research_type=HS_CLASSIFICATION` or `PUBLIC_INFORMATION` in `execute_public_crawl.task`, and include specific `research_intent`/`source_family`. Never treat a successful technical document fetch with no email/phone as `NEGATIVE_EXHAUSTED` for contacts; crawler contact exhaustion only applies to a *contact* task with properly scoped source coverage. Preserve the original source locator, exact six-digit code, update/version date, uncertainty and retrieval receipt.
+
+For buyer expansion, first evaluate direct import evidence for the correct mechanical product, then use HS+commercial descriptions as discovery seeds, separate machine from parts and packaging consumables, independently verify buyer ownership and qualify sellers/distributors/end users. Do not inherit PVC portfolio weights, historical company identity, or B+ grade from unrelated products. Negative trade-index results from one public provider are `UNKNOWN/NOT_FOUND_IN_THIS_SOURCE`, never proof that the company has no imports.
+
+Upgrade acceptance is blocked unless the branch/code/skills/MCP tool schema/production build identity are pinned to the same reviewed release and offline regressions plus authorized staging/live canaries pass. A GitHub CI pass alone never proves live deployment or correct buyer classification.
+
 ## Output and outreach
 
 For interim FULL_AUDIT updates, lead with the latest verified decision-useful findings, concrete source links, conflicts and a current interrupted/in-progress state; the complete dossier and Closure remain pending until verified.
