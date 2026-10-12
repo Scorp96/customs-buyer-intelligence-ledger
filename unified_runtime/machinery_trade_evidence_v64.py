@@ -45,10 +45,11 @@ def assess_machinery_trade_buyer(
     buyer: dict[str, Any] | None = None,
     seller_capability: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Assess one claimant without deducing imports solely from HS/category.
+    """Evaluate supplied evidence shape, without independently reading its sources.
 
-    Caller should pass only provenance-bound observations. Flags like 'verified'
-    without a concrete locator do not count as independent source evidence.
+    This pure preflight NEVER certifies actual trade, a national ruling or
+    a seller model from caller-provided booleans/URLs alone. Independent
+    Runtime/Host source verification and buyer adjudication must follow.
     """
     hs = dict(hs or {})
     shipment = dict(shipment or {})
@@ -122,13 +123,13 @@ def assess_machinery_trade_buyer(
         and _text(buyer, "ultimate_buyer_evidence_locator")
     )
     if ultimate_buyer_supported:
-        stage = "VERIFIED_ACTUAL_MACHINE_BUYER"
+        stage = "CLAIMED_ULTIMATE_MACHINE_BUYER_REQUIRES_INDEPENDENT_SOURCE_CHECK"
     elif shipment_supported and role == "IMPORTER_OF_RECORD":
-        stage = "VERIFIED_MACHINE_IMPORTER_OF_RECORD"
+        stage = "CLAIMED_MACHINE_IMPORTER_OF_RECORD_REQUIRES_INDEPENDENT_SOURCE_CHECK"
     elif shipment_supported and role == "CONSIGNEE":
-        stage = "VERIFIED_MACHINE_CONSIGNEE_NOT_NECESSARILY_BUYER"
+        stage = "CLAIMED_MACHINE_CONSIGNEE_NOT_NECESSARILY_BUYER"
     elif shipment_supported:
-        stage = "VERIFIED_MACHINE_TRADE_BUYER_ULTIMATE_UNRESOLVED"
+        stage = "CLAIMED_MACHINE_TRADE_BUYER_ULTIMATE_UNRESOLVED"
     elif identity_bound and (
         exact_machine or _text(buyer, "industry_product_evidence_locator")
     ):
@@ -150,10 +151,15 @@ def assess_machinery_trade_buyer(
         "hs6_candidate": code if valid_hs else None,
         "national_tariff_verified_as_source_claim": national_verified,
         "shipment_supported": shipment_supported,
+        "shipment_provenance_structurally_complete": shipment_supported,
+        "actual_import_independently_verified": False,
+        "independent_source_check_required": True,
         "import_provenance_type": _text(shipment, "source_type").upper() if direct_source else None,
         "ultimate_buyer_supported": ultimate_buyer_supported,
+        "ultimate_buyer_independently_verified": False,
         "machine_identity_supported": exact_machine,
         "seller_capability_supported_for_model": capability_verified,
+        "seller_capability_independently_verified": False,
         "commercial_value_grade": None,
         "outreach_readiness": "SEPARATE_ROUTE_AUDIT_REQUIRED",
         "negative_trade_index_proves_no_purchase": False,
