@@ -112,6 +112,21 @@ class MachineryTradeEvidenceTests(unittest.TestCase):
         self.assertEqual(r["stage"], "PROSPECT_UNVERIFIED_MACHINE_IMPORT")
         self.assertFalse(r["missing_contact_rejects_research_candidate"])
 
+    def test_industry_factory_with_unknown_trade_role_still_researchable(self):
+        buyer = {**BUYER, "trade_role": "UNKNOWN",
+                 "industry_product_evidence_locator": "https://example.test/factory"}
+        r = self._check(shipment={}, buyer=buyer)
+        self.assertEqual(r["stage"], "PROSPECT_UNVERIFIED_MACHINE_IMPORT")
+        self.assertFalse(r["actual_import_independently_verified"])
+        self.assertTrue(r["industry_prospect_supported_as_research_lead"])
+
+    def test_forwarder_cannot_inherit_industry_prospect_from_same_page(self):
+        buyer = {**BUYER, "trade_role": "FORWARDER",
+                 "industry_product_evidence_locator": "https://example.test/factory"}
+        r = self._check(shipment={}, buyer=buyer)
+        self.assertEqual(r["stage"], "DISCOVERY_CANDIDATE")
+        self.assertFalse(r["industry_prospect_supported_as_research_lead"])
+
     def test_national_code_without_official_locator_not_verified(self):
         hs = {**HS, "national_tariff_code": "8422309000"}
         r = self._check(hs=hs)
