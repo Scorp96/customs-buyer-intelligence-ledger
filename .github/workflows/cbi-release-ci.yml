@@ -103,8 +103,16 @@ jobs:
               try:
                   with urllib.request.urlopen(base + "/healthz", timeout=1) as response:
                       health = json.load(response)
-                  if health.get("status") == "ok" and health.get("durable_root_bound") is True:
+                  # /healthz is intentionally privacy-minimal: no durable root
+                  # or object-store details may be published to unauthenticated clients.
+                  # Internal durability/readiness is checked via MCP below.
+                  if (
+                      health.get("status") == "ok"
+                      and health.get("service") == "customs-buyer-intelligence"
+                      and set(health) == {"status", "service"}
+                  ):
                       break
+                  last = "PUBLIC_HEALTH_CONTRACT_MISMATCH_KEYS:" + ",".join(sorted(health))
               except Exception as exc:
                   last = exc
               time.sleep(0.25)
@@ -167,6 +175,10 @@ jobs:
               {"Mcp-Name": "get_runtime_health"},
           )
           assert "content" in health_call, health_call
+          # Keep the durability/status assertion behind the protected MCP path.
+          assert health_call.get("structuredContent", {}).get("status") == "READY", (
+              "RUNTIME_INTERNAL_READINESS_NOT_READY"
+          )
           print("Cloud Runtime Docker HTTP smoke: PASS")
           PY
 
