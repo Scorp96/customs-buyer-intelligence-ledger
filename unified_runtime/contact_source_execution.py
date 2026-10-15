@@ -44,10 +44,10 @@ def plan_contact_source_tasks(
         raise ValueError("max_tasks must be >= 1")
     max_tasks = min(int(max_tasks), 1000)
 
-    company_ready = bool(contact_plan.get("company_route_ready"))
-    named_ready = bool(contact_plan.get("named_route_ready"))
+    company_ready = contact_plan.get("company_route_ready") is True
+    named_ready = contact_plan.get("named_route_ready") is True
     named_policy = str(contact_plan.get("named_route_policy") or "NONE")
-    company_required = bool(contact_plan.get("company_route_required"))
+    company_required = contact_plan.get("company_route_required") is not False
     named_required = named_policy == "EXHAUSTIVE"
 
     tasks: list[dict[str, Any]] = []
@@ -120,13 +120,13 @@ def _positive_route(receipt: dict[str, Any], route_target: str) -> bool:
         return False
     if not [value for value in receipt.get("route_evidence_ids", []) if str(value).strip()]:
         return False
-    if not bool(receipt.get("verified")) or bool(receipt.get("guessed")):
+    if receipt.get("verified") is not True or bool(receipt.get("guessed")):
         return False
     owner_scope = str(receipt.get("owner_scope") or "").upper()
     if route_target == "COMPANY":
         return owner_scope == "ACCOUNT"
     if route_target == "NAMED":
-        return owner_scope == "PERSON" and bool(receipt.get("current_company_association"))
+        return owner_scope == "PERSON" and receipt.get("current_company_association") is True
     return False
 
 
@@ -143,8 +143,8 @@ def evaluate_contact_coverage(plan: dict[str, Any], receipts: list[dict[str, Any
         if task_id:
             receipts_by_task.setdefault(task_id, []).append(receipt)
 
-    company_route_proven = bool(plan.get("initial_company_route_ready"))
-    named_route_proven = bool(plan.get("initial_named_route_ready"))
+    company_route_proven = plan.get("initial_company_route_ready") is True
+    named_route_proven = plan.get("initial_named_route_ready") is True
     terminal_negative_ids: set[str] = set()
 
     for task_id, task in by_id.items():
@@ -162,7 +162,7 @@ def evaluate_contact_coverage(plan: dict[str, Any], receipts: list[dict[str, Any
     if named_route_proven:
         company_route_proven = True
 
-    required_tasks = [task for task in tasks if bool(task.get("required_for_completion"))]
+    required_tasks = [task for task in tasks if task.get("required_for_completion") is not False]
     open_required: list[str] = []
     for task in required_tasks:
         task_id = str(task.get("task_id"))
@@ -173,8 +173,8 @@ def evaluate_contact_coverage(plan: dict[str, Any], receipts: list[dict[str, Any
         open_required.append(task_id)
 
     truncated = bool(plan.get("truncated"))
-    named_required = bool(plan.get("named_route_required_for_completion"))
-    company_required = bool(plan.get("company_route_required_for_completion"))
+    named_required = plan.get("named_route_required_for_completion") is not False
+    company_required = plan.get("company_route_required_for_completion") is not False
 
     if truncated:
         complete = False
@@ -185,7 +185,11 @@ def evaluate_contact_coverage(plan: dict[str, Any], receipts: list[dict[str, Any
     elif company_route_proven and not named_required:
         complete = True
         reason = "COMPANY_ROUTE_READY"
-    elif not open_required and required_tasks:
+    elif (
+        not open_required and required_tasks
+        and (not named_required or any(str(t.get("route_target") or "").upper() == "NAMED" for t in required_tasks))
+        and (not company_required or any(str(t.get("route_target") or "").upper() == "COMPANY" for t in required_tasks))
+    ):
         complete = True
         reason = "REQUIRED_CONTACT_SOURCES_EXHAUSTED"
     elif not company_required and not named_required:

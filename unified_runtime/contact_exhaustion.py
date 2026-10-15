@@ -207,8 +207,8 @@ def recompute_outreach_readiness(route_state: dict[str, Any]) -> dict[str, Any]:
 
     company_ready = any(
         isinstance(route, dict)
-        and bool(route.get("verified"))
-        and bool(route.get("route_eligible"))
+        and route.get("verified") is True
+        and route.get("route_eligible") is True
         and str(route.get("owner_scope") or "").strip().upper() in {"ACCOUNT", "COMPANY", "BUYER"}
         and not bool(route.get("guessed"))
         and _route_is_current(route)
@@ -217,11 +217,11 @@ def recompute_outreach_readiness(route_state: dict[str, Any]) -> dict[str, Any]:
 
     named_ready = any(
         isinstance(route, dict)
-        and bool(route.get("verified"))
-        and bool(route.get("route_eligible"))
+        and route.get("verified") is True
+        and route.get("route_eligible") is True
         and not bool(route.get("guessed"))
-        and bool(route.get("current_company_association"))
-        and bool(route.get("role_relevant"))
+        and route.get("current_company_association") is True
+        and route.get("role_relevant") is True
         and _route_is_current(route)
         for route in named_routes
     )

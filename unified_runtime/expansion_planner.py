@@ -158,7 +158,7 @@ def evaluate_expansion_saturation(state: dict[str, Any]) -> dict[str, Any]:
     ]
     anchors = list(state.get("unexpanded_promoted_anchors") or [])
     pivots = list(state.get("open_high_yield_pivots") or [])
-    dedup_complete = bool(state.get("cycle_dedup_complete"))
+    dedup_complete = state.get("cycle_dedup_complete") is True
     blockers: list[str] = []
     if remaining:
         blockers.append("MATERIAL_EXPANSION_WORK_REMAINS")

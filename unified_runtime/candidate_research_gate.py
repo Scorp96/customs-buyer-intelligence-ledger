@@ -41,15 +41,15 @@ def assess_candidate_researchability(payload: dict[str, Any]) -> dict[str, Any]:
     eiv = max(0.0, float(payload.get("eiv") or 0.0))
     canonical_status = str(payload.get("canonical_status") or "UNRESOLVED").strip().upper()
     canonical_ready = canonical_status in _CANONICAL_READY
-    procurement_proven = bool(payload.get("procurement_proven"))
-    product_or_application_signal = bool(payload.get("product_or_application_signal"))
+    procurement_proven = payload.get("procurement_proven") is True
+    product_or_application_signal = payload.get("product_or_application_signal") is True
 
     rejection_reasons: list[str] = []
-    if bool(payload.get("proven_negative")):
+    if payload.get("proven_negative") is True:
         rejection_reasons.append("PROVEN_NEGATIVE")
-    if bool(payload.get("duplicate_proven")):
+    if payload.get("duplicate_proven") is True:
         rejection_reasons.append("PROVEN_DUPLICATE")
-    if bool(payload.get("mismatch_proven")):
+    if payload.get("mismatch_proven") is True:
         rejection_reasons.append("PROVEN_MISMATCH")
 
     qualification_gaps: list[str] = []
