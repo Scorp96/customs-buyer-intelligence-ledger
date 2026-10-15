@@ -112,6 +112,10 @@ from mcp.remote_durability_checkpoint_v63 import (  # noqa: E402
     install_remote_durability_checkpoint,
 )
 from mcp.crawler_tool_v64 import crawler_runtime_status  # noqa: E402
+from mcp.runtime_source_attestation_v64 import (  # noqa: E402
+    TOOL_NAME as _SOURCE_ATTESTATION_TOOL_NAME,
+    install_isolated_attestation,
+)
 
 
 _RUNTIME = _production._RUNTIME
@@ -134,6 +138,18 @@ install_remote_startup_attestation(
     _production._v61._server.TOOL_HANDLERS,
     env=os.environ,
     object_store_attached=_PERSISTENCE is not None,
+)
+
+# Disabled by default. Only isolated audit instances may register this
+# additional authenticated in-process tool; production never enables it.
+_ISOLATED_SOURCE_ATTESTATION = _env_flag("CBI_ISOLATED_SOURCE_ATTESTATION")
+if _ISOLATED_SOURCE_ATTESTATION and not _ACCEPTANCE_PIN_REQUIRED:
+    raise RuntimeError("ISOLATED_SOURCE_ATTESTATION_REQUIRES_DEPLOYMENT_SHA_PIN")
+install_isolated_attestation(
+    server_module=_production._v61._server,
+    app_root=ROOT,
+    deployment_git_sha=_DEPLOYMENT_GIT_SHA,
+    enabled=_ISOLATED_SOURCE_ATTESTATION,
 )
 
 
@@ -172,7 +188,9 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
     # post-call R2 sync path, even if some unrelated external mutation occurred
     # concurrently. The tool is intrinsically read-only and explicitly returns
     # production_write_performed=False. Other calls retain both checkpoints.
-    if isinstance(params, dict) and params.get("name") == _OPERATOR_READ_ONLY_TOOL_NAME:
+    if isinstance(params, dict) and params.get("name") in {
+        _OPERATOR_READ_ONLY_TOOL_NAME, _SOURCE_ATTESTATION_TOOL_NAME
+    }:
         return _BASE_DISPATCH(method, params)
     try:
         result = _BASE_DISPATCH(method, params)
