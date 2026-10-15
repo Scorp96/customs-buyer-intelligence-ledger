@@ -7,6 +7,7 @@ class V63RouteReuseTests(unittest.TestCase):
         result = reuse_route_for_opportunity({
             "route_id": "R-C500-1",
             "owner_scope": "ACCOUNT",
+            "account_id": "C500",
             "verified": True,
             "route_eligible": True,
             "freshness": "CURRENT_CONFIRMED",
@@ -24,6 +25,7 @@ class V63RouteReuseTests(unittest.TestCase):
         result = reuse_route_for_opportunity({
             "route_id": "R-C500-1",
             "owner_scope": "ACCOUNT",
+            "account_id": "C500",
             "verified": True,
             "route_eligible": True,
             "freshness": "STALE",
@@ -36,6 +38,7 @@ class V63RouteReuseTests(unittest.TestCase):
         result = reuse_route_for_opportunity({
             "route_id": "R-PERSON-1",
             "owner_scope": "PERSON",
+            "account_id": "C500",
             "verified": True,
             "route_eligible": True,
             "freshness": "CURRENT",
@@ -51,6 +54,7 @@ class V63RouteReuseTests(unittest.TestCase):
         result = reuse_route_for_opportunity({
             "route_id": "R-PERSON-1",
             "owner_scope": "PERSON",
+            "account_id": "C500",
             "verified": True,
             "route_eligible": True,
             "freshness": "RECENT",

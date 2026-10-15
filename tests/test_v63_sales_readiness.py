@@ -44,6 +44,7 @@ def base_payload():
             "guessed": False,
             "freshness": "CURRENT",
             "owner_scope": "COMPANY",
+            "account_id": "C500",
         },
         "local_context": {
             "now_utc": "2026-09-03T03:00:00+00:00",
@@ -76,6 +77,14 @@ class V63SalesReadinessTests(unittest.TestCase):
         self.assertEqual(result["channel"], "EMAIL")
         self.assertFalse(result["sends_message"])
         self.assertFalse(result["server_side_draft_created"])
+
+    def test_cross_account_verified_route_is_not_sales_ready(self):
+        payload = base_payload()
+        payload["selected_route"]["account_id"] = "C600"
+        result = evaluate_sales_readiness(payload, pvc_capability())
+        self.assertEqual(result["sales_readiness_state"], "CONTACT_RESEARCH_REQUIRED")
+        self.assertFalse(result["commercial_outreach_ready"])
+        self.assertIn("ROUTE_ACCOUNT_OWNER_MISMATCH", result["route_reuse"]["blockers"])
 
     def test_unverified_exact_spec_allows_discovery_outreach_but_blocks_technical_offer(self):
         payload = base_payload()
