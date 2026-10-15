@@ -705,5 +705,182 @@ class HostPostcommitArchiveTests(unittest.TestCase):
         self._assert_bad_terminal_wal_never_occupies_archive()
 
 
+    # A separate process reconstructs the isolated Host authority from
+    # pre-pinned synthetic inputs. This is NOT live operator RBAC or R2.
+    _WORKER_CODE = r"""
+import json, os, sys, time
+from pathlib import Path
+from unified_runtime.core import SessionStore
+from unified_runtime.host_postcommit_archive_v64 import IsolatedHostReceiptAuthority
+from unified_runtime.host_archive_recovery_v64 import resume_authorized_partial_archive
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf8"))
+root = Path(data["root"])
+authority = IsolatedHostReceiptAuthority(
+    session_store=SessionStore(root/"sessions"),
+    request_root=root/"original-requests",
+    snapshot_root=root/"wal-snapshots",
+    pin_root=root/"external-pin-fixture",
+    independent_operator_anchor=lambda sha, event, task:
+        sha == data["operator_pin_sha"] and
+        event["event_hash"] == data["event"]["event_hash"] and
+        task == data["task"],
+)
+mode = sys.argv[2]
+if mode.startswith("CRASH_BEFORE:"):
+    import unified_runtime.host_archive_recovery_v64 as recovery
+    real = recovery._create_once
+    suffix = mode.split(":",1)[1]
+    def crash_before(root, filename, value):
+        if filename.endswith(suffix):
+            os._exit(73)
+        return real(root,filename,value)
+    recovery._create_once = crash_before
+ready = root / ("ready-" + str(os.getpid()))
+ready.write_text("READY",encoding="ascii")
+go = root / "START-WORKERS"
+for _ in range(1200):
+    if go.exists():
+        break
+    time.sleep(.01)
+else:
+    sys.exit(78)
+try:
+    record = data["recovery"]
+    result = resume_authorized_partial_archive(
+        authority=authority, original_arguments=data["args"], task=data["task"],
+        event=data["event"], account_id=data["owner"],
+        expected_last_seq=2, expected_last_hash=data["event"]["event_hash"],
+        trusted_postcommit_barrier=lambda e,a,t:
+            e["event_hash"] == data["event"]["event_hash"] and t == data["task"],
+        trusted_recovery_authorization=lambda e,a,t: dict(record),
+    )
+    print(json.dumps({"status":result["status"],"new_files":result["new_files_created"]}))
+except Exception as exc:
+    print(json.dumps({"error":type(exc).__name__,"message":str(exc)[:120]}))
+"""
+
+    def _prepare_cross_process_fixture(self):
+        import subprocess, sys
+        self._interrupt_publish(".pin.json")
+        operator_record = copy.deepcopy(self._external_recovery_record())
+        # Snapshot and request files are immutable; this synthetic operator
+        # expectation is captured before any child is allowed to run.
+        self._pre_pinned_recovery = operator_record
+        state = {
+            "root":str(self.root), "args":self.args, "task":self.task,
+            "event":self.event, "owner":OWNER,
+            "recovery":operator_record,
+            "operator_pin_sha":operator_record["expected_pin_sha256"],
+        }
+        src=self.root/"isolated-worker-fixture.json"
+        src.write_text(json.dumps(state),encoding="utf8")
+        return src
+
+    def _workers(self, fixture, modes):
+        import subprocess, sys, time
+        env=dict(os.environ)
+        repo_root=str(Path(__file__).resolve().parents[1])
+        env["PYTHONPATH"]=repo_root+os.pathsep+env.get("PYTHONPATH","")
+        jobs=[subprocess.Popen([sys.executable,"-B","-c",self._WORKER_CODE,
+                str(fixture),mode],cwd=repo_root,env=env,
+                stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+              for mode in modes]
+        deadline=time.monotonic()+20
+        try:
+            while time.monotonic()<deadline:
+                ready=list(self.root.glob("ready-*"))
+                if len(ready)>=len(jobs):
+                    break
+                if any(p.poll() is not None for p in jobs):
+                    raise AssertionError("Worker terminated before barrier")
+                time.sleep(.03)
+            else:
+                raise AssertionError("Worker startup barrier timed out")
+            (self.root/"START-WORKERS").write_text("GO",encoding="ascii")
+            outputs=[]
+            for p in jobs:
+                o,e=p.communicate(timeout=25)
+                outputs.append({"code":p.returncode,"stdout":o.strip(),"stderr":e[-300:]})
+            return outputs
+        finally:
+            for p in jobs:
+                if p.poll() is None:
+                    p.kill()
+                    p.communicate(timeout=5)
+            (self.root/"START-WORKERS").unlink(missing_ok=True)
+
+    def _archive_bytes_by_slot(self):
+        return {str(p.relative_to(self.root)):hashlib.sha256(p.read_bytes()).hexdigest()
+            for root in (self.request_root,self.snapshot_root,self.pin_root)
+            for p in root.iterdir() if p.is_file()}
+
+    def test_cross_process_same_key_is_create_once_and_serial_replay_idempotent(self):
+        state=self._prepare_cross_process_fixture()
+        result=self._workers(state,["NORMAL","NORMAL"])
+        self.assertEqual(len(result),2)
+        self.assertTrue(all(p["code"]==0 for p in result),result)
+        entries=[json.loads(p["stdout"].splitlines()[-1]) for p in result]
+        self.assertTrue(all(("status" in p) or p.get("error") in
+            {"FileExistsError","PermissionError"} for p in entries),entries)
+        self.assertEqual(len(list(self.pin_root.glob("*.commit.json"))),1)
+        pre=self._archive_bytes_by_slot()
+        self.fixture_independently_pin()
+        for _ in range(4):
+            replay=self._resume_partial(authorizer=lambda *_:copy.deepcopy(
+                self._pre_pinned_recovery))
+            self.assertEqual(replay["status"],"ALREADY_PUBLISHED_VERIFIED")
+            self.assertEqual(replay["new_files_created"],0)
+        self.assertEqual(pre,self._archive_bytes_by_slot())
+        self.assertTrue(self.covered())
+
+    def test_cross_process_denied_operator_cannot_create_publication_marker(self):
+        state=self._prepare_cross_process_fixture()
+        material=json.loads(state.read_text(encoding="utf8"))
+        material["recovery"]["approved"]=False
+        state.write_text(json.dumps(material),encoding="utf8")
+        outcomes=self._workers(state,["NORMAL"])
+        self.assertEqual(outcomes[0]["code"],0)
+        self.assertEqual(json.loads(outcomes[0]["stdout"])["error"],"PermissionError")
+        self.assertFalse(any(self.pin_root.glob("*.commit.json")))
+        self.assertFalse(self.covered())
+
+    def test_process_crash_before_pin_preserves_partial_and_resumes_exactly(self):
+        state=self._prepare_cross_process_fixture()
+        outcome=self._workers(state,["CRASH_BEFORE:.pin.json"])[0]
+        self.assertEqual(outcome["code"],73,outcome)
+        self.assertFalse(any(self.pin_root.glob("*.commit.json")))
+        self.assertFalse(self.covered())
+        recover=self._resume_partial(
+            authorizer=lambda *_:copy.deepcopy(self._pre_pinned_recovery))
+        self.assertEqual(recover["status"],"ISOLATED_PARTIAL_RECOVERY_PUBLISHED")
+        self.fixture_independently_pin()
+        self.assertTrue(self.covered())
+
+    def test_process_crash_before_commit_preserves_prefix_and_resumes(self):
+        state=self._prepare_cross_process_fixture()
+        outcome=self._workers(state,["CRASH_BEFORE:.commit.json"])[0]
+        self.assertEqual(outcome["code"],73,outcome)
+        self.assertEqual(len(list(self.pin_root.glob("*.pin.json"))),1)
+        self.assertFalse(any(self.pin_root.glob("*.commit.json")))
+        self.assertFalse(self.covered())
+        self._resume_partial(
+            authorizer=lambda *_:copy.deepcopy(self._pre_pinned_recovery))
+        self.fixture_independently_pin()
+        self.assertTrue(self.covered())
+
+    def test_cross_directory_partial_cannot_gain_authority_via_reordered_files(self):
+        state=self._prepare_cross_process_fixture()
+        # Missing pin but a forged marker exists -> out-of-order custody STOP.
+        forged_name = ("append_execution_receipt-"
+            + hashlib.sha256(KEY.encode()).hexdigest() + ".commit.json")
+        (self.pin_root/forged_name).write_text("{}",encoding="utf8")
+        before=self._archive_bytes_by_slot()
+        outcomes=self._workers(state,["NORMAL"])
+        parsed=json.loads(outcomes[0]["stdout"])
+        self.assertEqual(parsed["error"],"PermissionError")
+        self.assertEqual(before,self._archive_bytes_by_slot())
+        self.assertFalse(self.covered())
+
+
 if __name__=="__main__":
     unittest.main()
