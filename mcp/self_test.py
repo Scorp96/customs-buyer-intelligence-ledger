@@ -121,8 +121,12 @@ def main() -> int:
             check(all(set(item.get("annotations", {})) >= {"readOnlyHint", "destructiveHint", "openWorldHint"} for item in tools), "all_tools_have_safety_annotations", passed)
             check(not any("title" in item or "_meta" in item for item in tools), "tunnel_conservative_tool_descriptors", passed)
             check(
-                all(item["description"].startswith("Not for ANSWER_FIRST") for item in tools),
-                "all_tool_descriptors_exclude_answer_first",
+                all(
+                    item["description"].startswith("Unified CBI FULL_AUDIT (EXHAUSTIVE) is the only new investigation workflow")
+                    and "CRM writes and outreach require separate authorization" in item["description"]
+                    for item in tools
+                ),
+                "all_tool_descriptors_enforce_full_audit_and_separate_authorization",
                 passed,
             )
             check(not any("send" == name or name.startswith("send_") for name in names), "no_send_tool_exposed", passed)
@@ -134,9 +138,10 @@ def main() -> int:
                 and "NEGATIVE_EXHAUSTED" in contract["enums"]["source_family_terminal_result"]
                 and contract["public_source_execution_boundary"]["embedded_search_engine"] is False
                 and contract["commercial_dimensions"]["contact_or_crm_caps_commercial_value"] is False
-                and contract["workflow_policy"]["default_mode"] == "ANSWER_FIRST"
+                and contract["workflow_policy"]["default_mode"] == "FULL_AUDIT"
+                and contract["workflow_policy"]["answer_first"]["entry_allowed"] is False
                 and contract["workflow_policy"]["answer_first"]["cbi_mcp_tools_allowed"] == []
-                and len(contract["workflow_policy"]["answer_first"]["cbi_mcp_tools_forbidden"]) == 42
+                and len(contract["workflow_policy"]["answer_first"]["cbi_mcp_tools_forbidden"]) == len(CBI_MCP_TOOL_NAMES)
                 and contract["workflow_policy"]["mcp_initialize_mutates_state"] is False,
                 "runtime_contract_self_describing",
                 passed,
