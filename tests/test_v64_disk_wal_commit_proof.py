@@ -388,5 +388,92 @@ class DiskV61WalIsolatedTests(unittest.TestCase):
         os.replace(tmp,self.walpath)
         self.assertTrue(self.valid())
 
+    def test_snapshot_publish_stages_complete_bytes_before_final_link(self):
+        """Final path is not observable before the staged file is durable."""
+        from unittest.mock import patch
+        import unified_runtime.wal_immutable_snapshot_v64 as module
+        destination=self.root/"staged-publish-proof"
+        destination.mkdir()
+        final=destination/self.walpath.name
+        original_link=os.link
+        observed={"checked":False}
+        def inspecting_link(source, target):
+            self.assertFalse(final.exists())
+            self.assertTrue(Path(source).name.startswith("."))
+            self.assertEqual(
+                Path(source).read_bytes(),
+                self.walpath.read_bytes(),
+            )
+            observed["checked"]=True
+            return original_link(source,target)
+        with patch.object(module.os, "link", side_effect=inspecting_link):
+            pin=create_immutable_terminal_wal_snapshot(
+                terminal_wal_path=self.walpath,snapshot_root=destination,
+                expected_request_sha256=self.request_hash)
+        self.assertTrue(observed["checked"])
+        self.assertEqual(pin,hashlib.sha256(final.read_bytes()).hexdigest())
+        self.assertEqual(sorted(p.name for p in destination.iterdir()),[self.walpath.name])
+
+    def test_snapshot_prepublication_fsync_failure_never_creates_final(self):
+        from unittest.mock import patch
+        import unified_runtime.wal_immutable_snapshot_v64 as module
+        destination=self.root/"fault-fsync";destination.mkdir()
+        with patch.object(module.os,"fsync",side_effect=OSError("synthetic prepublication failure")):
+            with self.assertRaises(OSError):
+                create_immutable_terminal_wal_snapshot(
+                    terminal_wal_path=self.walpath,snapshot_root=destination,
+                    expected_request_sha256=self.request_hash)
+        self.assertEqual(list(destination.iterdir()),[])
+
+    def test_snapshot_link_failure_never_creates_final(self):
+        from unittest.mock import patch
+        import unified_runtime.wal_immutable_snapshot_v64 as module
+        destination=self.root/"fault-link";destination.mkdir()
+        with patch.object(module.os,"link",side_effect=OSError("synthetic publish failure")):
+            with self.assertRaises(OSError):
+                create_immutable_terminal_wal_snapshot(
+                    terminal_wal_path=self.walpath,snapshot_root=destination,
+                    expected_request_sha256=self.request_hash)
+        self.assertEqual(list(destination.iterdir()),[])
+
+    def test_snapshot_two_publishers_do_not_clobber_first_result(self):
+        destination=self.root/"parallel-creation";destination.mkdir()
+        results=[];errors=[]
+        barrier=threading.Barrier(3)
+        def produce():
+            barrier.wait()
+            try:
+                results.append(create_immutable_terminal_wal_snapshot(
+                    terminal_wal_path=self.walpath,snapshot_root=destination,
+                    expected_request_sha256=self.request_hash))
+            except Exception as exc:
+                errors.append(type(exc).__name__)
+        writers=[threading.Thread(target=produce) for _ in range(2)]
+        for th in writers:th.start()
+        barrier.wait()
+        for th in writers:
+            th.join(timeout=8)
+            self.assertFalse(th.is_alive())
+        self.assertEqual(len(results),1)
+        self.assertEqual(errors,["FileExistsError"])
+        p=destination/self.walpath.name
+        self.assertEqual(results[0],hashlib.sha256(p.read_bytes()).hexdigest())
+        self.assertEqual(sorted(p.name for p in destination.iterdir()),[self.walpath.name])
+
+    def test_preexisting_snapshot_survives_failed_duplicate_publish(self):
+        original=(self.snapshot_root/self.walpath.name).read_bytes()
+        with self.assertRaises(FileExistsError):
+            create_immutable_terminal_wal_snapshot(
+                terminal_wal_path=self.walpath,snapshot_root=self.snapshot_root,
+                expected_request_sha256=self.request_hash)
+        self.assertEqual((self.snapshot_root/self.walpath.name).read_bytes(),original)
+        self.assertEqual(sorted(p.name for p in self.snapshot_root.iterdir()),[self.walpath.name])
+
+    def test_snapshot_without_independent_pin_stays_unverified(self):
+        p=self.build_snapshot_proof(
+            pin_provider=lambda event,attempt,task:None
+        )
+        self.assertFalse(self.valid(proof=p))
+
 if __name__=="__main__":
     unittest.main()

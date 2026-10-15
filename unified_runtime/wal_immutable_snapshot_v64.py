@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 from pathlib import Path
 
 from .wal_safe_reader_v64 import read_consistent_wal_bytes
@@ -54,18 +55,45 @@ def create_immutable_terminal_wal_snapshot(
     ):
         raise ValueError("WAL was not a matched terminal COMMITTED receipt")
     digest_hex = hashlib.sha256(payload).hexdigest()
-    path = snapshot_root / terminal_wal_path.name
-    # O_EXCL: snapshot file is never replaced, even for retries.
-    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    target = snapshot_root / terminal_wal_path.name
+    # Stage in the SAME directory so linking is atomic and cross-volume
+    # moves cannot silently degrade to a copy. An unfinished snapshot is
+    # never visible under its authoritative final name.
+    staging = snapshot_root / (
+        "." + terminal_wal_path.name + "." + secrets.token_hex(16) + ".tmp"
+    )
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(staging, flags, 0o600)
+    published = False
     try:
-        with os.fdopen(fd,"wb",closefd=True) as handle:
+        with os.fdopen(fd, "wb", closefd=True) as handle:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-    except Exception:
-        # Retain partial file for inspection; do NOT delete or overwrite a
-        # potentially disputed prior evidence artifact.
-        raise
+        # Atomic create-if-absent publication: os.replace would overwrite a
+        # prior artifact. os.link fails with FileExistsError if target exists.
+        # NTFS and POSIX both support same-filesystem hard links; if not,
+        # fail closed rather than use a nonatomic or overwriting fallback.
+        os.link(staging, target)
+        published = True
+        if os.name == "posix":
+            # Persist directory metadata after publication when supported.
+            # An fsync failure must NOT be misreported as durable success.
+            directory_fd = os.open(snapshot_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    finally:
+        # Never delete an existing final record, including after fsync
+        # failure. Only our private staging name can be cleaned up.
+        staging.unlink(missing_ok=True)
+    if not published:
+        raise OSError("Immutable snapshot was not published")
     return digest_hex
 
 def read_immutable_wal_snapshot(
