@@ -107,10 +107,11 @@ def main() -> int:
             initialized = call(process, 1, "initialize", {"protocolVersion": "2025-06-18"})["result"]
             check(initialized["serverInfo"]["version"] == "6.4.0", "initialize_v640", passed)
             check(
-                "Default to ANSWER_FIRST" in initialized["instructions"]
-                and "Do not call any Customs Buyer Intelligence MCP tool" in initialized["instructions"]
-                and "never replays Runtime receipts or host bundles" in initialized["instructions"],
-                "initialize_declares_answer_first_and_no_startup_replay",
+                "Use ONLY unified CBI FULL_AUDIT" in initialized["instructions"]
+                and "no ANSWER_FIRST or FAST_SCAN entry route" in initialized["instructions"]
+                and "MCP initialize never mutates state" in initialized["instructions"]
+                and "separate explicit user authorization" in initialized["instructions"],
+                "initialize_declares_full_audit_and_no_startup_mutation",
                 passed,
             )
             tools = call(process, 2, "tools/list")["result"]["tools"]
