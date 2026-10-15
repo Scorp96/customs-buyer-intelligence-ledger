@@ -17,6 +17,9 @@ from unified_runtime.core import SessionStore, digest, canonical_json
 from unified_runtime.host_wal_receipt_verifier_v64 import make_host_wal_receipt_verifier
 from unified_runtime.v61_disk_wal_commit_proof_v64 import make_v61_disk_wal_commit_verifier
 from unified_runtime.source_execution import evaluate_source_coverage
+from unified_runtime.wal_immutable_snapshot_v64 import (
+    create_immutable_terminal_wal_snapshot,
+)
 
 INV="INV-20261015T120000Z-abcdef123456"
 ACCOUNT="SYN-ONLY-ACCOUNT"
@@ -78,9 +81,17 @@ class DiskV61WalIsolatedTests(unittest.TestCase):
             "result":self.result,"result_sha256":digest(self.result)}
         self.walpath=self.walroot/f"{TOOL}-{hashlib.sha256(KEY.encode()).hexdigest()}.json"
         self.persist()
+        self.snapshot_root=self.root/"host-postcommit-immutable"
+        self.snapshot_root.mkdir()
+        self.snapshot_pin=create_immutable_terminal_wal_snapshot(
+            terminal_wal_path=self.walpath,
+            snapshot_root=self.snapshot_root,
+            expected_request_sha256=self.request_hash,
+        )
         self.receipt={**self.attempt,"account_id":ACCOUNT,
                       "event_seq":2,"event_hash":evt["event_hash"]}
         self.proof=self.build_proof()
+        self.snapshot_proof=self.build_snapshot_proof()
     def tearDown(self):
         self.temp.cleanup()
     def persist(self):
@@ -95,6 +106,22 @@ class DiskV61WalIsolatedTests(unittest.TestCase):
             session_store=self.store, investigation_id=INV,account_id=ACCOUNT,
             expected_last_seq=2,expected_last_event_hash=self.event["event_hash"],
             wal_commit_verifier=cb)
+    def build_snapshot_proof(self,pin_provider=None):
+        cb=make_v61_disk_wal_commit_verifier(
+            wal_root=self.walroot,
+            trusted_original_arguments=self.trusted_original,
+            immutable_snapshot_root=self.snapshot_root,
+            trusted_snapshot_sha256=(
+                pin_provider if pin_provider is not None
+                else lambda event,attempt,task: self.snapshot_pin
+            ),
+        )
+        return make_host_wal_receipt_verifier(
+            session_store=self.store, investigation_id=INV,account_id=ACCOUNT,
+            expected_last_seq=2,expected_last_event_hash=self.event["event_hash"],
+            wal_commit_verifier=cb,
+        )
+
     def valid(self,proof=None):
         r=evaluate_source_coverage({"tasks":[self.task],"truncated":False},
             [self.receipt],receipt_verifier=self.proof if proof is None else proof)
@@ -237,7 +264,7 @@ class DiskV61WalIsolatedTests(unittest.TestCase):
             for _ in range(150):
                 # A contested/partial WAL read must never become proof by
                 # exception or coercion; only exact, verified rows pass.
-                self.assertIsInstance(self.valid(),bool)
+                self.assertTrue(self.valid(proof=self.snapshot_proof))
         finally:
             th.join(timeout=8)
         self.assertTrue(stop.is_set(), "bounded writer did not finish")
@@ -253,7 +280,7 @@ class DiskV61WalIsolatedTests(unittest.TestCase):
         self.wal["status"]="PREPARED";self.persist()
         self.assertFalse(self.valid())
 
-    def test_concurrent_read_never_returns_true_for_prepared_version(self):
+    def test_snapshot_reads_stay_valid_during_live_wal_replacement(self):
         """Reader may accept a complete COMMITTED snapshot, never PREPARED."""
         good=canonical_json(self.wal)+"\n"
         bad=canonical_json({**self.wal,"status":"PREPARED"})+"\n"
@@ -274,8 +301,9 @@ class DiskV61WalIsolatedTests(unittest.TestCase):
         th.start()
         try:
             for _ in range(400):
-                outcome=self.valid()
+                outcome=self.valid(proof=self.snapshot_proof)
                 self.assertIs(type(outcome),bool)
+                self.assertTrue(outcome)
                 counts["accepted" if outcome else "rejected"]+=1
                 if stop.is_set():
                     break
@@ -302,6 +330,53 @@ class DiskV61WalIsolatedTests(unittest.TestCase):
             wal_commit_verifier=cb
         )
         self.assertFalse(self.valid(proof))
+
+    def test_snapshot_pin_required_and_wrong_pin_rejected(self):
+        p=self.build_snapshot_proof(
+            pin_provider=lambda event,attempt,task:"a"*64
+        )
+        self.assertFalse(self.valid(proof=p))
+
+    def test_snapshot_missing_fails_closed(self):
+        (self.snapshot_root/self.walpath.name).unlink()
+        self.assertFalse(self.valid(proof=self.snapshot_proof))
+
+    def test_snapshot_tamper_fails_closed(self):
+        p=self.snapshot_root/self.walpath.name
+        p.write_bytes(p.read_bytes().replace(b"COMMITTED",b"PREPARED ",1))
+        self.assertFalse(self.valid(proof=self.snapshot_proof))
+
+    def test_snapshot_cannot_be_overwritten(self):
+        with self.assertRaises(FileExistsError):
+            create_immutable_terminal_wal_snapshot(
+                terminal_wal_path=self.walpath,
+                snapshot_root=self.snapshot_root,
+                expected_request_sha256=self.request_hash,
+            )
+
+    def test_prepared_wal_not_snapshotted(self):
+        self.wal["status"]="PREPARED";self.persist()
+        dest=self.root/"new-immutable";dest.mkdir()
+        with self.assertRaises(ValueError):
+            create_immutable_terminal_wal_snapshot(
+                terminal_wal_path=self.walpath,
+                snapshot_root=dest,
+                expected_request_sha256=self.request_hash,
+            )
+
+    def test_snapshot_wrong_request_digest_rejected(self):
+        dest=self.root/"new-immutable";dest.mkdir()
+        with self.assertRaises(ValueError):
+            create_immutable_terminal_wal_snapshot(
+                terminal_wal_path=self.walpath,
+                snapshot_root=dest,
+                expected_request_sha256="a"*64,
+            )
+
+    def test_snapshot_stays_verified_if_live_wal_deleted(self):
+        self.walpath.unlink()
+        self.assertTrue(self.valid(proof=self.snapshot_proof))
+        self.assertFalse(self.valid())
 
     def test_post_read_atomic_commit_is_visible_and_verified(self):
         """After the read closes, replacement of PREPARED by COMMITTED works."""

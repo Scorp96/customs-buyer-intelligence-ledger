@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 from .core import digest
 from .wal_safe_reader_v64 import read_consistent_wal_bytes
+from .wal_immutable_snapshot_v64 import read_immutable_wal_snapshot
 
 _SCHEMA = "cbi.mutation-wal.v6.1"
 _CORRELATION_SCHEMA = "cbi.mutation-correlation.v6.1"
@@ -28,6 +29,8 @@ def make_v61_disk_wal_commit_verifier(
     *,
     wal_root: Path,
     trusted_original_arguments: TrustedArgumentsProvider | None,
+    immutable_snapshot_root: Path | None = None,
+    trusted_snapshot_sha256: TrustedArgumentsProvider | None = None,
 ) -> Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], bool]:
     """Produce a fail-closed Host callback that reads but NEVER writes WAL.
 
@@ -37,6 +40,9 @@ def make_v61_disk_wal_commit_verifier(
     """
     def verify(event: dict[str, Any], attempt: dict[str, Any], task: dict[str, Any]) -> bool:
         if not callable(trusted_original_arguments):
+            return False
+        snapshot_enabled = immutable_snapshot_root is not None
+        if snapshot_enabled != callable(trusted_snapshot_sha256):
             return False
         if not isinstance(event, dict) or not isinstance(attempt, dict) or not isinstance(task, dict):
             return False
@@ -88,16 +94,26 @@ def make_v61_disk_wal_commit_verifier(
 
             # Exactly one *known* WAL path; no untrusted directory traversal,
             # globbing of private customer records, or symlink following.
-            root = Path(wal_root)
+            root = Path(immutable_snapshot_root if snapshot_enabled else wal_root)
             if not root.is_dir() or root.is_symlink():
                 return False
             safe_filename = f"{_TOOL}-{hashlib.sha256(key.encode('utf-8')).hexdigest()}.json"
-            path = root / safe_filename
-            if path.is_symlink() or not path.is_file():
-                return False
-            # On Windows, the read handle explicitly shares DELETE access.
-            # A replacement/truncation during capture fails closed.
-            raw = read_consistent_wal_bytes(path, max_bytes=_WAL_MAX_BYTES)
+            if snapshot_enabled:
+                # Preferred Windows path: never hold a reader handle open
+                # on the live WAL while a writer is replacing that WAL file.
+                # The SHA pin MUST be obtained from an independent trusted
+                # Host register, not from a claimant's submitted receipt.
+                pinned = trusted_snapshot_sha256(event, attempt, task)
+                raw = read_immutable_wal_snapshot(
+                    snapshot_root=root, filename=safe_filename,
+                    externally_pinned_sha256=pinned,
+                )
+            else:
+                # Isolated legacy/direct read; not approved for a concurrent
+                # live Windows production WAL writer.
+                raw = read_consistent_wal_bytes(
+                    root / safe_filename, max_bytes=_WAL_MAX_BYTES
+                )
             row = json.loads(raw.decode("utf-8"))
             if not isinstance(row, dict):
                 return False
