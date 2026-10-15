@@ -22,6 +22,7 @@ from typing import Any, Callable
 OperatorAnchorVerifier = Callable[[str, dict[str, Any], dict[str, Any]], bool]
 
 from .core import SessionStore, canonical_json, digest
+from .v61_disk_wal_commit_proof_v64 import make_v61_disk_wal_commit_verifier
 from .wal_immutable_snapshot_v64 import (
     create_immutable_terminal_wal_snapshot,
     read_immutable_wal_snapshot,
@@ -169,6 +170,18 @@ class IsolatedHostReceiptAuthority:
         material.pop("idempotency_key", None)
         material.pop("expected_state_version", None)
         req_hash = digest({"tool": _TOOL, "arguments": material})
+        # PRE-ARCHIVE evidence gate: a bare COMMITTED label is insufficient.
+        # The real v6.1 reader verifies request/result digest, exact
+        # mutation-correlation, idempotency key, event seq, acceptance and
+        # strict mutation_meta BEFORE any create-once archive path is used.
+        def _host_args(_event, _attempt, _task):
+            return copy.deepcopy(args)
+        active_wal_verifier = make_v61_disk_wal_commit_verifier(
+            wal_root=root,
+            trusted_original_arguments=_host_args,
+        )
+        if active_wal_verifier(persisted, attempt, task) is not True:
+            raise PermissionError("Host terminal WAL failed pre-archive integrity validation")
         # Host authority is responsible for serializing after the writer lock
         # is released. No snapshot on a live writer.
         snap_sha = create_immutable_terminal_wal_snapshot(
@@ -176,6 +189,17 @@ class IsolatedHostReceiptAuthority:
             snapshot_root=self.snapshot_root,
             expected_request_sha256=req_hash,
         )
+        # Revalidate the exact newly snapshotted bytes, including WAL
+        # result/meta and event binding. Race-induced shadow mismatch fails
+        # closed BEFORE the original request or final pin is published.
+        shadow_verifier = make_v61_disk_wal_commit_verifier(
+            wal_root=root,
+            trusted_original_arguments=_host_args,
+            immutable_snapshot_root=self.snapshot_root,
+            trusted_snapshot_sha256=lambda _ev, _attempt, _task: snap_sha,
+        )
+        if shadow_verifier(persisted, attempt, task) is not True:
+            raise PermissionError("Immutable shadow does not prove the terminal WAL commit")
         _create_once(self.request_root, request_name, args)
         pin = {
             "schema": "cbi.host-wal-postcommit-pin.isolated.v1",
