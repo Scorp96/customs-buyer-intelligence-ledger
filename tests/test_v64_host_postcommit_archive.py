@@ -354,5 +354,46 @@ class HostPostcommitArchiveTests(unittest.TestCase):
             self.publish(original_arguments=tamper)
 
 
+    def _assert_bad_terminal_wal_never_occupies_archive(self):
+        with self.assertRaises(PermissionError):
+            self.publish()
+        self.assertEqual(list(self.request_root.iterdir()), [])
+        self.assertEqual(list(self.snapshot_root.iterdir()), [])
+        self.assertEqual(list(self.pin_root.iterdir()), [])
+
+    def test_corrupted_terminal_result_digest_does_not_poison_archive(self):
+        self.wal["result_sha256"]="0"*64
+        self.walpath.write_text(canonical_json(self.wal)+"\n",encoding="utf8")
+        self._assert_bad_terminal_wal_never_occupies_archive()
+
+    def test_accepted_false_terminal_result_does_not_poison_archive(self):
+        self.wal["result"]["accepted"]=False
+        self.wal["result_sha256"]=digest(self.wal["result"])
+        self.walpath.write_text(canonical_json(self.wal)+"\n",encoding="utf8")
+        self._assert_bad_terminal_wal_never_occupies_archive()
+
+    def test_wrong_state_version_terminal_does_not_poison_archive(self):
+        self.wal["state_version_after"]=3
+        self.walpath.write_text(canonical_json(self.wal)+"\n",encoding="utf8")
+        self._assert_bad_terminal_wal_never_occupies_archive()
+
+    def test_wrong_mutation_correlation_terminal_does_not_poison_archive(self):
+        self.wal["mutation_correlation_id"]="MUTCORR-FOREIGN"
+        self.walpath.write_text(canonical_json(self.wal)+"\n",encoding="utf8")
+        self._assert_bad_terminal_wal_never_occupies_archive()
+
+    def test_false_write_ahead_intent_terminal_does_not_poison_archive(self):
+        self.wal["result"]["mutation_meta"]["write_ahead_intent"]=False
+        self.wal["result_sha256"]=digest(self.wal["result"])
+        self.walpath.write_text(canonical_json(self.wal)+"\n",encoding="utf8")
+        self._assert_bad_terminal_wal_never_occupies_archive()
+
+    def test_wrong_attempt_id_terminal_does_not_poison_archive(self):
+        self.wal["result"]["attempt_id"]="SYN-OTHER-ATTEMPT"
+        self.wal["result_sha256"]=digest(self.wal["result"])
+        self.walpath.write_text(canonical_json(self.wal)+"\n",encoding="utf8")
+        self._assert_bad_terminal_wal_never_occupies_archive()
+
+
 if __name__=="__main__":
     unittest.main()
