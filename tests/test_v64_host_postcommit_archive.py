@@ -16,6 +16,7 @@ from pathlib import Path
 
 from unified_runtime.core import SessionStore, digest, canonical_json
 from unified_runtime.host_postcommit_archive_v64 import IsolatedHostReceiptAuthority
+from unified_runtime.host_archive_recovery_v64 import resume_authorized_partial_archive
 from unified_runtime.host_wal_receipt_verifier_v64 import make_host_wal_receipt_verifier
 from unified_runtime.v61_disk_wal_commit_proof_v64 import make_v61_disk_wal_commit_verifier
 from unified_runtime.source_execution import evaluate_source_coverage
@@ -161,6 +162,246 @@ class HostPostcommitArchiveTests(unittest.TestCase):
         return evaluate_source_coverage(
             {"tasks":[self.task],"truncated":False},
             [receipt],receipt_verifier=self.proof())["source_coverage_complete"]
+
+    # Isolated partial-archive recovery: the fixture "operator" is not a
+    # real authority; all source/ledger/WAL records are synthetic.
+    def _external_recovery_record(self):
+        from unified_runtime.host_postcommit_archive_v64 import _file_ids
+        wal_name, request_name, pin_name, commit_name = _file_ids(KEY)
+        shadow = self.snapshot_root / wal_name
+        snap_sha = hashlib.sha256(shadow.read_bytes()).hexdigest()
+        pin = {
+            "schema": "cbi.host-wal-postcommit-pin.isolated.v1",
+            "wal_filename": wal_name,
+            "original_arguments_sha256": digest(self.args),
+            "request_sha256": self.req_hash,
+            "snapshot_sha256": snap_sha,
+            "investigation_id": INV,
+            "account_id": OWNER,
+            "event_seq": 2,
+            "event_hash": self.event["event_hash"],
+            "task_digest": digest(self.task),
+            "status": "PINNED_FOR_ISOLATED_VALIDATION",
+        }
+        return {
+            "approved": True,
+            "expected_snapshot_sha256": snap_sha,
+            "expected_pin_sha256": hashlib.sha256(canonical_json(pin).encode()).hexdigest(),
+            "expected_request_sha256": self.req_hash,
+            "expected_event_hash": self.event["event_hash"],
+            "expected_task_digest": digest(self.task),
+            "expected_account_id": OWNER,
+            "expected_investigation_id": INV,
+            "expected_session_tail_hash": self.event["event_hash"],
+            "expected_last_seq": 2,
+        }
+
+    def _interrupt_publish(self, stage):
+        from unittest.mock import patch
+        from unified_runtime import host_postcommit_archive_v64 as module
+        real = module._create_once
+        def fail_at(root, filename, value):
+            if filename.endswith(stage):
+                raise OSError("SYNTHETIC_INTERRUPT_BEFORE_" + stage)
+            return real(root, filename, value)
+        with patch.object(module, "_create_once", side_effect=fail_at):
+            with self.assertRaisesRegex(OSError, "SYNTHETIC_INTERRUPT_BEFORE"):
+                self.publish(fixture_operator_pin=False)
+
+    def _resume_partial(self, authorizer=None, **updates):
+        params = {
+            "authority": self.authority,
+            "original_arguments": self.args,
+            "task": self.task,
+            "event": self.event,
+            "account_id": OWNER,
+            "expected_last_seq": 2,
+            "expected_last_hash": self.event["event_hash"],
+            "trusted_postcommit_barrier": self.barrier,
+            "trusted_recovery_authorization": (
+                authorizer if authorizer is not None
+                else lambda ev, args, task: self._external_recovery_record()
+            ),
+        }
+        params.update(updates)
+        return resume_authorized_partial_archive(**params)
+
+    def test_recovery_snapshot_only_after_request_interrupt(self):
+        self._interrupt_publish(".request.json")
+        r = self._resume_partial()
+        self.assertEqual(r["status"], "ISOLATED_PARTIAL_RECOVERY_PUBLISHED")
+        self.assertEqual(r["new_files_created"], 3)
+        self.assertFalse(r["independent_operator_authority_proven"])
+        self.assertFalse(self.covered())
+        self.fixture_independently_pin()
+        self.assertTrue(self.covered())
+
+    def test_recovery_snapshot_request_after_pin_interrupt(self):
+        self._interrupt_publish(".pin.json")
+        r = self._resume_partial()
+        self.assertEqual(r["new_files_created"], 2)
+        self.fixture_independently_pin()
+        self.assertTrue(self.covered())
+
+    def test_recovery_snapshot_request_pin_after_commit_interrupt(self):
+        self._interrupt_publish(".commit.json")
+        r = self._resume_partial()
+        self.assertEqual(r["new_files_created"], 1)
+        self.fixture_independently_pin()
+        self.assertTrue(self.covered())
+
+    def test_recovery_complete_archive_requires_operator_anchor(self):
+        self.publish(fixture_operator_pin=False)
+        with self.assertRaises(PermissionError):
+            self._resume_partial()
+        self.fixture_independently_pin()
+        x = self._resume_partial()
+        self.assertEqual(x["status"], "ALREADY_PUBLISHED_VERIFIED")
+        self.assertEqual(x["new_files_created"], 0)
+        self.assertTrue(self.covered())
+
+    def test_recovery_multiple_retries_do_not_create_more_files(self):
+        self._interrupt_publish(".commit.json")
+        self._resume_partial()
+        self.fixture_independently_pin()
+        originals = {
+            str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+            for root in (self.request_root,self.snapshot_root,self.pin_root)
+            for p in root.iterdir()
+        }
+        for _ in range(3):
+            self.assertEqual(self._resume_partial()["new_files_created"], 0)
+        self.assertEqual(originals, {
+            str(p): hashlib.sha256(p.read_bytes()).hexdigest()
+            for root in (self.request_root,self.snapshot_root,self.pin_root)
+            for p in root.iterdir()
+        })
+
+    def test_recovery_authorization_absent_stays_partial(self):
+        self._interrupt_publish(".commit.json")
+        with self.assertRaises(PermissionError):
+            self._resume_partial(trusted_recovery_authorization=None)
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_authorization_denied_stays_partial(self):
+        self._interrupt_publish(".commit.json")
+        with self.assertRaises(PermissionError):
+            self._resume_partial(authorizer=lambda *args: {"approved":False})
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_authorization_exception_stays_partial(self):
+        self._interrupt_publish(".commit.json")
+        def unavailable(*args):
+            raise OSError("SYNTHETIC_OPERATOR_DISCONNECTED")
+        with self.assertRaises(PermissionError):
+            self._resume_partial(authorizer=unavailable)
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_wrong_external_snapshot_pin_fails(self):
+        self._interrupt_publish(".pin.json")
+        def tamper(ev, args, task):
+            x=self._external_recovery_record()
+            x["expected_snapshot_sha256"]="0"*64
+            return x
+        with self.assertRaises((ValueError,PermissionError)):
+            self._resume_partial(authorizer=tamper)
+        self.assertEqual(list(self.pin_root.glob("*.pin.json")),[])
+
+    def test_recovery_wrong_external_manifest_pin_fails(self):
+        self._interrupt_publish(".pin.json")
+        def tamper(ev, args, task):
+            x=self._external_recovery_record()
+            x["expected_pin_sha256"]="0"*64
+            return x
+        with self.assertRaises(PermissionError):
+            self._resume_partial(authorizer=tamper)
+        self.assertEqual(list(self.pin_root.glob("*.pin.json")),[])
+
+    def test_recovery_wrong_expected_task_fails(self):
+        self._interrupt_publish(".commit.json")
+        with self.assertRaises(PermissionError):
+            self._resume_partial(task={**self.task, "source_family":"competitor"})
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_corrupt_existing_request_stops_without_overwrite(self):
+        self._interrupt_publish(".commit.json")
+        p=next(self.request_root.iterdir())
+        raw=json.loads(p.read_text())
+        raw["private_synthetic_secret"]="CHANGED"
+        p.write_text(canonical_json(raw)+"\n")
+        altered=hashlib.sha256(p.read_bytes()).hexdigest()
+        with self.assertRaises(PermissionError):
+            self._resume_partial()
+        self.assertEqual(altered, hashlib.sha256(p.read_bytes()).hexdigest())
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_corrupt_existing_pin_stops_without_overwrite(self):
+        self._interrupt_publish(".commit.json")
+        p=next(self.pin_root.glob("*.pin.json"))
+        raw=json.loads(p.read_text()); raw["status"]="REISSUED"
+        p.write_text(canonical_json(raw)+"\n")
+        with self.assertRaises(PermissionError):
+            self._resume_partial()
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_snapshot_tamper_rejected_before_new_files(self):
+        self._interrupt_publish(".request.json")
+        p=next(self.snapshot_root.iterdir())
+        p.write_bytes(p.read_bytes()+b"\n")
+        with self.assertRaises((PermissionError,ValueError,OSError)):
+            self._resume_partial()
+        self.assertEqual(list(self.request_root.iterdir()),[])
+
+    def test_recovery_missing_snapshot_stops_for_custody_review(self):
+        self._interrupt_publish(".commit.json")
+        next(self.snapshot_root.iterdir()).unlink()
+        with self.assertRaises(PermissionError):
+            self._resume_partial()
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_without_partial_does_not_implicitly_publish(self):
+        with self.assertRaises(FileNotFoundError):
+            self._resume_partial()
+        self.assertEqual(list(self.snapshot_root.iterdir()),[])
+
+    def test_recovery_out_of_order_archive_stops(self):
+        self._interrupt_publish(".commit.json")
+        next(self.request_root.iterdir()).unlink()
+        with self.assertRaises(PermissionError):
+            self._resume_partial()
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_stale_independent_session_tail_fails(self):
+        self._interrupt_publish(".commit.json")
+        with self.assertRaises(PermissionError):
+            self._resume_partial(expected_last_hash="0"*64)
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_barrier_denial_does_not_publish(self):
+        self._interrupt_publish(".commit.json")
+        self.release_granted=False
+        with self.assertRaises(PermissionError):
+            self._resume_partial()
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+
+    def test_recovery_mid_retry_interrupt_and_resume_again(self):
+        self._interrupt_publish(".request.json")
+        from unittest.mock import patch
+        from unified_runtime import host_archive_recovery_v64 as module
+        real=module._create_once
+        def fail_mid(root,filename,value):
+            if filename.endswith(".pin.json"):
+                raise OSError("INJECTED_SECOND_INTERRUPT")
+            return real(root,filename,value)
+        with patch.object(module,"_create_once",side_effect=fail_mid):
+            with self.assertRaisesRegex(OSError,"INJECTED_SECOND_INTERRUPT"):
+                self._resume_partial()
+        self.assertEqual(len(list(self.request_root.iterdir())),1)
+        self.assertEqual(len(list(self.pin_root.iterdir())),0)
+        r=self._resume_partial()
+        self.assertEqual(r["new_files_created"],2)
+        self.fixture_independently_pin()
+        self.assertTrue(self.covered())
 
     def test_publication_commit_marker_required(self):
         self.publish()
