@@ -242,13 +242,66 @@ class DiskV61WalIsolatedTests(unittest.TestCase):
             th.join(timeout=8)
         self.assertTrue(stop.is_set(), "bounded writer did not finish")
         self.assertEqual(failures, [], failures)
+        self.assertEqual(outcomes["replaced"] + outcomes["sharing_denied"], 150)
         self.assertEqual(
-            outcomes["replaced"]+outcomes["sharing_denied"],150
+            outcomes["sharing_denied"], 0,
+            "Read-only WAL verifier caused atomic writer replacement denial",
         )
-        # Deterministic post-contention check. This is not proof that Windows
-        # live WAL writes are safe with an arbitrary concurrent reader.
+        self.assertEqual(outcomes["replaced"], 150)
+        # Production usage still requires a trusted Host authority, exact
+        # request ownership and independent on-host adversarial acceptance.
         self.wal["status"]="PREPARED";self.persist()
         self.assertFalse(self.valid())
+
+    def test_concurrent_read_never_returns_true_for_prepared_version(self):
+        """Reader may accept a complete COMMITTED snapshot, never PREPARED."""
+        good=canonical_json(self.wal)+"\n"
+        bad=canonical_json({**self.wal,"status":"PREPARED"})+"\n"
+        counts={"accepted":0,"rejected":0}
+        failures=[]
+        stop=threading.Event()
+        def mutate():
+            try:
+                for k in range(90):
+                    p=self.walroot/(f"write-race-{k}.tmp")
+                    p.write_text(bad if k%2==0 else good,encoding="utf8")
+                    os.replace(p,self.walpath)
+            except Exception as exc:
+                failures.append(type(exc).__name__)
+            finally:
+                stop.set()
+        th=threading.Thread(target=mutate)
+        th.start()
+        try:
+            for _ in range(400):
+                outcome=self.valid()
+                self.assertIs(type(outcome),bool)
+                counts["accepted" if outcome else "rejected"]+=1
+                if stop.is_set():
+                    break
+        finally:
+            th.join(timeout=8)
+        self.assertFalse(th.is_alive())
+        self.assertEqual(failures,[])
+        self.assertGreater(counts["accepted"]+counts["rejected"],0)
+
+    def test_symlink_root_is_forbidden(self):
+        alt=self.root/"wal-root-symlink"
+        try:
+            alt.symlink_to(self.walroot, target_is_directory=True)
+        except OSError:
+            self.skipTest("Symlink creation unavailable")
+        from unified_runtime.v61_disk_wal_commit_proof_v64 import make_v61_disk_wal_commit_verifier
+        from unified_runtime.host_wal_receipt_verifier_v64 import make_host_wal_receipt_verifier
+        cb=make_v61_disk_wal_commit_verifier(
+            wal_root=alt,trusted_original_arguments=self.trusted_original
+        )
+        proof=make_host_wal_receipt_verifier(
+            session_store=self.store, investigation_id=INV,account_id=ACCOUNT,
+            expected_last_seq=2,expected_last_event_hash=self.event["event_hash"],
+            wal_commit_verifier=cb
+        )
+        self.assertFalse(self.valid(proof))
 
     def test_post_read_atomic_commit_is_visible_and_verified(self):
         """After the read closes, replacement of PREPARED by COMMITTED works."""

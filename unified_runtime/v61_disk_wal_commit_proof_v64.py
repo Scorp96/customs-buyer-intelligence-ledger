@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .core import digest
+from .wal_safe_reader_v64 import read_consistent_wal_bytes
 
 _SCHEMA = "cbi.mutation-wal.v6.1"
 _CORRELATION_SCHEMA = "cbi.mutation-correlation.v6.1"
@@ -94,18 +95,9 @@ def make_v61_disk_wal_commit_verifier(
             path = root / safe_filename
             if path.is_symlink() or not path.is_file():
                 return False
-            first_stat = path.stat()
-            if first_stat.st_size <= 0 or first_stat.st_size > _WAL_MAX_BYTES:
-                return False
-            raw = path.read_bytes()
-            second_stat = path.stat()
-            if (
-                len(raw) != first_stat.st_size
-                or first_stat.st_ino != second_stat.st_ino
-                or first_stat.st_size != second_stat.st_size
-                or first_stat.st_mtime_ns != second_stat.st_mtime_ns
-            ):
-                return False
+            # On Windows, the read handle explicitly shares DELETE access.
+            # A replacement/truncation during capture fails closed.
+            raw = read_consistent_wal_bytes(path, max_bytes=_WAL_MAX_BYTES)
             row = json.loads(raw.decode("utf-8"))
             if not isinstance(row, dict):
                 return False
