@@ -307,6 +307,7 @@ class V63ProductionIntegrationCompletionTests(unittest.TestCase):
                 "route_id": "R1",
                 "channel": "EMAIL",
                 "owner_scope": "COMPANY",
+                "account_id": "C1",
                 "verified": True,
                 "route_eligible": True,
                 "freshness": "CURRENT",

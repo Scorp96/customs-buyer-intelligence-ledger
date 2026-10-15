@@ -200,6 +200,7 @@ class V63RouteReuseAndMetricsRuntimeTests(unittest.TestCase):
             "route": {
                 "route_id": "R1",
                 "owner_scope": "ACCOUNT",
+                "account_id": "C1",
                 "verified": True,
                 "route_eligible": True,
                 "freshness": "CURRENT",
@@ -320,6 +321,7 @@ class V63SalesReadinessRuntimeTests(unittest.TestCase):
             "selected_route": {
                 "route_id": "R1", "channel": "EMAIL", "owner_scope": "COMPANY",
                 "verified": True, "route_eligible": True, "freshness": "CURRENT",
+                "account_id": "C500",
             },
             "local_context": {
                 "now_utc": "2026-09-03T03:00:00+00:00",
