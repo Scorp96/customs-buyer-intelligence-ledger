@@ -207,22 +207,58 @@ class DiskV61WalIsolatedTests(unittest.TestCase):
         good=canonical_json(self.wal)+"\n"
         bad=canonical_json({**self.wal,"status":"PREPARED"})+"\n"
         stop=threading.Event()
+        failures=[]
+        outcomes={"replaced":0, "sharing_denied":0}
         def mutate():
-            for k in range(150):
-                temp=self.walroot/(f"synthetic-{k}.tmp")
-                temp.write_text(good if k%2 else bad,encoding="utf8")
-                os.replace(temp,self.walpath)
-            stop.set()
+            try:
+                for k in range(150):
+                    temp=self.walroot/(f"synthetic-{k}.tmp")
+                    temp.write_text(good if k%2 else bad,encoding="utf8")
+                    try:
+                        os.replace(temp,self.walpath)
+                    except PermissionError as exc:
+                        # Windows can deny replace while a different thread
+                        # has the WAL file open for reading (WinError 5).
+                        # This is a real production-safety caveat, not a
+                        # reason to loosen WAL verification.
+                        if os.name != "nt":
+                            failures.append(type(exc).__name__)
+                        outcomes["sharing_denied"] += 1
+                        temp.unlink(missing_ok=True)
+                    else:
+                        outcomes["replaced"] += 1
+            except Exception as exc:
+                failures.append(type(exc).__name__)
+            finally:
+                stop.set()
         th=threading.Thread(target=mutate)
         th.start()
         try:
             for _ in range(150):
+                # A contested/partial WAL read must never become proof by
+                # exception or coercion; only exact, verified rows pass.
                 self.assertIsInstance(self.valid(),bool)
         finally:
             th.join(timeout=8)
-            self.assertTrue(stop.is_set())
+        self.assertTrue(stop.is_set(), "bounded writer did not finish")
+        self.assertEqual(failures, [], failures)
+        self.assertEqual(
+            outcomes["replaced"]+outcomes["sharing_denied"],150
+        )
+        # Deterministic post-contention check. This is not proof that Windows
+        # live WAL writes are safe with an arbitrary concurrent reader.
         self.wal["status"]="PREPARED";self.persist()
         self.assertFalse(self.valid())
+
+    def test_post_read_atomic_commit_is_visible_and_verified(self):
+        """After the read closes, replacement of PREPARED by COMMITTED works."""
+        self.wal["status"]="PREPARED";self.persist()
+        self.assertFalse(self.valid())
+        self.wal["status"]="COMMITTED"
+        tmp=self.walroot/"synthetic-terminal.tmp"
+        tmp.write_text(canonical_json(self.wal)+"\n",encoding="utf8")
+        os.replace(tmp,self.walpath)
+        self.assertTrue(self.valid())
 
 if __name__=="__main__":
     unittest.main()
