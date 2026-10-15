@@ -8,6 +8,14 @@ from unified_runtime.contact_source_execution import (
 
 
 class V63ContactSourceExecutionTests(unittest.TestCase):
+    @staticmethod
+    def _fixture_authoritative_verifier(task, receipt):
+        """Synthetic host ledger fixture; not proof of real-world execution."""
+        return (
+            receipt.get("task_id") == task.get("task_id")
+            and str(receipt.get("raw_result_locator") or "").startswith("raw:")
+        )
+
     def test_a_plus_plans_company_and_named_route_tasks(self):
         contact = plan_contact_exhaustion({
             "product_profile_id": "PVC",
@@ -50,6 +58,10 @@ class V63ContactSourceExecutionTests(unittest.TestCase):
         company_task = next(task for task in plan["tasks"] if task["route_target"] == "COMPANY")
         coverage = evaluate_contact_coverage(plan, [{
             "task_id": company_task["task_id"],
+            "opportunity_id": company_task["opportunity_id"],
+            "route_target": company_task["route_target"],
+            "source_family": company_task["source_family"],
+            "company_name": company_task["company_name"],
             "result": "POSITIVE",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": "raw:company",
@@ -57,7 +69,7 @@ class V63ContactSourceExecutionTests(unittest.TestCase):
             "verified": True,
             "guessed": False,
             "owner_scope": "ACCOUNT",
-        }])
+        }], receipt_verifier=self._fixture_authoritative_verifier)
         self.assertTrue(coverage["contact_exhaustion_complete"])
         self.assertTrue(coverage["company_route_proven"])
         self.assertFalse(coverage["named_route_proven"])
@@ -72,6 +84,10 @@ class V63ContactSourceExecutionTests(unittest.TestCase):
         company_task = next(task for task in plan["tasks"] if task["route_target"] == "COMPANY")
         coverage = evaluate_contact_coverage(plan, [{
             "task_id": company_task["task_id"],
+            "opportunity_id": company_task["opportunity_id"],
+            "route_target": company_task["route_target"],
+            "source_family": company_task["source_family"],
+            "company_name": company_task["company_name"],
             "result": "POSITIVE",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": "raw:company",
@@ -79,7 +95,7 @@ class V63ContactSourceExecutionTests(unittest.TestCase):
             "verified": True,
             "guessed": False,
             "owner_scope": "ACCOUNT",
-        }])
+        }], receipt_verifier=self._fixture_authoritative_verifier)
         self.assertFalse(coverage["contact_exhaustion_complete"])
         self.assertTrue(coverage["company_route_proven"])
         self.assertGreater(coverage["open_required_task_count"], 0)
@@ -94,6 +110,10 @@ class V63ContactSourceExecutionTests(unittest.TestCase):
         company_task = next(task for task in plan["tasks"] if task["route_target"] == "COMPANY")
         coverage = evaluate_contact_coverage(plan, [{
             "task_id": company_task["task_id"],
+            "opportunity_id": company_task["opportunity_id"],
+            "route_target": company_task["route_target"],
+            "source_family": company_task["source_family"],
+            "company_name": company_task["company_name"],
             "result": "POSITIVE",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": "raw:company",
@@ -101,7 +121,7 @@ class V63ContactSourceExecutionTests(unittest.TestCase):
             "verified": True,
             "guessed": True,
             "owner_scope": "ACCOUNT",
-        }])
+        }], receipt_verifier=self._fixture_authoritative_verifier)
         self.assertFalse(coverage["company_route_proven"])
         self.assertFalse(coverage["contact_exhaustion_complete"])
 
@@ -114,11 +134,15 @@ class V63ContactSourceExecutionTests(unittest.TestCase):
         plan = plan_contact_source_tasks("OPP-C500-PVC-PRIMARY", "Example Materials LLC", contact)
         receipts = [{
             "task_id": task["task_id"],
+            "opportunity_id": task["opportunity_id"],
+            "route_target": task["route_target"],
+            "source_family": task["source_family"],
+            "company_name": task["company_name"],
             "result": "NEGATIVE_EXHAUSTED",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": f"raw:{task['task_id']}",
         } for task in plan["tasks"] if task["required_for_completion"]]
-        coverage = evaluate_contact_coverage(plan, receipts)
+        coverage = evaluate_contact_coverage(plan, receipts, receipt_verifier=self._fixture_authoritative_verifier)
         self.assertTrue(coverage["contact_exhaustion_complete"])
         self.assertEqual(coverage["completion_reason"], "REQUIRED_CONTACT_SOURCES_EXHAUSTED")
 
@@ -131,6 +155,10 @@ class V63ContactSourceExecutionTests(unittest.TestCase):
         plan = plan_contact_source_tasks("OPP-C500-PVC-PRIMARY", "Example Materials LLC", contact)
         receipts = [{
             "task_id": task["task_id"],
+            "opportunity_id": task["opportunity_id"],
+            "route_target": task["route_target"],
+            "source_family": task["source_family"],
+            "company_name": task["company_name"],
             "result": "NEGATIVE_EXHAUSTED",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": f"raw:{task['task_id']}",
@@ -141,7 +169,7 @@ class V63ContactSourceExecutionTests(unittest.TestCase):
             "completed_at": "2026-09-02T00:00:00Z",
             "blocked_reason": "LOGIN_REQUIRED",
         }
-        coverage = evaluate_contact_coverage(plan, receipts)
+        coverage = evaluate_contact_coverage(plan, receipts, receipt_verifier=self._fixture_authoritative_verifier)
         self.assertFalse(coverage["contact_exhaustion_complete"])
         self.assertGreater(coverage["open_required_task_count"], 0)
 

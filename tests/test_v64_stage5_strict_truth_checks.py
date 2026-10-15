@@ -150,6 +150,8 @@ class Stage5StrictEvidenceTypes(unittest.TestCase):
     @staticmethod
     def receipt(**updates):
         r = {"task_id":"SYN-T1", "result":"POSITIVE",
+             "opportunity_id":"SYN-OPP", "company_name":"Synthetic Company",
+             "route_target":"COMPANY", "source_family":"official_contact",
              "completed_at":"2026-10-15T00:00:00Z",
              "raw_result_locator":"synthetic://read-only",
              "route_evidence_ids":["SYN-E1"], "verified":True,
@@ -160,6 +162,8 @@ class Stage5StrictEvidenceTypes(unittest.TestCase):
     @staticmethod
     def contact_plan(**updates):
         p = {"tasks":[{"task_id":"SYN-T1","route_target":"COMPANY",
+                        "opportunity_id":"SYN-OPP","company_name":"Synthetic Company",
+                        "source_family":"official_contact",
                         "required_for_completion":True}],
              "initial_company_route_ready":False,
              "initial_named_route_ready":False,
@@ -169,14 +173,23 @@ class Stage5StrictEvidenceTypes(unittest.TestCase):
         p.update(updates)
         return p
 
+    @staticmethod
+    def _fixture_authoritative_verifier(task, receipt):
+        return (
+            task.get("task_id") == receipt.get("task_id")
+            and receipt.get("raw_result_locator") == "synthetic://read-only"
+        )
+
     def test_positive_receipt_verified_false_string_never_proves_route(self):
         r = evaluate_contact_coverage(self.contact_plan(),
-                    [self.receipt(verified="false")])
+                    [self.receipt(verified="false")],
+                    receipt_verifier=self._fixture_authoritative_verifier)
         self.assertFalse(r["company_route_proven"])
         self.assertFalse(r["contact_exhaustion_complete"])
 
     def test_positive_receipt_true_boolean_proves_route(self):
-        r = evaluate_contact_coverage(self.contact_plan(), [self.receipt()])
+        r = evaluate_contact_coverage(self.contact_plan(), [self.receipt()],
+                    receipt_verifier=self._fixture_authoritative_verifier)
         self.assertTrue(r["company_route_proven"])
         self.assertTrue(r["contact_exhaustion_complete"])
 

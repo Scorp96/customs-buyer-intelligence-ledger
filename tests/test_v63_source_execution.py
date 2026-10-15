@@ -7,6 +7,14 @@ from unified_runtime.source_execution import (
 
 
 class V63SourceExecutionTests(unittest.TestCase):
+    @staticmethod
+    def _fixture_authoritative_verifier(task, receipt):
+        """Synthetic ledger-origin fixture; never proof of production Evidence."""
+        return (
+            receipt.get("call_id") == task.get("call_id")
+            and str(receipt.get("raw_result_locator") or "").startswith("raw:")
+        )
+
     def _expansion_plan(self):
         return {
             "branches": {
@@ -55,11 +63,15 @@ class V63SourceExecutionTests(unittest.TestCase):
         plan = plan_public_source_tasks(self._expansion_plan(), self._discovery_plan())
         receipts = [{
             "call_id": task["call_id"],
+            "branch_group": task["branch_group"],
+            "branch": task["branch"],
+            "source_family": task["source_family"],
+            "query": task["query"],
             "result": "NEGATIVE_EXHAUSTED",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": f"raw:{task['call_id']}",
         } for task in plan["tasks"]]
-        coverage = evaluate_source_coverage(plan, receipts)
+        coverage = evaluate_source_coverage(plan, receipts, receipt_verifier=self._fixture_authoritative_verifier)
         self.assertTrue(coverage["source_coverage_complete"])
         self.assertEqual(coverage["status"], "PROVEN_COMPLETE")
 
@@ -67,6 +79,10 @@ class V63SourceExecutionTests(unittest.TestCase):
         plan = plan_public_source_tasks(self._expansion_plan(), self._discovery_plan())
         receipts = [{
             "call_id": task["call_id"],
+            "branch_group": task["branch_group"],
+            "branch": task["branch"],
+            "source_family": task["source_family"],
+            "query": task["query"],
             "result": "NEGATIVE_EXHAUSTED",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": f"raw:{task['call_id']}",
@@ -77,7 +93,7 @@ class V63SourceExecutionTests(unittest.TestCase):
             "completed_at": "2026-09-02T00:00:00Z",
             "blocked_reason": "LOGIN_REQUIRED",
         }
-        coverage = evaluate_source_coverage(plan, receipts)
+        coverage = evaluate_source_coverage(plan, receipts, receipt_verifier=self._fixture_authoritative_verifier)
         self.assertFalse(coverage["source_coverage_complete"])
         self.assertIn(plan["tasks"][0]["call_id"], coverage["open_call_ids"])
 
@@ -85,18 +101,26 @@ class V63SourceExecutionTests(unittest.TestCase):
         plan = plan_public_source_tasks(self._expansion_plan(), self._discovery_plan())
         receipts = [{
             "call_id": task["call_id"],
+            "branch_group": task["branch_group"],
+            "branch": task["branch"],
+            "source_family": task["source_family"],
+            "query": task["query"],
             "result": "NEGATIVE_EXHAUSTED",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": f"raw:{task['call_id']}",
         } for task in plan["tasks"]]
         receipts[0] = {
             "call_id": plan["tasks"][0]["call_id"],
+            "branch_group": plan["tasks"][0]["branch_group"],
+            "branch": plan["tasks"][0]["branch"],
+            "source_family": plan["tasks"][0]["source_family"],
+            "query": plan["tasks"][0]["query"],
             "result": "POSITIVE",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": "raw:positive",
             "evidence_ids": [],
         }
-        coverage = evaluate_source_coverage(plan, receipts)
+        coverage = evaluate_source_coverage(plan, receipts, receipt_verifier=self._fixture_authoritative_verifier)
         self.assertFalse(coverage["source_coverage_complete"])
         self.assertIn(plan["tasks"][0]["call_id"], coverage["open_call_ids"])
 
@@ -104,11 +128,15 @@ class V63SourceExecutionTests(unittest.TestCase):
         plan = plan_public_source_tasks(self._expansion_plan(), self._discovery_plan(truncated=True))
         receipts = [{
             "call_id": task["call_id"],
+            "branch_group": task["branch_group"],
+            "branch": task["branch"],
+            "source_family": task["source_family"],
+            "query": task["query"],
             "result": "NEGATIVE_EXHAUSTED",
             "completed_at": "2026-09-02T00:00:00Z",
             "raw_result_locator": f"raw:{task['call_id']}",
         } for task in plan["tasks"]]
-        coverage = evaluate_source_coverage(plan, receipts)
+        coverage = evaluate_source_coverage(plan, receipts, receipt_verifier=self._fixture_authoritative_verifier)
         self.assertFalse(coverage["source_coverage_complete"])
         self.assertEqual(coverage["status"], "INCOMPLETE_TRUNCATED_PLAN")
 

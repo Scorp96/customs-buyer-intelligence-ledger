@@ -6,6 +6,8 @@ import hashlib
 import json
 from typing import Any
 
+from .receipt_proof_gate import ReceiptVerifier, receipt_is_owned_and_verified
+
 
 SOURCE_FAMILIES_BY_BRANCH_GROUP: dict[str, tuple[str, ...]] = {
     "TRADE_GRAPH": (
@@ -198,7 +200,12 @@ def _receipt_is_terminal(receipt: dict[str, Any]) -> bool:
     return False
 
 
-def evaluate_source_coverage(plan: dict[str, Any], receipts: list[dict[str, Any]]) -> dict[str, Any]:
+def evaluate_source_coverage(
+    plan: dict[str, Any],
+    receipts: list[dict[str, Any]],
+    *,
+    receipt_verifier: ReceiptVerifier | None = None,
+) -> dict[str, Any]:
     if not isinstance(plan, dict):
         raise ValueError("plan must be an object")
     planned_tasks = [row for row in plan.get("tasks", []) if isinstance(row, dict)]
@@ -213,14 +220,44 @@ def evaluate_source_coverage(plan: dict[str, Any], receipts: list[dict[str, Any]
             continue
         receipts_by_call.setdefault(call_id, []).append(receipt)
 
+    # Do not equate a caller-provided receipt with independently validated
+    # evidence. The verifier must be supplied from trusted host/WAL code, not
+    # from the JSON tool arguments or the receipt itself.
+    verifier_available = callable(receipt_verifier)
     terminal_ids: set[str] = set()
-    for call_id in planned_ids:
-        if any(_receipt_is_terminal(receipt) for receipt in receipts_by_call.get(call_id, [])):
+    identity_fields = ("call_id", "branch_group", "branch", "source_family", "query")
+    for task in planned_tasks:
+        call_id = str(task.get("call_id") or "")
+        if not call_id:
+            continue
+        current = receipts_by_call.get(call_id, [])
+        # BLOCKED is an unresolved source attempt. A later N/A claim against
+        # the same task cannot silently erase the blocked evidence.
+        if any(str(row.get("result") or "").upper() == "BLOCKED" for row in current):
+            continue
+        if any(
+            _receipt_is_terminal(row)
+            and receipt_is_owned_and_verified(
+                task, row, identity_fields=identity_fields,
+                verifier=receipt_verifier,
+            )
+            for row in current
+        ):
             terminal_ids.add(call_id)
 
     open_call_ids = [call_id for call_id in planned_ids if call_id not in terminal_ids]
-    is_truncated = bool(plan.get("truncated"))
-    if is_truncated:
+    is_truncated = plan.get("truncated") is not False
+    plan_identity_valid = (
+        len(planned_ids) == len(planned_tasks)
+        and len(set(planned_ids)) == len(planned_ids)
+    )
+    if not verifier_available:
+        complete = False
+        status = "AUTHORITATIVE_RECEIPT_VERIFIER_REQUIRED"
+    elif not plan_identity_valid:
+        complete = False
+        status = "INVALID_OR_DUPLICATE_SOURCE_TASK_IDENTITIES"
+    elif is_truncated:
         complete = False
         status = "INCOMPLETE_TRUNCATED_PLAN"
     elif not planned_ids:
@@ -242,4 +279,7 @@ def evaluate_source_coverage(plan: dict[str, Any], receipts: list[dict[str, Any]
         "open_call_ids": open_call_ids,
         "plan_truncated": is_truncated,
         "planning_is_execution_proof": False,
+        "authoritative_receipt_verifier_supplied": verifier_available,
+        "authoritative_execution_evidence_verified": complete,
+        "receipt_ownership_requires_trusted_backend": True,
     }

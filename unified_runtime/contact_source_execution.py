@@ -4,6 +4,8 @@ import hashlib
 import json
 from typing import Any
 
+from .receipt_proof_gate import ReceiptVerifier, receipt_is_owned_and_verified
+
 
 def _task_id(payload: dict[str, Any]) -> str:
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -130,7 +132,12 @@ def _positive_route(receipt: dict[str, Any], route_target: str) -> bool:
     return False
 
 
-def evaluate_contact_coverage(plan: dict[str, Any], receipts: list[dict[str, Any]]) -> dict[str, Any]:
+def evaluate_contact_coverage(
+    plan: dict[str, Any],
+    receipts: list[dict[str, Any]],
+    *,
+    receipt_verifier: ReceiptVerifier | None = None,
+) -> dict[str, Any]:
     if not isinstance(plan, dict):
         raise ValueError("plan must be an object")
     tasks = [task for task in plan.get("tasks", []) if isinstance(task, dict)]
@@ -143,19 +150,32 @@ def evaluate_contact_coverage(plan: dict[str, Any], receipts: list[dict[str, Any
         if task_id:
             receipts_by_task.setdefault(task_id, []).append(receipt)
 
-    company_route_proven = plan.get("initial_company_route_ready") is True
-    named_route_proven = plan.get("initial_named_route_ready") is True
+    verifier_available = callable(receipt_verifier)
+    # Legacy initial-ready booleans are not independent owner proof. Do not
+    # produce a 'proven' result from them without a trusted evidence path.
+    company_route_proven = False
+    named_route_proven = False
     terminal_negative_ids: set[str] = set()
-
+    identity_fields = ("task_id", "opportunity_id", "route_target", "source_family", "company_name")
     for task_id, task in by_id.items():
         route_target = str(task.get("route_target") or "").upper()
         task_receipts = receipts_by_task.get(task_id, [])
-        if any(_positive_route(receipt, route_target) for receipt in task_receipts):
+        # A BLOCKED source stays open; N/A cannot erase its blocked receipt.
+        if any(str(row.get("result") or "").upper() == "BLOCKED" for row in task_receipts):
+            continue
+        verified_receipts = [
+            receipt for receipt in task_receipts
+            if receipt_is_owned_and_verified(
+                task, receipt, identity_fields=identity_fields,
+                verifier=receipt_verifier,
+            )
+        ]
+        if any(_positive_route(receipt, route_target) for receipt in verified_receipts):
             if route_target == "COMPANY":
                 company_route_proven = True
             elif route_target == "NAMED":
                 named_route_proven = True
-        if any(_negative_terminal(receipt) for receipt in task_receipts):
+        if any(_negative_terminal(receipt) for receipt in verified_receipts):
             terminal_negative_ids.add(task_id)
 
     # A verified named route is stronger than a company route for contact readiness.
@@ -172,11 +192,21 @@ def evaluate_contact_coverage(plan: dict[str, Any], receipts: list[dict[str, Any
             continue
         open_required.append(task_id)
 
-    truncated = bool(plan.get("truncated"))
+    truncated = plan.get("truncated") is not False
     named_required = plan.get("named_route_required_for_completion") is not False
     company_required = plan.get("company_route_required_for_completion") is not False
+    task_identity_valid = (
+        len(tasks) == len(by_id) and
+        all(str(task.get("task_id") or "").strip() for task in tasks)
+    )
 
-    if truncated:
+    if not verifier_available:
+        complete = False
+        reason = "AUTHORITATIVE_RECEIPT_VERIFIER_REQUIRED"
+    elif not task_identity_valid:
+        complete = False
+        reason = "INVALID_OR_DUPLICATE_CONTACT_TASK_IDENTITIES"
+    elif truncated:
         complete = False
         reason = "TRUNCATED_CONTACT_PLAN"
     elif named_route_proven:
@@ -209,4 +239,7 @@ def evaluate_contact_coverage(plan: dict[str, Any], receipts: list[dict[str, Any
         "open_required_task_ids": open_required,
         "plan_truncated": truncated,
         "planning_is_execution_proof": False,
+        "authoritative_receipt_verifier_supplied": verifier_available,
+        "authoritative_execution_evidence_verified": complete,
+        "receipt_ownership_requires_trusted_backend": True,
     }
