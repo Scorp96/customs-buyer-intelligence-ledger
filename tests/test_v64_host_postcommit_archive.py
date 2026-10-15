@@ -346,11 +346,29 @@ class HostPostcommitArchiveTests(unittest.TestCase):
 
     def test_recovery_snapshot_tamper_rejected_before_new_files(self):
         self._interrupt_publish(".request.json")
+        # The operator pin MUST be fixed *before* the hostile mutation.
+        # Recomputing it from the tampered snapshot would manufacture proof.
+        pre_pinned = copy.deepcopy(self._external_recovery_record())
         p=next(self.snapshot_root.iterdir())
         p.write_bytes(p.read_bytes()+b"\n")
         with self.assertRaises((PermissionError,ValueError,OSError)):
-            self._resume_partial()
+            self._resume_partial(
+                authorizer=lambda event,args,task: copy.deepcopy(pre_pinned)
+            )
         self.assertEqual(list(self.request_root.iterdir()),[])
+
+    def test_recovery_cannot_recompute_operator_pin_after_request_tamper(self):
+        self._interrupt_publish(".commit.json")
+        operator_pin = copy.deepcopy(self._external_recovery_record())
+        p=next(self.request_root.iterdir())
+        value=json.loads(p.read_text(encoding="utf8"))
+        value["private_synthetic_secret"]="TAMPERED"
+        p.write_text(canonical_json(value)+"\n",encoding="utf8")
+        with self.assertRaises(PermissionError):
+            self._resume_partial(
+                authorizer=lambda event,args,task: copy.deepcopy(operator_pin)
+            )
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
 
     def test_recovery_missing_snapshot_stops_for_custody_review(self):
         self._interrupt_publish(".commit.json")
