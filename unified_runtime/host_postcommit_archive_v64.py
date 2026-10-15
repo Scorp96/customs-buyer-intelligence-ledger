@@ -17,6 +17,10 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
+# Called only from a trusted Host boundary. The pin SHA must be obtained
+# independently of the local request/snapshot/pin directories.
+OperatorAnchorVerifier = Callable[[str, dict[str, Any], dict[str, Any]], bool]
+
 from .core import SessionStore, canonical_json, digest
 from .wal_immutable_snapshot_v64 import (
     create_immutable_terminal_wal_snapshot,
@@ -115,12 +119,17 @@ class IsolatedHostReceiptAuthority:
     def __init__(
         self, *, session_store: SessionStore, request_root: Path,
         snapshot_root: Path, pin_root: Path,
+        independent_operator_anchor: OperatorAnchorVerifier | None = None,
     ) -> None:
         roots = [_safe_root(root) for root in (request_root, snapshot_root, pin_root)]
         if len(set(roots)) != 3:
             raise ValueError("Host request, snapshot and pin directories must differ")
         self.session_store = session_store
         self.request_root, self.snapshot_root, self.pin_root = roots
+        # A separate folder is NOT independent provenance. With no trusted
+        # operator anchor the archive stays readable for investigation, but
+        # cannot provide an accepted terminal Source Family proof.
+        self.independent_operator_anchor = independent_operator_anchor
 
     def publish_from_host_wal(
         self, *, wal_root: Path, original_arguments: dict[str, Any],
@@ -216,6 +225,18 @@ class IsolatedHostReceiptAuthority:
         material.pop("expected_state_version", None)
         if pin.get("request_sha256") != digest({"tool": _TOOL, "arguments": material}):
             raise PermissionError("Host archived request hash differs")
+        if not callable(self.independent_operator_anchor):
+            raise PermissionError("Independent operator anchor is required")
+        # Digest the canonical full pin, not merely the snapshot SHA. The
+        # operator verifier must consult an independent pre-established
+        # authority with identity, session epoch and no replay acceptance.
+        full_pin_sha256 = hashlib.sha256(canonical_json(pin).encode("utf-8")).hexdigest()
+        try:
+            approved = self.independent_operator_anchor(full_pin_sha256, event, task)
+        except Exception as exc:
+            raise PermissionError("Independent operator anchor unavailable") from exc
+        if approved is not True:
+            raise PermissionError("Independent operator anchor failed")
         # Validate pinned WAL bytes before returning them to an injection
         # provider, never trust only a declared pin value.
         read_immutable_wal_snapshot(

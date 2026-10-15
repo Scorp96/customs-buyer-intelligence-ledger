@@ -83,14 +83,37 @@ class HostPostcommitArchiveTests(unittest.TestCase):
         self.wal_name=f"{TOOL}-{hashlib.sha256(KEY.encode()).hexdigest()}.json"
         self.walpath=self.walroot/self.wal_name
         self.walpath.write_text(canonical_json(self.wal)+"\n",encoding="utf8")
+        self.operator_anchor_hash=None
+        self.anchor_enabled=True
+        self.anchor_raises=False
         self.authority=IsolatedHostReceiptAuthority(
             session_store=self.s,request_root=self.request_root,
             snapshot_root=self.snapshot_root,pin_root=self.pin_root,
+            independent_operator_anchor=self.trusted_operator_fixture,
         )
         self.release_granted=True
 
     def tearDown(self):
         self.t.cleanup()
+
+    def trusted_operator_fixture(self, canonical_pin_hash, event, task):
+        # Synthetic *external* operator register held in fixture memory.
+        # This is not a real signature, RBAC or independently controlled host.
+        if self.anchor_raises:
+            raise OSError("synthetic external authority unavailable")
+        return (
+            self.anchor_enabled
+            and self.operator_anchor_hash == canonical_pin_hash
+            and event.get("event_hash") == self.event["event_hash"]
+            and task == self.task
+        )
+
+    def fixture_independently_pin(self):
+        # Separate fixture act after publish, before any trusted read.
+        # Never give this authority to the receipt claimant in production.
+        from unified_runtime.core import canonical_json
+        data=json.loads(next(self.pin_root.iterdir()).read_text(encoding="utf8"))
+        self.operator_anchor_hash=hashlib.sha256(canonical_json(data).encode("utf8")).hexdigest()
 
     def barrier(self,event,args,task):
         # Synthetic Host writes COMMITTED before unlocking. This is NOT proof
@@ -101,13 +124,16 @@ class HostPostcommitArchiveTests(unittest.TestCase):
             and task==self.task
             and json.loads(self.walpath.read_text())["status"]=="COMMITTED")
 
-    def publish(self,**kw):
+    def publish(self,*,fixture_operator_pin=True,**kw):
         params={"wal_root":self.walroot,"original_arguments":self.args,
             "task":self.task,"event":self.event,"account_id":OWNER,
             "expected_last_seq":2,"expected_last_hash":self.event["event_hash"],
             "trusted_postcommit_barrier":self.barrier}
         params.update(kw)
-        return self.authority.publish_from_host_wal(**params)
+        result=self.authority.publish_from_host_wal(**params)
+        if fixture_operator_pin:
+            self.fixture_independently_pin()
+        return result
 
     def read(self,event=None,task=None):
         return self.authority.read_host_binding(
@@ -135,6 +161,53 @@ class HostPostcommitArchiveTests(unittest.TestCase):
         return evaluate_source_coverage(
             {"tasks":[self.task],"truncated":False},
             [receipt],receipt_verifier=self.proof())["source_coverage_complete"]
+
+    def test_default_missing_external_operator_anchor_is_not_proof(self):
+        alternate=IsolatedHostReceiptAuthority(
+            session_store=self.s,request_root=self.request_root,
+            snapshot_root=self.snapshot_root,pin_root=self.pin_root,
+        )
+        self.publish()
+        with self.assertRaises(PermissionError):
+            alternate.read_host_binding(
+                event=self.event,task=self.task,idempotency_key=KEY)
+
+    def test_new_archive_without_external_pin_does_not_close(self):
+        self.publish(fixture_operator_pin=False)
+        self.assertFalse(self.covered())
+        self.fixture_independently_pin()
+        self.assertTrue(self.covered())
+
+    def test_external_operator_anchor_denial_fails_closed(self):
+        self.publish()
+        self.anchor_enabled=False
+        self.assertFalse(self.covered())
+
+    def test_external_operator_anchor_exception_fails_closed(self):
+        self.publish()
+        self.anchor_raises=True
+        self.assertFalse(self.covered())
+
+    def test_wrong_external_anchor_hash_fails_closed(self):
+        self.publish()
+        self.operator_anchor_hash="0"*64
+        self.assertFalse(self.covered())
+
+    def test_claimant_verified_flag_cannot_replace_operator_anchor(self):
+        self.publish(fixture_operator_pin=False)
+        pin=next(self.pin_root.iterdir())
+        value=json.loads(pin.read_text(encoding="utf8"))
+        value["operator_verified"]=True
+        pin.write_text(canonical_json(value)+"\n",encoding="utf8")
+        self.assertFalse(self.covered())
+
+    def test_archive_pin_after_anchor_cannot_be_reissued_without_new_auth(self):
+        self.publish()
+        pin=next(self.pin_root.iterdir())
+        value=json.loads(pin.read_text(encoding="utf8"))
+        value["operator_verified"]=True
+        pin.write_text(canonical_json(value)+"\n",encoding="utf8")
+        self.assertFalse(self.covered())
 
     def test_host_postcommit_archive_full_chain(self):
         result=self.publish()
