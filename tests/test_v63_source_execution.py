@@ -56,7 +56,8 @@ class V63SourceExecutionTests(unittest.TestCase):
         plan = plan_public_source_tasks(self._expansion_plan(), self._discovery_plan())
         coverage = evaluate_source_coverage(plan, [])
         self.assertFalse(coverage["source_coverage_complete"])
-        self.assertEqual(coverage["status"], "INCOMPLETE")
+        self.assertEqual(coverage["status"], "AUTHORITATIVE_RECEIPT_VERIFIER_REQUIRED")
+        self.assertFalse(coverage["authoritative_receipt_verifier_supplied"])
         self.assertEqual(coverage["missing_call_count"], plan["returned_count"])
 
     def test_all_valid_terminal_receipts_can_prove_complete_for_untruncated_plan(self):
