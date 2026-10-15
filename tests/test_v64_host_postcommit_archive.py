@@ -112,7 +112,7 @@ class HostPostcommitArchiveTests(unittest.TestCase):
         # Separate fixture act after publish, before any trusted read.
         # Never give this authority to the receipt claimant in production.
         from unified_runtime.core import canonical_json
-        data=json.loads(next(self.pin_root.iterdir()).read_text(encoding="utf8"))
+        data=json.loads(next(self.pin_root.glob("*.pin.json")).read_text(encoding="utf8"))
         self.operator_anchor_hash=hashlib.sha256(canonical_json(data).encode("utf8")).hexdigest()
 
     def barrier(self,event,args,task):
@@ -162,6 +162,57 @@ class HostPostcommitArchiveTests(unittest.TestCase):
             {"tasks":[self.task],"truncated":False},
             [receipt],receipt_verifier=self.proof())["source_coverage_complete"]
 
+    def test_publication_commit_marker_required(self):
+        self.publish()
+        marker=next(self.pin_root.glob("*.commit.json"))
+        marker.unlink()
+        self.assertFalse(self.covered())
+
+    def test_publication_commit_marker_identity_is_immutable(self):
+        self.publish()
+        marker=next(self.pin_root.glob("*.commit.json"))
+        raw=json.loads(marker.read_text(encoding="utf8"))
+        raw["task_digest"]="0"*64
+        marker.write_text(canonical_json(raw)+"\n",encoding="utf8")
+        self.assertFalse(self.covered())
+
+    def test_publication_marker_wrong_status_cannot_close(self):
+        self.publish()
+        marker=next(self.pin_root.glob("*.commit.json"))
+        raw=json.loads(marker.read_text(encoding="utf8"))
+        raw["status"]="PREPARED"
+        marker.write_text(canonical_json(raw)+"\n",encoding="utf8")
+        self.assertFalse(self.covered())
+
+    def test_interruption_before_commit_marker_is_a_non_authoritative_partial_archive(self):
+        from unittest.mock import patch
+        from unified_runtime import host_postcommit_archive_v64 as module
+        original_create=module._create_once
+        def injected(root, filename, value):
+            if filename.endswith(".commit.json"):
+                raise OSError("CI_INJECTED_POWER_FAILURE_BEFORE_COMMIT")
+            return original_create(root, filename, value)
+        with patch.object(module,"_create_once",side_effect=injected):
+            with self.assertRaisesRegex(OSError,"CI_INJECTED_POWER_FAILURE_BEFORE_COMMIT"):
+                self.publish()
+        self.assertEqual(len(list(self.snapshot_root.iterdir())),1)
+        self.assertEqual(len(list(self.request_root.iterdir())),1)
+        self.assertEqual(len(list(self.pin_root.glob("*.pin.json"))),1)
+        self.assertEqual(len(list(self.pin_root.glob("*.commit.json"))),0)
+        self.fixture_independently_pin()
+        self.assertFalse(self.covered())
+        with self.assertRaises(FileExistsError):
+            self.publish()
+
+    def test_committed_marker_exists_only_after_full_publish(self):
+        self.assertEqual(list(self.pin_root.glob("*.commit.json")),[])
+        self.publish()
+        marker=next(self.pin_root.glob("*.commit.json"))
+        data=json.loads(marker.read_text(encoding="utf8"))
+        self.assertEqual(data["status"],"PUBLISHED")
+        self.assertEqual(data["event_hash"],self.event["event_hash"])
+        self.assertTrue(self.covered())
+
     def test_default_missing_external_operator_anchor_is_not_proof(self):
         alternate=IsolatedHostReceiptAuthority(
             session_store=self.s,request_root=self.request_root,
@@ -195,7 +246,7 @@ class HostPostcommitArchiveTests(unittest.TestCase):
 
     def test_claimant_verified_flag_cannot_replace_operator_anchor(self):
         self.publish(fixture_operator_pin=False)
-        pin=next(self.pin_root.iterdir())
+        pin=next(self.pin_root.glob("*.pin.json"))
         value=json.loads(pin.read_text(encoding="utf8"))
         value["operator_verified"]=True
         pin.write_text(canonical_json(value)+"\n",encoding="utf8")
@@ -203,7 +254,7 @@ class HostPostcommitArchiveTests(unittest.TestCase):
 
     def test_archive_pin_after_anchor_cannot_be_reissued_without_new_auth(self):
         self.publish()
-        pin=next(self.pin_root.iterdir())
+        pin=next(self.pin_root.glob("*.pin.json"))
         value=json.loads(pin.read_text(encoding="utf8"))
         value["operator_verified"]=True
         pin.write_text(canonical_json(value)+"\n",encoding="utf8")
@@ -270,7 +321,7 @@ class HostPostcommitArchiveTests(unittest.TestCase):
 
     def test_pin_digest_tamper_detected(self):
         self.publish()
-        path=next(self.pin_root.iterdir())
+        path=next(self.pin_root.glob("*.pin.json"))
         contents=json.loads(path.read_text())
         contents["snapshot_sha256"]="0"*64
         path.write_text(canonical_json(contents)+"\n")
@@ -284,7 +335,7 @@ class HostPostcommitArchiveTests(unittest.TestCase):
 
     def test_removed_pin_fails_closed(self):
         self.publish()
-        next(self.pin_root.iterdir()).unlink()
+        next(self.pin_root.glob("*.pin.json")).unlink()
         self.assertFalse(self.covered())
 
     def test_removed_original_request_fails_closed(self):

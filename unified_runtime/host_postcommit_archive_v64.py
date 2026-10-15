@@ -75,6 +75,15 @@ def _create_once(root: Path, filename: str, value: dict[str, Any]) -> None:
         handle.write(payload)
         handle.flush()
         os.fsync(handle.fileno())
+    # POSIX also needs a parent-directory sync to persist the new filename.
+    # Windows crash-durability is not proven by this fixture; the final
+    # publication marker remains a fail-closed logical barrier only.
+    if os.name != "nt":
+        directory_fd = os.open(root, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
 
 
 def _file_ids(idempotency_key: str) -> tuple[str, str, str]:
@@ -86,6 +95,7 @@ def _file_ids(idempotency_key: str) -> tuple[str, str, str]:
         f"{_TOOL}-{token}.json",
         f"{_TOOL}-{token}.request.json",
         f"{_TOOL}-{token}.pin.json",
+        f"{_TOOL}-{token}.commit.json",
     )
 
 
@@ -162,9 +172,14 @@ class IsolatedHostReceiptAuthority:
             raise PermissionError("Committed event/Host source request mismatch")
         if trusted_postcommit_barrier(persisted, args, task) is not True:
             raise PermissionError("Trusted Host postcommit barrier denied")
-        wal_name, request_name, pin_name = _file_ids(args.get("idempotency_key"))
+        wal_name, request_name, pin_name, commit_name = _file_ids(args.get("idempotency_key"))
         root = _safe_root(wal_root)
-        if (self.request_root / request_name).exists() or (self.pin_root / pin_name).exists() or (self.snapshot_root / wal_name).exists():
+        if (
+            (self.request_root / request_name).exists()
+            or (self.pin_root / pin_name).exists()
+            or (self.pin_root / commit_name).exists()
+            or (self.snapshot_root / wal_name).exists()
+        ):
             raise FileExistsError("Already archived; original evidence cannot be overwritten")
         material = copy.deepcopy(args)
         material.pop("idempotency_key", None)
@@ -216,6 +231,22 @@ class IsolatedHostReceiptAuthority:
         }
         # The pin is created only after both underlying immutable copies.
         _create_once(self.pin_root, pin_name, pin)
+        # Commit marker is created LAST, with O_EXCL and fsync. Missing or
+        # mismatched marker means incomplete publication, even if all three
+        # data files exist. It is not a cross-volume atomic transaction.
+        publish_marker = {
+            "schema": "cbi.host-wal-archive-publication.isolated.v1",
+            "status": "PUBLISHED",
+            "wal_filename": wal_name,
+            "pin_sha256": hashlib.sha256(
+                canonical_json(pin).encode("utf-8")
+            ).hexdigest(),
+            "original_arguments_sha256": pin["original_arguments_sha256"],
+            "snapshot_sha256": snap_sha,
+            "event_hash": event["event_hash"],
+            "task_digest": digest(task),
+        }
+        _create_once(self.pin_root, commit_name, publish_marker)
         return {
             "status": "ISOLATED_PIN_CREATED",
             "event_hash": event["event_hash"], "snapshot_sha256": snap_sha,
@@ -228,9 +259,24 @@ class IsolatedHostReceiptAuthority:
         self, *, event: dict[str, Any], task: dict[str, Any],
         idempotency_key: str,
     ) -> tuple[dict[str, Any], str]:
-        wal_name, request_name, pin_name = _file_ids(idempotency_key)
+        wal_name, request_name, pin_name, commit_name = _file_ids(idempotency_key)
+        # A partially published archive MUST NOT be treated as authority.
+        marker = _safe_json_read(self.pin_root, commit_name)
         pin = _safe_json_read(self.pin_root, pin_name)
         args = _safe_json_read(self.request_root, request_name)
+        if (
+            marker.get("schema") != "cbi.host-wal-archive-publication.isolated.v1"
+            or marker.get("status") != "PUBLISHED"
+            or marker.get("wal_filename") != wal_name
+            or marker.get("pin_sha256") != hashlib.sha256(
+                canonical_json(pin).encode("utf-8")
+            ).hexdigest()
+            or marker.get("original_arguments_sha256") != digest(args)
+            or marker.get("snapshot_sha256") != pin.get("snapshot_sha256")
+            or marker.get("event_hash") != event.get("event_hash")
+            or marker.get("task_digest") != digest(task)
+        ):
+            raise PermissionError("Postcommit archive publication marker invalid")
         if (
             pin.get("schema") != "cbi.host-wal-postcommit-pin.isolated.v1"
             or pin.get("status") != "PINNED_FOR_ISOLATED_VALIDATION"
