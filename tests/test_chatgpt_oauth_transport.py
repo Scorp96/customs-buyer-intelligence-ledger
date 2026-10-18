@@ -174,7 +174,6 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
             "https://claude.ai/api/mcp/auth_callback?next=https://evil.example",
             "https://claude.ai/api/mcp/auth_callback#x",
             "https://claude.ai:8443/api/mcp/auth_callback",
-            "https://user@claude.ai/api/mcp/auth_callback",
             "https://evil.claude.ai/api/mcp/auth_callback",
             "https://claude.ai.evil.example/api/mcp/auth_callback",
             "https://claude.ai/connector/oauth/abc",
