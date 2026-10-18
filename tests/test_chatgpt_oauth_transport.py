@@ -165,6 +165,22 @@ class ChatGPTOAuthTransportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _validated_scope("repo")
 
+    def test_claude_connector_redirect_is_exact_and_fail_closed(self) -> None:
+        self.assertTrue(_is_chatgpt_redirect_uri("https://claude.ai/api/mcp/auth_callback"))
+        self.assertTrue(_is_chatgpt_redirect_uri("https://claude.com/api/mcp/auth_callback"))
+        for rejected in (
+            "http://claude.ai/api/mcp/auth_callback",
+            "https://claude.ai/api/mcp/auth_callback/evil",
+            "https://claude.ai/api/mcp/auth_callback?next=https://evil.example",
+            "https://claude.ai/api/mcp/auth_callback#x",
+            "https://claude.ai:8443/api/mcp/auth_callback",
+            "https://user@claude.ai/api/mcp/auth_callback",
+            "https://evil.claude.ai/api/mcp/auth_callback",
+            "https://claude.ai.evil.example/api/mcp/auth_callback",
+            "https://claude.ai/connector/oauth/abc",
+        ):
+            self.assertFalse(_is_chatgpt_redirect_uri(rejected), rejected)
+
     def test_resource_binding_is_exact_and_fail_closed(self) -> None:
         base_url = "https://cbi.example"
         self.assertEqual("https://cbi.example/mcp", _expected_resource(base_url))

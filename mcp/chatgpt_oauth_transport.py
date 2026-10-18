@@ -260,6 +260,29 @@ def _unpack_oauth_state(token: str, *, now: int | None = None) -> dict[str, Any]
     return payload
 
 
+_CLAUDE_CALLBACK_HOSTS = ("claude.ai", "claude.com")
+_CLAUDE_CALLBACK_PATH = "/api/mcp/auth_callback"
+
+
+def _is_claude_redirect_uri(value: str) -> bool:
+    """Allow only the exact Claude custom-connector OAuth callback."""
+
+    try:
+        parsed = urllib.parse.urlsplit(value)
+    except Exception:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname in _CLAUDE_CALLBACK_HOSTS
+        and parsed.port is None
+        and not parsed.username
+        and not parsed.password
+        and parsed.path == _CLAUDE_CALLBACK_PATH
+        and not parsed.query
+        and not parsed.fragment
+    )
+
+
 def _is_chatgpt_redirect_uri(value: str) -> bool:
     try:
         parsed = urllib.parse.urlsplit(value)
@@ -269,12 +292,14 @@ def _is_chatgpt_redirect_uri(value: str) -> bool:
         parsed.path.startswith("/connector/oauth/")
         or parsed.path == "/connector_platform_oauth_redirect"
     )
-    return (
+    if (
         parsed.scheme == "https"
         and parsed.hostname == "chatgpt.com"
         and path_allowed
         and not parsed.fragment
-    )
+    ):
+        return True
+    return _is_claude_redirect_uri(value)
 
 
 def _validated_scope(raw: str) -> str:
