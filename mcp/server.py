@@ -979,7 +979,12 @@ def handle(method: str, params: dict[str, Any]) -> Any:
         arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
         result = TOOL_HANDLERS[name](arguments)
         summary = f"{name}: " + str(result.get("status") or ("ACCEPTED" if result.get("accepted") else result.get("terminal_state") or "OK"))
-        response: dict[str, Any] = {"content": [{"type": "text", "text": summary}], "structuredContent": result}
+        # MCP 2025-06-18: a tool returning structuredContent SHOULD also return the
+        # serialized JSON in a TextContent block. Clients that only surface text
+        # (e.g. Claude connectors) otherwise see just the status summary line.
+        # structuredContent is unchanged, so structured-content clients are unaffected.
+        text = summary + "\n" + json.dumps(result, ensure_ascii=False, default=str)
+        response: dict[str, Any] = {"content": [{"type": "text", "text": text}], "structuredContent": result}
         if name == "render_outreach_action_card": response["_meta"] = {"ui": {"resourceUri": TEMPLATE_URI}}
         return response
     raise ValidationError(f"Unsupported method: {method}")
