@@ -983,8 +983,13 @@ def handle(method: str, params: dict[str, Any]) -> Any:
         # serialized JSON in a TextContent block. Clients that only surface text
         # (e.g. Claude connectors) otherwise see just the status summary line.
         # structuredContent is unchanged, so structured-content clients are unaffected.
-        text = summary + "\n" + json.dumps(result, ensure_ascii=False, default=str)
-        response: dict[str, Any] = {"content": [{"type": "text", "text": text}], "structuredContent": result}
+        # The first block is pure JSON so content-only clients can deserialize it;
+        # the human-readable summary stays in its own block. structuredContent is unchanged.
+        content = [
+            {"type": "text", "text": json.dumps(result, ensure_ascii=False, default=str)},
+            {"type": "text", "text": summary},
+        ]
+        response: dict[str, Any] = {"content": content, "structuredContent": result}
         if name == "render_outreach_action_card": response["_meta"] = {"ui": {"resourceUri": TEMPLATE_URI}}
         return response
     raise ValidationError(f"Unsupported method: {method}")
